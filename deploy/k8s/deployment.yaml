@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexus-api
+  template:
+    metadata:
+      labels:
+        app: nexus-api
+    spec:
+      containers:
+        - name: api
+          image: nexus/api:latest
+          ports:
+            - containerPort: 4000
+          envFrom:
+            - secretRef:
+                name: nexus-secrets
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus-api
+spec:
+  selector:
+    app: nexus-api
+  ports:
+    - port: 4000
+      targetPort: 4000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nexus-web
+  template:
+    metadata:
+      labels:
+        app: nexus-web
+    spec:
+      containers:
+        - name: web
+          image: nexus/web:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "http://nexus-api:4000"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus-web
+spec:
+  selector:
+    app: nexus-web
+  ports:
+    - port: 3000
+      targetPort: 3000

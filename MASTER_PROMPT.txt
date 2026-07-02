@@ -1,0 +1,658 @@
+﻿You are building a production-grade multi-tenant Hotel PMS (Property Management System) for hotels, resorts, hostels, and chains.
+
+IMPORTANT REQUIREMENTS:
+- The system must be enterprise-grade
+- Fully responsive
+- Real-time synchronized
+- Multi-hotel + multi-branch capable
+- Role-based access
+- No dummy logic
+- No hardcoded data
+- Clean architecture
+- Modular scalable backend
+- Zero state mismatch bugs
+- Prevent race conditions
+- Strong validation
+- Transaction-safe operations
+- All modules interconnected and synchronized
+- Every operation should update all dependent modules instantly
+
+====================================================
+CORE SYSTEM ARCHITECTURE
+====================================================
+
+Build:
+- Frontend
+- Backend
+- Database
+- APIs
+- Real-time sync layer
+- State management
+- Notifications
+- Audit logs
+- Reports
+- Authentication
+- File/document management
+
+Tech Expectations:
+- Next.js frontend
+- TypeScript everywhere
+- Tailwind modern UI
+- Node.js backend
+- PostgreSQL
+- Prisma ORM
+- Redis caching + realtime
+- WebSockets or Supabase realtime
+- RBAC auth system
+- Modular services
+- REST + optional GraphQL
+- Production-grade folder structure
+- Error boundaries
+- Retry mechanisms
+- Loading states
+- Optimistic updates
+- Pagination
+- Search/filter everywhere
+- Secure APIs
+- Multi-tenant architecture
+
+====================================================
+MULTI TENANT HOTEL SYSTEM
+====================================================
+
+The PMS must support:
+
+1. Multiple hotel owners
+2. Multiple hotel branches
+3. Separate hotel data isolation
+4. No cross-hotel data leakage
+5. Hotel switching dropdown
+6. Branch switching
+7. Tenant-aware APIs
+8. Tenant-aware database queries
+9. Tenant-aware authentication
+10. Independent reports per hotel
+
+Each hotel should have:
+- Rooms
+- Staff
+- Guests
+- Bookings
+- Services
+- Expenses
+- Billing
+- Inventory
+- Housekeeping
+- Analytics
+- Documents
+- Payments
+- Settings
+
+====================================================
+DASHBOARD FEATURES
+====================================================
+
+Create a modern dashboard with:
+
+- Occupancy %
+- Revenue today/week/month
+- Available rooms
+- Reserved rooms
+- Dirty rooms
+- Maintenance rooms
+- Upcoming check-ins
+- Upcoming check-outs
+- Active guests
+- Pending payments
+- Recent bookings
+- Walk-ins today
+- Staff activity
+- Expense summary
+- Service usage analytics
+
+Charts:
+- Revenue trends
+- Occupancy trends
+- Booking sources
+- Room type performance
+- Daily booking heatmaps
+
+Real-time updating dashboard.
+
+====================================================
+ROOM MANAGEMENT MODULE
+====================================================
+
+Room management should include:
+
+1. Add/Edit/Delete room
+2. Room number uniqueness validation
+3. Room categories
+4. Room floors
+5. Room status
+6. Room pricing
+7. Seasonal pricing
+8. Weekend pricing
+9. Dynamic pricing
+10. Room images
+11. Amenities
+12. Capacity
+13. Extra bed support
+14. Smoking/non-smoking
+15. Maintenance status
+16. Cleaning status
+
+Room states:
+- Available
+- Occupied
+- Reserved
+- Dirty
+- Cleaning in progress
+- Maintenance
+- Blocked
+- Out of service
+
+Room card should sync instantly after:
+- Check-in
+- Check-out
+- Cleaning
+- Maintenance
+- Reservation
+- Cancellation
+
+Room availability grid must update in real time.
+
+====================================================
+BOOKING & RESERVATION SYSTEM
+====================================================
+
+Booking engine must support:
+
+1. Direct booking
+2. Walk-in booking
+3. Future reservation
+4. Group bookings
+5. Corporate bookings
+6. OTA integrations ready
+7. Booking modification
+8. Booking cancellation
+9. Partial payment
+10. Advance payment
+11. Split payment
+12. Refund handling
+13. Booking extensions
+14. Early checkout
+15. Late checkout
+16. Booking notes
+17. Internal remarks
+18. Guest preferences
+19. Special requests
+
+Statuses:
+- Pending
+- Confirmed
+- Checked-in
+- Checked-out
+- Cancelled
+- No-show
+- Refunded
+
+Prevent:
+- Double booking
+- Race conditions
+- Overlapping reservations
+- Stale room states
+
+Availability checks must happen transactionally.
+
+====================================================
+CHECK-IN / CHECK-OUT
+====================================================
+
+Check-in flow:
+- Guest verification
+- ID upload
+- Passport upload
+- Aadhaar upload
+- Visa upload
+- Digital signature
+- Payment verification
+- Room assignment
+- Key issuance
+- Welcome email/SMS
+
+Check-out flow:
+- Final bill generation
+- Service charges
+- Minibar charges
+- Damage fees
+- Tax calculations
+- Refund/security deposit handling
+- Invoice generation
+- Email invoice
+- Room state reset
+- Housekeeping trigger
+
+====================================================
+GUEST MANAGEMENT
+====================================================
+
+Guest profiles should store:
+- Full name
+- Phone
+- Email
+- Address
+- Nationality
+- ID documents
+- Passport
+- GST info
+- Company info
+- Stay history
+- Preferences
+- Loyalty points
+- Notes
+- Blacklist flags
+
+Features:
+- Repeat guest detection
+- Guest search
+- Guest timeline
+- Stay history
+- Communication logs
+
+====================================================
+HOUSEKEEPING MODULE
+====================================================
+
+Housekeeping should include:
+
+1. Room cleaning queues
+2. Assign cleaners
+3. Cleaning status
+4. Dirty room detection
+5. Cleaning schedules
+6. Inspection flow
+7. Linen tracking
+8. Laundry tracking
+9. Cleaning history
+10. Maintenance reporting
+
+Statuses sync with room module instantly.
+
+Example:
+Checkout → Room becomes DIRTY automatically.
+Housekeeping completes → Room becomes AVAILABLE automatically.
+
+====================================================
+MAINTENANCE MODULE
+====================================================
+
+Features:
+- Report maintenance issue
+- Assign technician
+- Priority levels
+- Room blocking
+- Repair tracking
+- Maintenance history
+- Estimated completion time
+- Parts used
+- Cost tracking
+
+Room must automatically:
+AVAILABLE → MAINTENANCE
+MAINTENANCE → AVAILABLE
+
+====================================================
+BILLING & INVOICING
+====================================================
+
+Billing system should support:
+
+1. GST/VAT taxes
+2. Multi-tax support
+3. Invoice generation
+4. PDF invoices
+5. Advance invoices
+6. Refund invoices
+7. Split bills
+8. Corporate billing
+9. Discounts
+10. Coupon codes
+11. Extra charges
+12. Add-ons
+13. Multi-currency
+14. Cash/card/UPI payments
+15. Partial settlements
+
+Invoices should include:
+- Room charges
+- Service charges
+- Tax breakdown
+- Payment history
+- Outstanding balances
+
+====================================================
+PAYMENT:
+INPERSON NO INTEGRATION NEEDED
+
+Features:
+- Payment intents
+- Refunds
+- Partial refunds
+- Security deposits
+- Payment reconciliation
+- Failed payment recovery
+
+====================================================
+SERVICE MANAGEMENT
+====================================================
+
+Hotel services:
+- Room service
+- Laundry
+- Taxi
+- Wake-up calls
+- Extra bed
+- Airport pickup
+
+Features:
+- Service requests
+- Service tracking
+- Service billing
+- Department assignment
+- Service completion workflow
+
+All service charges sync to billing automatically.
+
+====================================================
+INVENTORY MANAGEMENT
+====================================================
+
+Inventory module:
+- Linen inventory
+- Toiletries
+- Kitchen inventory
+- Maintenance supplies
+
+
+
+
+====================================================
+EXPENSE MANAGEMENT
+====================================================
+
+Expense tracking:
+- Staff salaries
+- Utilities
+- Repairs
+- Purchases
+- Vendor payments
+
+Features:
+- Categories
+- Approval workflows
+- Receipt uploads
+- Expense analytics
+
+====================================================
+STAFF & ROLE MANAGEMENT
+====================================================
+
+Roles:
+- Super Admin
+- Hotel Owner
+- Branch Manager
+- Receptionist
+- Housekeeping
+- Accountant
+- Maintenance Staff
+
+
+
+====================================================
+NOTIFICATIONS SYSTEM
+====================================================
+
+Real-time notifications for:
+- New booking
+- Check-in
+- Check-out
+- Payment received
+- Cleaning completed
+- Maintenance issue
+- Low inventory
+- Booking cancellation
+
+Channels:
+- In-app
+- Email
+- SMS
+- WhatsApp
+
+====================================================
+DOCUMENT MANAGEMENT
+====================================================
+
+Support uploads:
+- IDs
+- Passports
+- Invoices
+- Receipts
+- Contracts
+- Images
+
+Features:
+- Secure storage
+- File previews
+- Expiry tracking
+- OCR-ready architecture
+
+====================================================
+ANALYTICS & REPORTS
+====================================================
+
+Generate reports:
+- Occupancy
+- Revenue
+- Taxes
+- Expenses
+- Booking trends
+- Guest demographics
+- Staff productivity
+- Cancellation analytics
+
+Export:
+- CSV
+- Excel
+- PDF
+
+====================================================
+SYNC REQUIREMENTS
+====================================================
+
+CRITICAL:
+Everything must synchronize instantly.
+
+Examples:
+
+CHECK-IN:
+- Room status changes
+- Occupancy updates
+- Dashboard updates
+- Guest active count updates
+- Billing initialized
+- Housekeeping updates
+
+CHECK-OUT:
+- Invoice finalized
+- Room becomes dirty
+- Dashboard updates
+- Housekeeping queue updates
+
+HOUSEKEEPING:
+- Cleaning completion updates room instantly
+
+BOOKING:
+- Room inventory updates instantly
+
+PAYMENTS:
+- Billing balance updates instantly
+
+NO stale UI states.
+NO inconsistent room counts.
+NO delayed occupancy updates.
+
+====================================================
+UI/UX REQUIREMENTS
+====================================================
+
+Design:
+- Minimalistic luxury hotel aesthetic
+- Modern SaaS style
+- Smooth animations
+- Soft shadows
+- Clean typography
+- Responsive tables
+- Kanban workflows
+- Calendar views
+- Drag-and-drop room planner
+
+Pages:
+- Dashboard
+- Rooms
+- Reservations
+- Guests
+- Billing
+- Housekeeping
+- Maintenance
+- Inventory
+- Services
+- Staff
+- Reports
+- Settings
+
+Components:
+- Global search
+- Filters
+- Sorting
+- Pagination
+- Quick actions
+- Modals
+- Drawers
+- Toasts
+- Confirmation dialogs
+
+====================================================
+CALENDAR & AVAILABILITY VIEW
+====================================================
+
+Create:
+- Hotel-style reservation calendar
+- Daily/weekly/monthly view
+- Drag booking between rooms
+- Drag extend reservation
+- Color-coded statuses
+
+====================================================
+MOBILE RESPONSIVENESS
+====================================================
+
+Must work perfectly on:
+- Desktop
+- Tablet
+- Mobile
+
+Mobile should support:
+- Quick check-in
+- Housekeeping updates
+- Staff task management
+
+====================================================
+SECURITY REQUIREMENTS
+====================================================
+
+Implement:
+- JWT auth
+- Refresh tokens
+- Rate limiting
+- Input validation
+- SQL injection protection
+- CSRF protection
+- XSS protection
+- Audit logging
+- Secure uploads
+- Tenant isolation
+
+====================================================
+DATABASE REQUIREMENTS
+====================================================
+
+Design normalized schema for:
+- Hotels
+- Branches
+- Rooms
+- Guests
+- Reservations
+- Payments
+- Invoices
+- Expenses
+- Staff
+- Services
+- Housekeeping
+- Maintenance
+- Inventory
+- Documents
+- Notifications
+
+Include:
+- Relations
+- Indexing
+- Soft deletes
+- Audit timestamps
+
+====================================================
+DEVOPS & PRODUCTION
+====================================================
+
+Setup:
+- Docker
+- CI/CD
+- Environment configs
+- Logging
+- Monitoring
+- Error tracking
+- Backup strategy
+- Redis caching
+- CDN-ready uploads
+
+====================================================
+FINAL EXPECTATIONS
+====================================================
+
+Generate:
+1. Full frontend
+2. Full backend
+3. Database schema
+4. APIs
+5. Authentication
+6. Real-time synchronization
+7. State management
+8. Modular architecture
+9. Production-ready code
+10. Beautiful UI
+11. Fully working flows
+12. Proper folder structure
+13. Seed data
+14. Validation
+15. Error handling
+16. Transaction-safe operations
+
+The PMS should feel comparable to:
+- Opera PMS
+- Cloudbeds
+- Hotelogix
+- eZee
+- Oracle Hospitality
+
+Make the entire system production-grade and cohesive.
+

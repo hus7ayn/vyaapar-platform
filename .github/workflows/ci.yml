@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nexus
+          POSTGRES_PASSWORD: nexus_secret
+          POSTGRES_DB: nexus_platform
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build shared package
+        run: pnpm --filter @nexus/shared build
+
+      - name: Generate Prisma client
+        run: pnpm --filter @nexus/api prisma:generate
+        env:
+          DATABASE_URL: postgresql://nexus:nexus_secret@localhost:5433/nexus_platform
+
+      - name: Migrate database
+        run: cd apps/api && pnpm exec prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://nexus:nexus_secret@localhost:5433/nexus_platform
+
+      - name: Build API
+        run: pnpm --filter @nexus/api build
+
+      - name: Build Web
+        run: pnpm --filter @nexus/web build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:4000
+
+      - name: API tests
+        run: pnpm --filter @nexus/api test
+        env:
+          DATABASE_URL: postgresql://nexus:nexus_secret@localhost:5433/nexus_platform
+          JWT_SECRET: test-secret
+          JWT_REFRESH_SECRET: test-refresh

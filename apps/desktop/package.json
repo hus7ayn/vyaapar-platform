@@ -1,0 +1,36 @@
+{
+  "name": "@nexus/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vyaapar Windows desktop — full web app in Electron shell",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "tsc -p tsconfig.electron.json && DESKTOP_DEVTOOLS=1 electron .",
+    "build": "tsc -p tsconfig.electron.json",
+    "pack": "pnpm build && electron-builder --dir",
+    "dist:win": "pnpm build && electron-builder --win"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2"
+  },
+  "build": {
+    "appId": "com.vyaapar.desktop",
+    "productName": "Vyaapar",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-electron/**/*"
+    ],
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
