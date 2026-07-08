@@ -144,7 +144,7 @@ export default function PosPage() {
           method: 'POST',
           token,
           branchId,
-          body: JSON.stringify({ payments }),
+          body: JSON.stringify(payload),
           timeoutMs: 20_000,
         });
       } else {
@@ -199,9 +199,12 @@ export default function PosPage() {
 
   const addProduct = useCallback(
     (p: PosProduct) => {
-      if (p.stockQty != null && p.stockQty <= 0) {
-        toast.error(`${p.name} is out of stock`);
-        return;
+      if (p.stockQty != null) {
+        const inCart = cart.find((c) => c.itemId === p.id)?.quantity ?? 0;
+        if (inCart >= p.stockQty) {
+          toast.error(`${p.name} is out of stock`);
+          return;
+        }
       }
       addItem({
         itemId: p.id,
@@ -217,7 +220,7 @@ export default function PosPage() {
       setSearch('');
       searchRef.current?.focus();
     },
-    [addItem],
+    [addItem, cart],
   );
 
   const handleBarcode = useCallback(

@@ -12,19 +12,26 @@ export class SaleService {
   // ─── Sale Invoices (also powers POS) ───────────────────────────────────────
 
   async createInvoice(businessId: string, userId: string, body: SaleBody) {
-    // Credit-limit check
-    if (body.partyId && body.payments?.some((p) => p.paymentType === 'DEBT')) {
-      const party = await this.core.prisma.party.findFirst({ where: { id: body.partyId, businessId } });
+    const doCreate = async () => {
+      const txn = await this.core.createTxn(businessId, userId, { ...body, txnType: 'SALE_INVOICE' });
+      this.events.emitOrderUpdate(businessId, txn.branchId ?? '', txn);
+      return txn;
+    };
+    if (!body.partyId) return doCreate();
+    // Credit-limit check. Serialize per-party via a Postgres advisory lock so two concurrent
+    // sales for the same party can't both read a stale currentBalance and jointly exceed creditLimit.
+    return this.core.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${body.partyId}))`;
+      const party = await tx.party.findFirst({ where: { id: body.partyId, businessId } });
       if (party?.creditLimit != null) {
-        const debtAmount = body.payments.filter((p) => p.paymentType === 'DEBT').reduce((s, p) => s + p.amount, 0);
-        if (Number(party.currentBalance) + debtAmount > Number(party.creditLimit)) {
+        const paidAmount = (body.payments ?? []).filter((p) => p.paymentType !== 'DEBT').reduce((s, p) => s + p.amount, 0);
+        const balance = Number(body.total) - paidAmount;
+        if (Number(party.currentBalance) + balance > Number(party.creditLimit)) {
           throw new BadRequestException(`Credit limit exceeded for ${party.name}`);
         }
       }
-    }
-    const txn = await this.core.createTxn(businessId, userId, { ...body, txnType: 'SALE_INVOICE' });
-    this.events.emitOrderUpdate(businessId, txn.branchId ?? '', txn);
-    return txn;
+      return doCreate();
+    });
   }
 
   listInvoices(businessId: string, q: Record<string, string>) {
@@ -35,16 +42,45 @@ export class SaleService {
     return this.core.listTxns(businessId, { txnType: 'SALE_INVOICE', status: 'HELD', branchId, limit: 100 });
   }
 
-  /** Resume a held POS invoice: post effects with given payments. */
-  async resumeHeld(businessId: string, id: string, payments: TxnPaymentInput[]) {
+  /** Resume a held POS invoice: apply any edits to lines/discounts made after holding, then post effects with given payments. */
+  async resumeHeld(businessId: string, id: string, body: SaleBody) {
     const txn = await this.core.getTxn(businessId, id);
     if (txn.status !== 'HELD') throw new BadRequestException('Transaction is not held');
 
-    const paid = (payments ?? []).filter((p) => p.paymentType !== 'DEBT').reduce((s, p) => s.add(new Prisma.Decimal(p.amount)), new Prisma.Decimal(0));
-    if (paid.gt(txn.total)) throw new BadRequestException('Paid amount exceeds total');
-    const balance = txn.total.sub(paid);
+    const payments = body.payments ?? [];
+    const hasLines = !!body.lines?.length;
+
+    const { built, subtotal, taxTotal } = hasLines
+      ? await this.core.buildLines(businessId, body.lines!, 'sale', txn.branchId)
+      : { built: null, subtotal: txn.subtotal, taxTotal: txn.taxAmount };
+
+    const { billDiscount, roundOff, total } = hasLines
+      ? this.core.computeTotals({
+          subtotal,
+          taxTotal,
+          discountPercent: body.discountPercent,
+          discountAmount: body.discountAmount,
+          additionalCharges: body.additionalCharges,
+          roundOffEnabled: body.roundOffEnabled,
+        })
+      : { billDiscount: txn.discountAmount, roundOff: txn.roundOff, total: txn.total };
+
+    const paid = payments.filter((p) => p.paymentType !== 'DEBT').reduce((s, p) => s.add(new Prisma.Decimal(p.amount)), new Prisma.Decimal(0));
+    if (paid.gt(total)) throw new BadRequestException('Paid amount exceeds total');
+    const balance = total.sub(paid);
+
+    // Credit-limit check
+    if (txn.partyId) {
+      const party = await this.core.prisma.party.findFirst({ where: { id: txn.partyId, businessId } });
+      if (party?.creditLimit != null) {
+        if (Number(party.currentBalance) + Number(balance) > Number(party.creditLimit)) {
+          throw new BadRequestException(`Credit limit exceeded for ${party.name}`);
+        }
+      }
+    }
 
     return this.core.prisma.$transaction(async (tx) => {
+      if (hasLines) await tx.txnLine.deleteMany({ where: { txnId: id } });
       const updated = await tx.txn.update({
         where: { id },
         data: {
@@ -53,10 +89,22 @@ export class SaleService {
           balance,
           heldAt: null,
           date: new Date(),
+          ...(hasLines
+            ? {
+                subtotal,
+                discountPercent: body.discountPercent != null ? new Prisma.Decimal(body.discountPercent) : null,
+                discountAmount: billDiscount,
+                taxAmount: taxTotal,
+                additionalCharges: body.additionalCharges?.length ? body.additionalCharges : undefined,
+                roundOff,
+                total,
+                lines: { create: built!.map(({ itemId, ...rest }) => ({ ...rest, item: itemId ? { connect: { id: itemId } } : undefined } as Prisma.TxnLineCreateWithoutTxnInput)) },
+              }
+            : {}),
         },
         include: { lines: true },
       });
-      await this.core.postEffects(tx, businessId, updated, {}, payments ?? []);
+      await this.core.postEffects(tx, businessId, updated, {}, payments);
       return updated;
     });
   }
@@ -82,6 +130,9 @@ export class SaleService {
         discountAmount: Number(l.discountAmount),
         taxRate: Number(l.taxRate),
       })),
+      discountPercent: txn.discountPercent != null ? Number(txn.discountPercent) : undefined,
+      discountAmount: txn.discountPercent == null ? Number(txn.discountAmount) : undefined,
+      additionalCharges: (txn.additionalCharges as { name: string; amount: number }[] | null) ?? undefined,
       payments: body?.payments ?? [{ paymentType: 'CASH', amount: Number(txn.total) }],
       description: `Refund against ${txn.txnNumber}`,
     });
@@ -151,6 +202,11 @@ export class SaleService {
     let allocations = body.allocations;
     if (!allocations?.length && body.autoAllocate !== false) {
       allocations = await this.autoAllocate(businessId, body.partyId, amount, 'SALE_INVOICE');
+    } else if (allocations?.length) {
+      const allocatedTotal = allocations.reduce((sum, a) => sum + a.amount, 0);
+      if (allocatedTotal !== amount) {
+        throw new BadRequestException('Sum of allocation amounts must equal the payment amount');
+      }
     }
 
     return this.core.createTxn(businessId, userId, {

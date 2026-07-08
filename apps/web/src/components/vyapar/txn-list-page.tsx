@@ -51,7 +51,12 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
   });
 
   const convertMutation = useMutation({
-    mutationFn: (id: string) => api(meta.convertEndpoint!(id), { method: 'POST', token, body: JSON.stringify({}) }),
+    mutationFn: (t: Txn) => {
+      const payments = (t.payments ?? [])
+        .filter((p) => p.paymentType !== 'DEBT')
+        .map((p) => ({ paymentType: p.paymentType, bankAccountId: p.bankAccountId ?? undefined, amount: Number(p.amount) }));
+      return api(meta.convertEndpoint!(t.id), { method: 'POST', token, body: JSON.stringify({ payments }) });
+    },
     onSuccess: () => { toast.success('Converted successfully'); queryClient.invalidateQueries(); },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -130,7 +135,7 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
                         <Button
                           variant="outline" size="sm" title={meta.convertLabel}
                           disabled={convertMutation.isPending}
-                          onClick={() => convertMutation.mutate(t.id)}
+                          onClick={() => convertMutation.mutate(t)}
                         >
                           <FileOutput className="h-4 w-4" />
                         </Button>

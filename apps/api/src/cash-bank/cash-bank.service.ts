@@ -187,18 +187,21 @@ export class CashBankService {
     if (!account) throw new NotFoundException('Account not found');
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.bankAccount.update({
-        where: { id: account.id },
-        data: { balance: { increment: cheque.direction === 'RECEIVED' ? cheque.amount : cheque.amount.neg() } },
-      });
-      return tx.cheque.update({
-        where: { id },
+      const { count } = await tx.cheque.updateMany({
+        where: { id, status: 'OPEN' },
         data: {
           status: 'CLOSED',
           depositAccountId: body.accountId,
           transferDate: body.transferDate ? new Date(body.transferDate) : new Date(),
         },
       });
+      if (count === 0) throw new BadRequestException('Cheque already settled');
+
+      await tx.bankAccount.update({
+        where: { id: account.id },
+        data: { balance: { increment: cheque.direction === 'RECEIVED' ? cheque.amount : cheque.amount.neg() } },
+      });
+      return tx.cheque.findUnique({ where: { id } });
     });
   }
 
@@ -208,11 +211,17 @@ export class CashBankService {
     if (cheque.status !== 'CLOSED' || !cheque.depositAccountId) throw new BadRequestException('Cheque is not settled');
 
     return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.cheque.updateMany({
+        where: { id, status: 'CLOSED' },
+        data: { status: 'OPEN', depositAccountId: null, transferDate: null },
+      });
+      if (count === 0) throw new BadRequestException('Cheque is not settled');
+
       await tx.bankAccount.update({
         where: { id: cheque.depositAccountId! },
         data: { balance: { increment: cheque.direction === 'RECEIVED' ? cheque.amount.neg() : cheque.amount } },
       });
-      return tx.cheque.update({ where: { id }, data: { status: 'OPEN', depositAccountId: null, transferDate: null } });
+      return tx.cheque.findUnique({ where: { id } });
     });
   }
 
@@ -283,8 +292,8 @@ export class CashBankService {
     const amount = D(body.amount);
     if (amount.lte(0)) throw new BadRequestException('Amount must be positive');
 
-    const isDisbursement = body.txnType === 'DISBURSEMENT';
-    const delta = isDisbursement ? amount : amount.neg();
+    const isRepayment = body.txnType === 'EMI_PAYMENT';
+    const delta = isRepayment ? amount.neg() : amount;
 
     return this.prisma.$transaction(async (tx) => {
       if (body.paidFromAccountId) {
@@ -292,7 +301,7 @@ export class CashBankService {
         if (!paidFromAccount) throw new NotFoundException('Account not found');
         await tx.bankAccount.update({
           where: { id: paidFromAccount.id },
-          data: { balance: { increment: isDisbursement ? amount : amount.neg() } },
+          data: { balance: { increment: isRepayment ? amount.neg() : amount } },
         });
       }
       await tx.loanAccount.update({ where: { id: loanId }, data: { currentBalance: { increment: delta } } });
@@ -300,8 +309,8 @@ export class CashBankService {
         data: {
           loanAccountId: loanId,
           txnType: body.txnType,
-          principalAmount: isDisbursement ? amount : amount,
-          interestAmount: 0,
+          principalAmount: body.txnType === 'INTEREST' ? D(0) : amount,
+          interestAmount: body.txnType === 'INTEREST' ? amount : D(0),
           totalAmount: amount,
           date: body.date ? new Date(body.date) : new Date(),
           description: body.description,

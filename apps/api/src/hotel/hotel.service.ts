@@ -1,13 +1,18 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { encrypt, maskAadhaar } from '../common/utils/encryption.util';
 import { EventsGateway } from '../events/events.gateway';
+import { TxnCoreService } from '../txns/txn-core.service';
+
+type Tx = Prisma.TransactionClient;
 
 @Injectable()
 export class HotelService {
   constructor(
     private prisma: PrismaService,
     private events: EventsGateway,
+    private txnCore: TxnCoreService,
   ) {}
 
   getRooms(businessId: string, branchId?: string) {
@@ -135,11 +140,12 @@ export class HotelService {
     checkIn: Date | string,
     checkOut: Date | string,
     excludeReservationId?: string,
+    client: PrismaService | Tx = this.prisma,
   ) {
     const start = new Date(checkIn);
     const end = new Date(checkOut);
 
-    const overlapping = await this.prisma.reservation.findFirst({
+    const overlapping = await client.reservation.findFirst({
       where: {
         roomId,
         businessId,
@@ -222,8 +228,11 @@ export class HotelService {
     const totalAmount = data.roomRate * nights;
     const bookingRef = `BK-${Date.now().toString(36).toUpperCase()}`;
 
-    const [reservation] = await this.prisma.$transaction([
-      this.prisma.reservation.create({
+    const reservation = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${data.roomId}))`;
+      await this.checkOverlappingReservation(businessId, data.roomId, data.checkIn, data.checkOut, undefined, tx);
+
+      const created = await tx.reservation.create({
         data: {
           businessId,
           branchId: room.branchId,
@@ -238,12 +247,13 @@ export class HotelService {
           checkedInAt: new Date(),
         },
         include: { room: true, guest: true },
-      }),
-      this.prisma.room.update({
+      });
+      await tx.room.update({
         where: { id: data.roomId },
         data: { status: 'OCCUPIED' },
-      }),
-    ]);
+      });
+      return created;
+    });
 
     this.events.emitRoomUpdate(businessId, reservation);
     return reservation;
@@ -266,15 +276,20 @@ export class HotelService {
       });
 
       // 2. Add them as folio charges if they are not already added (to prevent duplicates)
+      const existingCharges = await tx.folioCharge.findMany({
+        where: { reservationId: reservation.id, chargeType: 'SERVICE' },
+      });
+      const matchedChargeIds = new Set<string>();
       for (const req of serviceRequests) {
-        const existingCharge = await tx.folioCharge.findFirst({
-          where: {
-            reservationId: reservation.id,
-            description: { startsWith: req.serviceType.replace('_', ' ') },
-            amount: req.amount!,
-          },
-        });
-        if (!existingCharge) {
+        const existingCharge = existingCharges.find(
+          (c) =>
+            !matchedChargeIds.has(c.id) &&
+            c.description.startsWith(req.serviceType.replace('_', ' ')) &&
+            Number(c.amount) === Number(req.amount!),
+        );
+        if (existingCharge) {
+          matchedChargeIds.add(existingCharge.id);
+        } else {
           await tx.folioCharge.create({
             data: {
               reservationId: reservation.id,
@@ -349,26 +364,32 @@ export class HotelService {
     );
     const bookingRef = `BK-${Date.now().toString(36).toUpperCase()}`;
 
-    const reservation = await this.prisma.reservation.create({
-      data: {
-        businessId,
-        branchId: room.branchId,
-        roomId: data.roomId,
-        guestId,
-        bookingRef,
-        status: 'CONFIRMED',
-        source: data.source || 'MANUAL',
-        checkIn: new Date(data.checkIn),
-        checkOut: new Date(data.checkOut),
-        roomRate: data.roomRate,
-        totalAmount: data.roomRate * nights,
-      },
-      include: { room: true, guest: true },
-    });
+    const reservation = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${data.roomId}))`;
+      await this.checkOverlappingReservation(businessId, data.roomId, data.checkIn, data.checkOut, undefined, tx);
 
-    await this.prisma.room.update({
-      where: { id: data.roomId },
-      data: { status: 'RESERVED' },
+      const created = await tx.reservation.create({
+        data: {
+          businessId,
+          branchId: room.branchId,
+          roomId: data.roomId,
+          guestId,
+          bookingRef,
+          status: 'CONFIRMED',
+          source: data.source || 'MANUAL',
+          checkIn: new Date(data.checkIn),
+          checkOut: new Date(data.checkOut),
+          roomRate: data.roomRate,
+          totalAmount: data.roomRate * nights,
+        },
+        include: { room: true, guest: true },
+      });
+
+      await tx.room.update({
+        where: { id: data.roomId },
+        data: { status: 'RESERVED' },
+      });
+      return created;
     });
 
     this.events.emitRoomUpdate(businessId, reservation);
@@ -414,6 +435,19 @@ export class HotelService {
         include: { room: true, guest: true },
       });
 
+      // Release the previous room and sync the new room's status when the reservation is moved
+      if (data.roomId && data.roomId !== reservation.roomId) {
+        await tx.room.update({
+          where: { id: reservation.roomId },
+          data: { status: 'AVAILABLE' },
+        });
+        if (status === 'CHECKED_IN') {
+          await tx.room.update({ where: { id: res.roomId }, data: { status: 'OCCUPIED' } });
+        } else if (status === 'CONFIRMED') {
+          await tx.room.update({ where: { id: res.roomId }, data: { status: 'RESERVED' } });
+        }
+      }
+
       // Handle room status updates on reservation status change
       if (data.status === 'CHECKED_IN') {
         await tx.room.update({
@@ -421,14 +455,55 @@ export class HotelService {
           data: { status: 'OCCUPIED' },
         });
       } else if (data.status === 'CANCELLED') {
-        await tx.room.update({
-          where: { id: res.roomId },
-          data: { status: 'AVAILABLE' },
+        const otherActiveReservation = await tx.reservation.findFirst({
+          where: { businessId, roomId: res.roomId, id: { not: id }, status: 'CHECKED_IN' },
         });
+        if (!otherActiveReservation) {
+          await tx.room.update({
+            where: { id: res.roomId },
+            data: { status: 'AVAILABLE' },
+          });
+        }
       } else if (data.status === 'CONFIRMED') {
         await tx.room.update({
           where: { id: res.roomId },
           data: { status: 'RESERVED' },
+        });
+      } else if (data.status === 'CHECKED_OUT') {
+        const serviceRequests = await tx.serviceRequest.findMany({
+          where: { reservationId: id, amount: { not: null } },
+        });
+        for (const req of serviceRequests) {
+          const existingCharge = await tx.folioCharge.findFirst({
+            where: {
+              reservationId: id,
+              description: { startsWith: req.serviceType.replace('_', ' ') },
+              amount: req.amount!,
+            },
+          });
+          if (!existingCharge) {
+            await tx.folioCharge.create({
+              data: {
+                reservationId: id,
+                description: `${req.serviceType.replace('_', ' ')}: ${req.description || 'Request'}`,
+                amount: req.amount!,
+                chargeType: 'SERVICE',
+              },
+            });
+          }
+        }
+        const folioCharges = await tx.folioCharge.findMany({ where: { reservationId: id } });
+        const extraTotal = folioCharges.reduce((sum, c) => sum + Number(c.amount), 0);
+        await tx.reservation.update({
+          where: { id },
+          data: { checkedOutAt: new Date(), extraCharges: extraTotal },
+        });
+        await tx.room.update({
+          where: { id: res.roomId },
+          data: { status: 'CLEANING' },
+        });
+        await tx.housekeepingTask.create({
+          data: { businessId, roomId: res.roomId, status: 'PENDING', priority: 'HIGH' },
         });
       }
 
@@ -440,19 +515,34 @@ export class HotelService {
     return finalRes;
   }
 
-  async addFolioCharge(businessId: string, reservationId: string, data: { description: string; amount: number; chargeType?: string }) {
+  async addFolioCharge(businessId: string, reservationId: string, data: { description: string; amount: number; chargeType?: string; itemId?: string; quantity?: number }) {
     const reservation = await this.prisma.reservation.findFirst({
       where: { id: reservationId, businessId }
     });
     if (!reservation) throw new NotFoundException('Reservation not found');
 
-    await this.prisma.folioCharge.create({
-      data: {
-        reservationId,
-        description: data.description,
-        amount: data.amount,
-        chargeType: data.chargeType || 'MISC',
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.folioCharge.create({
+        data: {
+          reservationId,
+          itemId: data.itemId,
+          quantity: data.itemId ? (data.quantity ?? 1) : undefined,
+          description: data.description,
+          amount: data.amount,
+          chargeType: data.chargeType || 'MISC',
+        },
+      });
+
+      if (data.itemId) {
+        await this.txnCore.applyStock(
+          tx,
+          businessId,
+          reservation.branchId,
+          'SALE_INVOICE',
+          `Folio charge for booking ${reservation.bookingRef}`,
+          [{ itemId: data.itemId, quantity: data.quantity ?? 1 }],
+        );
+      }
     });
 
     return this.getReservationWithDetails(businessId, reservationId);
@@ -465,7 +555,7 @@ export class HotelService {
     });
     if (!reservation) throw new NotFoundException('Reservation not found');
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       // Create cancellation fee folio charge
       if (data?.cancellationFee && data.cancellationFee > 0) {
         await tx.folioCharge.create({
@@ -488,7 +578,7 @@ export class HotelService {
             chargeType: 'REFUND',
           },
         });
-        
+
         // Update paid amount on reservation
         await tx.reservation.update({
           where: { id },
@@ -498,20 +588,39 @@ export class HotelService {
         });
       }
 
-      const updated = await tx.reservation.update({
+      const res = await tx.reservation.update({
         where: { id },
         data: { status: 'CANCELLED' },
         include: { room: true, guest: true, folioCharges: true },
       });
 
-      await tx.room.update({
-        where: { id: reservation.roomId },
-        data: { status: 'AVAILABLE' },
+      const otherActiveReservation = await tx.reservation.findFirst({
+        where: { businessId, roomId: reservation.roomId, id: { not: id }, status: 'CHECKED_IN' },
       });
+      if (!otherActiveReservation) {
+        await tx.room.update({
+          where: { id: reservation.roomId },
+          data: { status: 'AVAILABLE' },
+        });
+      }
 
-      this.events.emitRoomUpdate(businessId, updated);
-      return updated;
+      return res;
     });
+
+    // Post the refund into the shared accounting engine so it hits cash/bank balances,
+    // same as folio payments do.
+    if (data?.refundAmount && data.refundAmount > 0) {
+      await this.txnCore.createTxn(businessId, null, {
+        txnType: 'PAYMENT_OUT',
+        branchId: reservation.branchId ?? undefined,
+        total: data.refundAmount,
+        payments: [{ paymentType: 'CASH', amount: data.refundAmount }],
+        description: `Refund for cancelled booking ${reservation.bookingRef}`,
+      });
+    }
+
+    this.events.emitRoomUpdate(businessId, updated);
+    return updated;
   }
 
   createRoomCategory(
@@ -553,6 +662,16 @@ export class HotelService {
       });
     });
 
+    // Post the payment into the shared accounting engine so it hits cash/bank balances
+    // and shows up in cash-bank summaries and reports, same as shop payments.
+    await this.txnCore.createTxn(businessId, null, {
+      txnType: 'PAYMENT_IN',
+      branchId: reservation.branchId ?? undefined,
+      total: data.amount,
+      payments: [{ paymentType: data.method, amount: data.amount, referenceNo: data.reference }],
+      description: `Folio payment for booking ${reservation.bookingRef}`,
+    });
+
     return this.getReservationWithDetails(businessId, reservationId);
   }
 
@@ -575,7 +694,7 @@ export class HotelService {
       where: {
         businessId,
         branchId,
-        status: { in: ['CHECKED_IN', 'CHECKED_OUT'] },
+        status: 'CHECKED_IN',
         checkIn: { lte: today },
         checkOut: { gte: today },
       },

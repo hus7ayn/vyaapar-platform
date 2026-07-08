@@ -71,10 +71,6 @@ export class SettingsService {
       },
     });
 
-    const settings = await this.getFirmSettings(businessId, branchId);
-    const prefixes = { ...((settings.txnPrefixes as Record<string, string>) ?? {}), [body.txnType]: body.prefix };
-    await this.prisma.firmSettings.update({ where: { businessId }, data: { txnPrefixes: prefixes } });
-
     return seq;
   }
 }

@@ -88,10 +88,10 @@ export class TxnCoreService {
 
   // ─── Totals computation ────────────────────────────────────────────────────
 
-  async buildLines(businessId: string, lines: TxnLineInput[], priceField: 'sale' | 'purchase') {
+  async buildLines(businessId: string, lines: TxnLineInput[], priceField: 'sale' | 'purchase', branchId?: string | null) {
     const itemIds = lines.map((l) => l.itemId).filter(Boolean) as string[];
     const items = itemIds.length
-      ? await this.prisma.item.findMany({ where: { id: { in: itemIds }, businessId } })
+      ? await this.prisma.item.findMany({ where: { id: { in: itemIds }, businessId, ...(branchId ? { branchId } : {}) } })
       : [];
     const itemMap = new Map(items.map((i) => [i.id, i]));
 
@@ -163,7 +163,7 @@ export class TxnCoreService {
     branchId: string | null | undefined,
     txnType: TxnType,
     reference: string,
-    lines: { itemId?: string | null; quantity: Prisma.Decimal | number }[],
+    lines: { itemId?: string | null; quantity: Prisma.Decimal | number; unit?: string | null }[],
     invert = false,
   ) {
     const effect = STOCK_EFFECT[txnType];
@@ -174,7 +174,10 @@ export class TxnCoreService {
       if (!line.itemId) continue;
       const item = await tx.item.findUnique({ where: { id: line.itemId } });
       if (!item || !item.trackStock || item.itemType === 'SERVICE') continue;
-      const qty = D(line.quantity).mul(direction);
+      const lineQty = line.unit && item.secondaryUnit && line.unit === item.secondaryUnit && item.conversionRate
+        ? D(line.quantity).mul(item.conversionRate)
+        : D(line.quantity);
+      const qty = lineQty.mul(direction);
 
       await tx.item.update({
         where: { id: item.id },
@@ -280,6 +283,15 @@ export class TxnCoreService {
       if (invert) {
         // Reverse: delete payment rows handled by cascade; just undo balances/cheques
         if (p.paymentType === 'CHEQUE') {
+          const cheques = await tx.cheque.findMany({ where: { businessId, txnPayment: { txnId } } });
+          for (const cheque of cheques) {
+            if (cheque.status === 'CLOSED' && cheque.depositAccountId) {
+              await tx.bankAccount.update({
+                where: { id: cheque.depositAccountId },
+                data: { balance: { increment: cheque.direction === 'RECEIVED' ? cheque.amount.neg() : cheque.amount } },
+              });
+            }
+          }
           await tx.cheque.deleteMany({ where: { businessId, txnPayment: { txnId } } });
         } else {
           const account = await this.resolveMoneyAccount(tx, businessId, branchId, p);
@@ -386,10 +398,19 @@ export class TxnCoreService {
     paymentTxnId: string,
     allocations: AllocationInput[],
     invert = false,
+    partyId?: string | null,
+    paymentTxnType?: 'PAYMENT_IN' | 'PAYMENT_OUT',
   ) {
+    const expectedTxnType = paymentTxnType === 'PAYMENT_IN' ? 'SALE_INVOICE' : paymentTxnType === 'PAYMENT_OUT' ? 'PURCHASE_BILL' : undefined;
     for (const a of allocations) {
       const against = await tx.txn.findFirst({ where: { id: a.againstTxnId, businessId } });
       if (!against) throw new BadRequestException(`Transaction ${a.againstTxnId} not found`);
+      if (expectedTxnType && against.txnType !== expectedTxnType) {
+        throw new BadRequestException(`Transaction ${a.againstTxnId} is not a ${expectedTxnType}`);
+      }
+      if (partyId && against.partyId !== partyId) {
+        throw new BadRequestException(`Transaction ${a.againstTxnId} does not belong to this party`);
+      }
       const amount = D(a.amount).add(D(a.discountAmount ?? 0)).mul(invert ? -1 : 1);
       const newPaid = against.paidAmount.add(amount);
       const newBalance = against.total.sub(newPaid);
@@ -429,12 +450,12 @@ export class TxnCoreService {
 
     let party: { id: string; name: string } | null = null;
     if (input.partyId) {
-      party = await this.prisma.party.findFirst({ where: { id: input.partyId, businessId, deletedAt: null } });
+      party = await this.prisma.party.findFirst({ where: { id: input.partyId, businessId, deletedAt: null, ...(input.branchId ? { branchId: input.branchId } : {}) } });
       if (!party) throw new BadRequestException('Party not found');
     }
 
     const { built, subtotal, taxTotal } = hasLines
-      ? await this.buildLines(businessId, input.lines!, isSaleSide ? 'sale' : 'purchase')
+      ? await this.buildLines(businessId, input.lines!, isSaleSide ? 'sale' : 'purchase', input.branchId)
       : { built: [], subtotal: D(input.total ?? 0), taxTotal: D(0) };
 
     const { billDiscount, roundOff, total } = hasLines
@@ -521,7 +542,7 @@ export class TxnCoreService {
   async postEffects(
     tx: Tx,
     businessId: string,
-    txn: { id: string; txnType: string; txnNumber: string; branchId: string | null; partyId: string | null; partyName: string | null; total: Prisma.Decimal; balance: Prisma.Decimal; date: Date; p2pToPartyId?: string | null; lines?: { itemId: string | null; quantity: Prisma.Decimal }[] },
+    txn: { id: string; txnType: string; txnNumber: string; branchId: string | null; partyId: string | null; partyName: string | null; total: Prisma.Decimal; balance: Prisma.Decimal; date: Date; p2pToPartyId?: string | null; lines?: { itemId: string | null; quantity: Prisma.Decimal; unit?: string | null }[] },
     input: { allocations?: AllocationInput[] },
     payments: TxnPaymentInput[],
     invert = false,
@@ -566,7 +587,7 @@ export class TxnCoreService {
 
     // 4. Bill-wise allocations for payments
     if ((txnType === 'PAYMENT_IN' || txnType === 'PAYMENT_OUT') && (input.allocations as AllocationInput[] | undefined)?.length) {
-      await this.applyAllocations(tx, businessId, txn.id, input.allocations as AllocationInput[], invert);
+      await this.applyAllocations(tx, businessId, txn.id, input.allocations as AllocationInput[], invert, txn.partyId, txnType as 'PAYMENT_IN' | 'PAYMENT_OUT');
     }
   }
 
@@ -669,6 +690,11 @@ export class TxnCoreService {
       if (txn.sourceTxnId) {
         await tx.txn.update({ where: { id: txn.sourceTxnId }, data: { status: 'ORDER_OPEN' } }).catch(() => {});
       }
+      // Un-link any Payroll paid via this txn so it can be reconciled/re-paid.
+      await tx.payroll.updateMany({
+        where: { txnId: id },
+        data: { status: 'DRAFT', txnId: null, paymentMode: null, paidAt: null, processedAt: null },
+      });
       return tx.txn.update({ where: { id }, data: { deletedAt: new Date() } });
     });
   }
@@ -718,7 +744,23 @@ export class TxnCoreService {
     }
     // Atomically claim the conversion (compare-and-swap on status) before creating the
     // target txn, so two concurrent conversions of the same source can't both proceed.
-    const newStatus = source.txnType === 'ESTIMATE' || source.txnType === 'DELIVERY_CHALLAN' ? 'CONVERTED' : 'ORDER_CLOSED';
+    let newStatus: string = source.txnType === 'ESTIMATE' || source.txnType === 'DELIVERY_CHALLAN' ? 'CONVERTED' : 'ORDER_CLOSED';
+    const overrideLines = overrides?.lines as { itemId?: string; quantity: number }[] | undefined;
+    if (newStatus === 'ORDER_CLOSED' && overrideLines) {
+      // Partial receive support: only close the order once the cumulative received
+      // quantity (prior conversions + this one) covers every ordered line. Otherwise
+      // leave it ORDER_OPEN so the remaining quantity can still be received later.
+      const priorLines = await this.prisma.txnLine.findMany({
+        where: { txn: { sourceTxnId: source.id, businessId, deletedAt: null } },
+      });
+      const receivedByItem = new Map<string, number>();
+      for (const l of [...priorLines, ...overrideLines]) {
+        if (!l.itemId) continue;
+        receivedByItem.set(l.itemId, (receivedByItem.get(l.itemId) ?? 0) + Number(l.quantity));
+      }
+      const fullyReceived = source.lines.every((l) => !l.itemId || (receivedByItem.get(l.itemId) ?? 0) >= Number(l.quantity));
+      if (!fullyReceived) newStatus = source.status;
+    }
     const claim = await this.prisma.txn.updateMany({
       where: { id: source.id, businessId, status: source.status },
       data: { status: newStatus },

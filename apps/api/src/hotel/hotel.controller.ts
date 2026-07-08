@@ -167,7 +167,7 @@ export class HotelController {
   addFolioCharge(
     @CurrentUser('businessId') businessId: string,
     @Param('id') id: string,
-    @Body() body: { description: string; amount: number; chargeType?: string },
+    @Body() body: { description: string; amount: number; chargeType?: string; itemId?: string; quantity?: number },
   ) {
     return this.hotel.addFolioCharge(businessId, id, body);
   }

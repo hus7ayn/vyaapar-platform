@@ -107,9 +107,6 @@ export class PlatformService {
   }
 
   async createTenant(dto: CreateTenantDto) {
-    const existing = await this.prisma.user.findFirst({ where: { email: dto.adminEmail } });
-    if (existing) throw new ConflictException('Admin email already in use');
-
     const slug = dto.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
@@ -117,33 +114,49 @@ export class PlatformService {
 
     const passwordHash = await bcrypt.hash(dto.adminPassword, 12);
 
-    return this.prisma.business.create({
-      data: {
-        name: dto.name,
-        slug: `${slug}-${Date.now().toString(36)}`,
-        email: dto.adminEmail,
-        phone: dto.phone,
-        gstNumber: dto.gstNumber,
-        branches: {
-          create: { name: 'Main Branch', code: 'MAIN', isDefault: true },
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const existing = await tx.user.findFirst({ where: { email: dto.adminEmail } });
+          if (existing) throw new ConflictException('Admin email already in use');
+
+          return tx.business.create({
+            data: {
+              name: dto.name,
+              slug: `${slug}-${Date.now().toString(36)}`,
+              email: dto.adminEmail,
+              phone: dto.phone,
+              gstNumber: dto.gstNumber,
+              branches: {
+                create: { name: 'Main Branch', code: 'MAIN', isDefault: true },
+              },
+              warehouses: {
+                create: { name: 'Main Warehouse', code: 'WH-MAIN' },
+              },
+              users: {
+                create: {
+                  email: dto.adminEmail,
+                  passwordHash,
+                  firstName: dto.adminFirstName,
+                  lastName: dto.adminLastName,
+                  phone: dto.phone,
+                  role: 'ADMIN',
+                  permissions: ROLE_PERMISSIONS.ADMIN,
+                },
+              },
+            },
+            include: { branches: true, users: { select: { id: true, email: true, role: true } } },
+          });
         },
-        warehouses: {
-          create: { name: 'Main Warehouse', code: 'WH-MAIN' },
-        },
-        users: {
-          create: {
-            email: dto.adminEmail,
-            passwordHash,
-            firstName: dto.adminFirstName,
-            lastName: dto.adminLastName,
-            phone: dto.phone,
-            role: 'ADMIN',
-            permissions: ROLE_PERMISSIONS.ADMIN,
-          },
-        },
-      },
-      include: { branches: true, users: { select: { id: true, email: true, role: true } } },
-    });
+        { isolationLevel: 'Serializable' },
+      );
+    } catch (err) {
+      if (err instanceof ConflictException) throw err;
+      if ((err as { code?: string }).code === 'P2034') {
+        throw new ConflictException('Admin email already in use');
+      }
+      throw err;
+    }
   }
 
   async updateTenant(id: string, dto: UpdateTenantDto) {

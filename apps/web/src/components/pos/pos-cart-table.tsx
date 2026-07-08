@@ -123,7 +123,7 @@ export function PosCartTable({ onEditLine }: { onEditLine: (item: CartItem) => v
                   <div className="flex items-center justify-center gap-0.5">
                     <button type="button" className="h-6 w-6 rounded border text-xs hover:bg-muted" onClick={() => updateQuantity(item.itemId, item.quantity - 1)}>−</button>
                     <span className="w-8 text-center font-semibold">{item.quantity}</span>
-                    <button type="button" className="h-6 w-6 rounded border text-xs hover:bg-muted" onClick={() => updateQuantity(item.itemId, item.quantity + 1)}>+</button>
+                    <button type="button" className="h-6 w-6 rounded border text-xs hover:bg-muted disabled:opacity-40" disabled={item.stockQty != null && item.quantity >= item.stockQty} onClick={() => updateQuantity(item.itemId, item.quantity + 1)}>+</button>
                   </div>
                 </td>
                 <td className="p-2 text-right">{formatCurrency(item.unitPrice)}</td>

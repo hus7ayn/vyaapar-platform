@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { CreateTxnInput, TxnCoreService } from '../txns/txn-core.service';
 import { SaleService } from '../sale/sale.service';
 
@@ -13,8 +14,12 @@ export class PurchaseService {
   async createBill(businessId: string, userId: string, body: PurchaseBody) {
     if (!body.partyId) throw new BadRequestException('Supplier party is required');
     const bill = await this.core.createTxn(businessId, userId, { ...body, txnType: 'PURCHASE_BILL' });
+    await this.syncItemPurchasePrices(bill);
+    return bill;
+  }
 
-    // Vyapar updates item purchase price from the latest bill
+  // Vyapar updates item purchase price from the latest bill
+  private async syncItemPurchasePrices(bill: { lines: { itemId?: string | null; unitPrice: number | Prisma.Decimal }[] }) {
     for (const line of bill.lines) {
       if (line.itemId) {
         await this.core.prisma.item.update({
@@ -23,7 +28,6 @@ export class PurchaseService {
         }).catch(() => {});
       }
     }
-    return bill;
   }
 
   listBills(businessId: string, q: Record<string, string>) {
@@ -51,13 +55,16 @@ export class PurchaseService {
   }
 
   /** Receive a PO → converts it into a purchase bill (stock IN + payable). */
-  receiveOrder(businessId: string, userId: string, id: string, overrides?: Partial<CreateTxnInput>) {
-    return this.core.convertTxn(businessId, userId, id, 'PURCHASE_BILL', overrides);
+  async receiveOrder(businessId: string, userId: string, id: string, overrides?: Partial<CreateTxnInput>) {
+    const bill = await this.core.convertTxn(businessId, userId, id, 'PURCHASE_BILL', overrides);
+    await this.syncItemPurchasePrices(bill);
+    return bill;
   }
 
   // ─── Payment Out ───────────────────────────────────────────────────────────
 
   async createPaymentOut(businessId: string, userId: string, body: PurchaseBody & { amount?: number; autoAllocate?: boolean }) {
+    if (!body.partyId) throw new BadRequestException('Party is required for payment-out');
     const amount = body.amount ?? body.total ?? 0;
     if (amount <= 0) throw new BadRequestException('Amount must be positive');
 

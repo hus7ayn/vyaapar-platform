@@ -93,9 +93,11 @@ export class AuthService {
   async login(dto: LoginDto, ip?: string) {
     const user = await this.prisma.user.findFirst({
       where: { email: dto.email, deletedAt: null },
+      include: { business: true },
     });
     if (!user) throw new UnauthorizedException('Invalid credentials');
     if (user.isLocked) throw new UnauthorizedException('Account locked');
+    if (!user.business.isActive) throw new UnauthorizedException('Business account suspended');
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) {

@@ -279,11 +279,11 @@ export default function HotelPage() {
   });
 
   const updatePaymentMutation = useMutation({
-    mutationFn: async (data: { id: string; paidAmount: number }) =>
-      api<any>(`/hotel/reservations/${data.id}`, {
-        method: 'PATCH',
+    mutationFn: async (data: { id: string; amount: number }) =>
+      api<any>(`/hotel/reservations/${data.id}/payments`, {
+        method: 'POST',
         token,
-        body: JSON.stringify({ paidAmount: data.paidAmount }),
+        body: JSON.stringify({ method: 'CASH', amount: data.amount }),
       }),
     onSuccess: (updatedRes, variables) => {
       queryClient.invalidateQueries({ queryKey: ['reservations', selectedBranchId] });
@@ -1171,7 +1171,7 @@ export default function HotelPage() {
                       if (payVal <= 0) return;
                       updatePaymentMutation.mutate({
                         id: checkoutReservation.id,
-                        paidAmount: Number(checkoutReservation.paidAmount) + payVal,
+                        amount: payVal,
                       });
                     }}
                     className="p-3 bg-muted/40 rounded-lg border border-white/5 space-y-2"

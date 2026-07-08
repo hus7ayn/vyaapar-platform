@@ -8,7 +8,7 @@ const num = (v: Prisma.Decimal | number | null | undefined) => Number(v ?? 0);
 function range(from?: string, to?: string) {
   const r: { gte?: Date; lte?: Date } = {};
   if (from) r.gte = new Date(from);
-  if (to) { const d = new Date(to); d.setHours(23, 59, 59, 999); r.lte = d; }
+  if (to) { const d = new Date(to); d.setUTCHours(23, 59, 59, 999); r.lte = d; }
   return Object.keys(r).length ? r : undefined;
 }
 
@@ -219,17 +219,18 @@ export class ReportsService {
   /** Bill-wise profit: per sale invoice, revenue minus cost of items sold. */
   async billWiseProfit(businessId: string, from?: string, to?: string, branchId?: string) {
     const invoices = await this.prisma.txn.findMany({
-      where: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId),
+      where: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId),
       include: { lines: true, party: { select: { name: true } } },
       orderBy: { date: 'desc' },
     });
     const rows = invoices.map((inv) => {
-      const cost = inv.lines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0);
-      const revenue = num(inv.total) - num(inv.taxAmount);
+      const sign = inv.txnType === 'CREDIT_NOTE' ? -1 : 1;
+      const cost = sign * inv.lines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0);
+      const revenue = sign * (num(inv.total) - num(inv.taxAmount));
       return {
         id: inv.id, txnNumber: inv.txnNumber, date: inv.date,
         party: inv.partyName ?? inv.party?.name ?? 'Cash Sale',
-        total: num(inv.total), revenue, cost, profit: revenue - cost,
+        total: sign * num(inv.total), revenue, cost, profit: revenue - cost,
       };
     });
     return { rows, totalProfit: rows.reduce((s, r) => s + r.profit, 0) };
@@ -248,17 +249,19 @@ export class ReportsService {
 
   async partyWiseProfit(businessId: string, from?: string, to?: string, branchId?: string) {
     const invoices = await this.prisma.txn.findMany({
-      where: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId),
+      where: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId),
       include: { lines: true },
     });
     const byParty: Record<string, { party: string; sales: number; profit: number; count: number }> = {};
     for (const inv of invoices) {
+      const key = inv.partyId ?? inv.partyName ?? 'Cash Sale';
       const name = inv.partyName ?? 'Cash Sale';
-      if (!byParty[name]) byParty[name] = { party: name, sales: 0, profit: 0, count: 0 };
-      const cost = inv.lines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0);
-      byParty[name].sales += num(inv.total);
-      byParty[name].profit += num(inv.total) - num(inv.taxAmount) - cost;
-      byParty[name].count++;
+      if (!byParty[key]) byParty[key] = { party: name, sales: 0, profit: 0, count: 0 };
+      const sign = inv.txnType === 'CREDIT_NOTE' ? -1 : 1;
+      const cost = sign * inv.lines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0);
+      byParty[key].sales += sign * num(inv.total);
+      byParty[key].profit += sign * (num(inv.total) - num(inv.taxAmount)) - cost;
+      byParty[key].count++;
     }
     return Object.values(byParty).sort((a, b) => b.sales - a.sales);
   }
@@ -269,10 +272,11 @@ export class ReportsService {
     });
     const byParty: Record<string, { party: string; sale: number; purchase: number }> = {};
     for (const t of txns) {
+      const key = t.partyId ?? t.partyName ?? 'Cash';
       const name = t.partyName ?? 'Cash';
-      if (!byParty[name]) byParty[name] = { party: name, sale: 0, purchase: 0 };
-      if (t.txnType === 'SALE_INVOICE') byParty[name].sale += num(t.total);
-      else byParty[name].purchase += num(t.total);
+      if (!byParty[key]) byParty[key] = { party: name, sale: 0, purchase: 0 };
+      if (t.txnType === 'SALE_INVOICE') byParty[key].sale += num(t.total);
+      else byParty[key].purchase += num(t.total);
     }
     return Object.values(byParty).sort((a, b) => (b.sale + b.purchase) - (a.sale + a.purchase));
   }
@@ -309,19 +313,21 @@ export class ReportsService {
 
   async itemWiseProfit(businessId: string, from?: string, to?: string, branchId?: string) {
     const lines = await this.prisma.txnLine.findMany({
-      where: { txn: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId) },
-      include: { item: { select: { name: true, sku: true } } },
+      where: { txn: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId) },
+      include: { item: { select: { name: true, sku: true } }, txn: { select: { txnType: true } } },
     });
     const byItem: Record<string, { item: string; qty: number; revenue: number; cost: number; profit: number }> = {};
     for (const l of lines) {
+      const key = l.itemId ?? l.name;
       const name = l.item?.name ?? l.name;
-      if (!byItem[name]) byItem[name] = { item: name, qty: 0, revenue: 0, cost: 0, profit: 0 };
-      const revenue = num(l.total) - num(l.taxAmount);
-      const cost = num(l.costPrice) * num(l.quantity);
-      byItem[name].qty += num(l.quantity);
-      byItem[name].revenue += revenue;
-      byItem[name].cost += cost;
-      byItem[name].profit += revenue - cost;
+      if (!byItem[key]) byItem[key] = { item: name, qty: 0, revenue: 0, cost: 0, profit: 0 };
+      const sign = l.txn.txnType === 'CREDIT_NOTE' ? -1 : 1;
+      const revenue = sign * (num(l.total) - num(l.taxAmount));
+      const cost = sign * num(l.costPrice) * num(l.quantity);
+      byItem[key].qty += sign * num(l.quantity);
+      byItem[key].revenue += revenue;
+      byItem[key].cost += cost;
+      byItem[key].profit += revenue - cost;
     }
     return Object.values(byItem).sort((a, b) => b.profit - a.profit);
   }
@@ -401,17 +407,19 @@ export class ReportsService {
   // ─── Financial statements ──────────────────────────────────────────────────
 
   async profitAndLoss(businessId: string, from?: string, to?: string, branchId?: string) {
-    const [sales, saleReturns, purchases, purchaseReturns, expenses, saleLines] = await Promise.all([
+    const [sales, saleReturns, purchases, purchaseReturns, expenses, saleLines, saleReturnLines] = await Promise.all([
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId), _sum: { total: true, taxAmount: true } }),
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'CREDIT_NOTE', from, to, branchId), _sum: { total: true } }),
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'PURCHASE_BILL', from, to, branchId), _sum: { total: true, taxAmount: true } }),
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'DEBIT_NOTE', from, to, branchId), _sum: { total: true } }),
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'EXPENSE', from, to, branchId), _sum: { total: true } }),
       this.prisma.txnLine.findMany({ where: { txn: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId) } }),
+      this.prisma.txnLine.findMany({ where: { txn: this.txnWhere(businessId, 'CREDIT_NOTE', from, to, branchId) } }),
     ]);
 
     const grossSale = num(sales._sum.total) - num(saleReturns._sum.total);
-    const cogs = saleLines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0);
+    const cogs = saleLines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0)
+      - saleReturnLines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0);
     const grossProfit = grossSale - num(sales._sum.taxAmount) - cogs;
     const totalExpenses = num(expenses._sum.total);
 
@@ -600,39 +608,49 @@ export class ReportsService {
 
   async hsnSummary(businessId: string, from?: string, to?: string, branchId?: string) {
     const lines = await this.prisma.txnLine.findMany({
-      where: { txn: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId) },
+      where: { txn: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId) },
+      include: { txn: { select: { txnType: true } } },
     });
     const byHsn: Record<string, { hsn: string; qty: number; taxable: number; tax: number; total: number }> = {};
     for (const l of lines) {
+      const sign = l.txn.txnType === 'CREDIT_NOTE' ? -1 : 1;
       const hsn = l.hsnCode ?? 'N/A';
       if (!byHsn[hsn]) byHsn[hsn] = { hsn, qty: 0, taxable: 0, tax: 0, total: 0 };
-      byHsn[hsn].qty += num(l.quantity);
-      byHsn[hsn].taxable += num(l.total) - num(l.taxAmount);
-      byHsn[hsn].tax += num(l.taxAmount);
-      byHsn[hsn].total += num(l.total);
+      byHsn[hsn].qty += num(l.quantity) * sign;
+      byHsn[hsn].taxable += (num(l.total) - num(l.taxAmount)) * sign;
+      byHsn[hsn].tax += num(l.taxAmount) * sign;
+      byHsn[hsn].total += num(l.total) * sign;
     }
     return Object.values(byHsn).sort((a, b) => b.total - a.total);
   }
 
   async taxRateReport(businessId: string, from?: string, to?: string, branchId?: string) {
     const [saleLines, purchaseLines] = await Promise.all([
-      this.prisma.txnLine.findMany({ where: { txn: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId) } }),
-      this.prisma.txnLine.findMany({ where: { txn: this.txnWhere(businessId, 'PURCHASE_BILL', from, to, branchId) } }),
+      this.prisma.txnLine.findMany({
+        where: { txn: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId) },
+        include: { txn: { select: { txnType: true } } },
+      }),
+      this.prisma.txnLine.findMany({
+        where: { txn: this.txnWhere(businessId, ['PURCHASE_BILL', 'DEBIT_NOTE'], from, to, branchId) },
+        include: { txn: { select: { txnType: true } } },
+      }),
     ]);
     const byRate: Record<string, { rate: number; saleTaxable: number; saleTax: number; purchaseTaxable: number; purchaseTax: number }> = {};
     for (const l of saleLines) {
+      const sign = l.txn.txnType === 'CREDIT_NOTE' ? -1 : 1;
       const rate = num(l.taxRate);
       const key = rate.toFixed(2);
       if (!byRate[key]) byRate[key] = { rate, saleTaxable: 0, saleTax: 0, purchaseTaxable: 0, purchaseTax: 0 };
-      byRate[key].saleTaxable += num(l.total) - num(l.taxAmount);
-      byRate[key].saleTax += num(l.taxAmount);
+      byRate[key].saleTaxable += (num(l.total) - num(l.taxAmount)) * sign;
+      byRate[key].saleTax += num(l.taxAmount) * sign;
     }
     for (const l of purchaseLines) {
+      const sign = l.txn.txnType === 'DEBIT_NOTE' ? -1 : 1;
       const rate = num(l.taxRate);
       const key = rate.toFixed(2);
       if (!byRate[key]) byRate[key] = { rate, saleTaxable: 0, saleTax: 0, purchaseTaxable: 0, purchaseTax: 0 };
-      byRate[key].purchaseTaxable += num(l.total) - num(l.taxAmount);
-      byRate[key].purchaseTax += num(l.taxAmount);
+      byRate[key].purchaseTaxable += (num(l.total) - num(l.taxAmount)) * sign;
+      byRate[key].purchaseTax += num(l.taxAmount) * sign;
     }
     return Object.values(byRate).sort((a, b) => a.rate - b.rate);
   }

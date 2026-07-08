@@ -10,7 +10,8 @@ export async function processSyncQueue(token: string, clientId: string) {
   if (syncInFlight || !navigator.onLine) return { synced: 0, pending: 0 };
 
   const db = await getOfflineDB();
-  const pending = await db.getAll('syncQueue');
+  const all = await db.getAll('syncQueue');
+  const pending = all.filter((p) => (p.attempts ?? 0) < MAX_SYNC_ATTEMPTS);
   if (!pending.length) return { synced: 0, pending: 0 };
 
   syncInFlight = true;

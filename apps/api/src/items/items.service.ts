@@ -108,7 +108,7 @@ export class ItemsService {
     let stockValue = 0;
     let lowStockCount = 0;
     for (const i of items) {
-      const unitCost = Number(i.costPrice) || Number(i.purchasePrice) || Number(i.salePrice);
+      const unitCost = i.costPrice != null ? Number(i.costPrice) : i.purchasePrice != null ? Number(i.purchasePrice) : Number(i.salePrice);
       stockValue += Number(i.currentStock) * unitCost;
       if (i.minStock != null && Number(i.currentStock) <= Number(i.minStock)) lowStockCount++;
     }

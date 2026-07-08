@@ -51,9 +51,9 @@ export class SaleController {
   resumeHeld(
     @CurrentUser('businessId') businessId: string,
     @Param('id') id: string,
-    @Body('payments') payments: TxnPaymentInput[],
+    @Body() body: SaleBody,
   ) {
-    return this.sale.resumeHeld(businessId, id, payments ?? []);
+    return this.sale.resumeHeld(businessId, id, body);
   }
 
   @Post('invoices/:id/refund')
