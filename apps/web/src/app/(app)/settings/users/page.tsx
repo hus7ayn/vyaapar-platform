@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { ROLE_LABELS, SystemRole } from '@nexus/shared';
+import { Permission, ROLE_LABELS, ROLE_PERMISSIONS, SystemRole } from '@nexus/shared';
 
 interface UserRow {
   id: string;
@@ -20,6 +20,18 @@ interface UserRow {
   isActive: boolean;
 }
 
+interface BranchRow {
+  id: string;
+  name: string;
+  code: string;
+}
+
+// Business-wide roles (holding BUSINESS_MANAGE) can only be created by a
+// platform super admin when the tenant is set up — not selectable here.
+const ASSIGNABLE_ROLES = Object.entries(ROLE_LABELS).filter(
+  ([key]) => key !== SystemRole.SUPER_ADMIN && !(ROLE_PERMISSIONS[key] ?? []).includes(Permission.BUSINESS_MANAGE),
+);
+
 export default function UsersPage() {
   const token = useAuthStore((s) => s.accessToken)!;
   const qc = useQueryClient();
@@ -29,6 +41,7 @@ export default function UsersPage() {
     firstName: '',
     lastName: '',
     role: 'RECEPTIONIST',
+    branchId: '',
   });
 
   const { data: users } = useQuery({
@@ -36,13 +49,19 @@ export default function UsersPage() {
     queryFn: () => api<UserRow[]>('/users', { token }),
   });
 
+  const { data: branches } = useQuery({
+    queryKey: ['branches'],
+    queryFn: () => api<BranchRow[]>('/branches', { token }),
+  });
+
   const create = useMutation({
     mutationFn: () => api('/users', { method: 'POST', token, body: JSON.stringify(form) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] });
       toast.success('User created');
-      setForm({ email: '', password: '', firstName: '', lastName: '', role: 'RECEPTIONIST' });
+      setForm({ email: '', password: '', firstName: '', lastName: '', role: 'RECEPTIONIST', branchId: '' });
     },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   return (
@@ -59,16 +78,26 @@ export default function UsersPage() {
           <Input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <Input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           <select
-            className="h-10 rounded-lg border px-3 sm:col-span-2"
+            className="h-10 rounded-lg border px-3"
             value={form.role}
             onChange={(e) => setForm({ ...form, role: e.target.value })}
           >
-            {Object.entries(ROLE_LABELS).map(([key, label]) => (
+            {ASSIGNABLE_ROLES.map(([key, label]) => (
               <option key={key} value={key}>{label}</option>
             ))}
           </select>
+          <select
+            className="h-10 rounded-lg border px-3"
+            value={form.branchId}
+            onChange={(e) => setForm({ ...form, branchId: e.target.value })}
+          >
+            <option value="">Select shop/branch...</option>
+            {branches?.map((b) => (
+              <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
+            ))}
+          </select>
         </div>
-        <Button onClick={() => create.mutate()}>Create user</Button>
+        <Button onClick={() => create.mutate()} disabled={!form.branchId || create.isPending}>Create user</Button>
       </Card>
 
       <div className="space-y-2">

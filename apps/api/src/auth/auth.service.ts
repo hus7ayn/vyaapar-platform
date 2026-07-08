@@ -121,7 +121,7 @@ export class AuthService {
       user.businessId,
       user.branchId ?? undefined,
       user.role,
-      user.permissions,
+      ROLE_PERMISSIONS[user.role] ?? [],
       dto.deviceInfo,
       ip,
     );
@@ -142,7 +142,7 @@ export class AuthService {
       user.businessId,
       user.branchId ?? undefined,
       user.role,
-      user.permissions,
+      ROLE_PERMISSIONS[user.role] ?? [],
     );
   }
 
@@ -181,7 +181,7 @@ export class AuthService {
       user.businessId,
       user.branchId ?? undefined,
       user.role,
-      user.permissions,
+      ROLE_PERMISSIONS[user.role] ?? [],
     );
   }
 

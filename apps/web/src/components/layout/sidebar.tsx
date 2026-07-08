@@ -26,8 +26,9 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
-import { APP_NAME } from '@nexus/shared';
+import { APP_NAME, Permission } from '@nexus/shared';
 import { ShopSwitcher } from '@/components/layout/shop-switcher';
+import { usePermissions } from '@/hooks/use-permissions';
 
 interface NavLeaf {
   href: string;
@@ -40,14 +41,21 @@ interface NavItem {
   href?: string;
   match?: (pathname: string) => boolean;
   children?: NavLeaf[];
+  // Matches the permission required by the corresponding backend list/view route —
+  // items without one are visible to every authenticated user (e.g. Home).
+  permission?: Permission | Permission[];
+  // For roles that hold the permission above only incidentally (e.g. BILLER needs
+  // pos:sell for POS itself, but that shouldn't also surface full back-office Sale
+  // management) — an explicit role-based override on top of the permission check.
+  hideForRoles?: string[];
 }
 
 const NAV: NavItem[] = [
-  { label: 'Home', icon: LayoutDashboard, href: '/dashboard', match: (p) => p === '/dashboard' },
-  { label: 'Parties', icon: Users, href: '/parties', match: (p) => p.startsWith('/parties') },
-  { label: 'Items', icon: Package, href: '/items', match: (p) => p.startsWith('/items') },
+  { label: 'Home', icon: LayoutDashboard, href: '/dashboard', match: (p) => p === '/dashboard', hideForRoles: ['BILLER'] },
+  { label: 'Parties', icon: Users, href: '/parties', match: (p) => p.startsWith('/parties'), permission: Permission.POS_SELL, hideForRoles: ['BILLER'] },
+  { label: 'Items', icon: Package, href: '/items', match: (p) => p.startsWith('/items'), permission: Permission.INVENTORY_VIEW },
   {
-    label: 'Sale', icon: FileText, match: (p) => p.startsWith('/sale'),
+    label: 'Sale', icon: FileText, match: (p) => p.startsWith('/sale'), permission: Permission.POS_SELL, hideForRoles: ['BILLER'],
     children: [
       { href: '/sale/invoices', label: 'Sale Invoices' },
       { href: '/sale/estimates', label: 'Estimate / Quotation' },
@@ -58,7 +66,7 @@ const NAV: NavItem[] = [
     ],
   },
   {
-    label: 'Purchase', icon: ShoppingBag, match: (p) => p.startsWith('/purchase'),
+    label: 'Purchase', icon: ShoppingBag, match: (p) => p.startsWith('/purchase'), permission: Permission.INVENTORY_VIEW,
     children: [
       { href: '/purchase/bills', label: 'Purchase Bills' },
       { href: '/purchase/payment-out', label: 'Payment Out' },
@@ -66,38 +74,41 @@ const NAV: NavItem[] = [
       { href: '/purchase/debit-notes', label: 'Purchase Return / Debit Note' },
     ],
   },
-  { label: 'Expenses', icon: Wallet, href: '/expenses', match: (p) => p.startsWith('/expenses') },
+  { label: 'Expenses', icon: Wallet, href: '/expenses', match: (p) => p.startsWith('/expenses'), permission: Permission.EXPENSE_VIEW },
   {
-    label: 'Cash & Bank', icon: Landmark, match: (p) => p.startsWith('/cash-bank'),
+    label: 'Cash & Bank', icon: Landmark, match: (p) => p.startsWith('/cash-bank'), permission: Permission.REPORTS_VIEW,
     children: [
       { href: '/cash-bank', label: 'Bank Accounts' },
       { href: '/cash-bank/cheques', label: 'Cheques' },
       { href: '/cash-bank/loans', label: 'Loan Accounts' },
     ],
   },
-  { label: 'Vyapar POS', icon: MonitorSmartphone, href: '/pos', match: (p) => p.startsWith('/pos') },
-  { label: 'Reports', icon: BarChart3, href: '/reports', match: (p) => p.startsWith('/reports') },
-  { label: 'Reminders', icon: Bell, href: '/reminders', match: (p) => p.startsWith('/reminders') },
-  { label: 'Utilities', icon: Wrench, href: '/utilities', match: (p) => p.startsWith('/utilities') },
+  { label: 'Vyapar POS', icon: MonitorSmartphone, href: '/pos', match: (p) => p.startsWith('/pos'), permission: Permission.POS_SELL },
+  { label: 'Reports', icon: BarChart3, href: '/reports', match: (p) => p.startsWith('/reports'), permission: Permission.REPORTS_VIEW },
+  { label: 'Reminders', icon: Bell, href: '/reminders', match: (p) => p.startsWith('/reminders'), permission: Permission.REPORTS_VIEW },
+  { label: 'Utilities', icon: Wrench, href: '/utilities', match: (p) => p.startsWith('/utilities'), permission: Permission.SETTINGS_MANAGE },
 ];
 
 const MORE_NAV: NavItem[] = [
-  { label: 'Shops', icon: Building2, href: '/shops', match: (p) => p.startsWith('/shops') },
-  { label: 'Hotel PMS', icon: Building2, href: '/hotel/dashboard', match: (p) => p.startsWith('/hotel') || p.startsWith('/housekeeping') || p.startsWith('/services') },
-  { label: 'Payroll / HR', icon: Briefcase, href: '/payroll', match: (p) => p.startsWith('/payroll') },
-  { label: 'Settings', icon: Settings, href: '/settings', match: (p) => p.startsWith('/settings') },
+  { label: 'Shops', icon: Building2, href: '/shops', match: (p) => p.startsWith('/shops'), permission: Permission.BRANCH_MANAGE },
+  { label: 'Hotel PMS', icon: Building2, href: '/hotel/dashboard', match: (p) => p.startsWith('/hotel') || p.startsWith('/housekeeping') || p.startsWith('/services'), permission: Permission.HOTEL_VIEW },
+  { label: 'Payroll / HR', icon: Briefcase, href: '/payroll', match: (p) => p.startsWith('/payroll'), permission: Permission.PAYROLL_VIEW },
+  { label: 'Settings', icon: Settings, href: '/settings', match: (p) => p.startsWith('/settings'), permission: Permission.SETTINGS_MANAGE },
 ];
 
 const QUICK_ACTIONS = [
-  { href: '/sale/invoices/new', label: 'Add Sale', icon: FileText, color: 'bg-[hsl(348,85%,52%)]' },
-  { href: '/purchase/bills/new', label: 'Add Purchase', icon: ShoppingBag, color: 'bg-[hsl(210,90%,50%)]' },
-  { href: '/sale/payment-in/new', label: 'Pay In', icon: ArrowDownLeft, color: 'bg-[hsl(142,71%,45%)]' },
-  { href: '/purchase/payment-out/new', label: 'Pay Out', icon: ArrowUpRight, color: 'bg-[hsl(25,95%,53%)]' },
+  { href: '/sale/invoices/new', label: 'Add Sale', icon: FileText, color: 'bg-[hsl(348,85%,52%)]', permission: Permission.POS_SELL, hideForRoles: ['BILLER'] },
+  { href: '/purchase/bills/new', label: 'Add Purchase', icon: ShoppingBag, color: 'bg-[hsl(210,90%,50%)]', permission: Permission.INVENTORY_MANAGE },
+  { href: '/sale/payment-in/new', label: 'Pay In', icon: ArrowDownLeft, color: 'bg-[hsl(142,71%,45%)]', permission: Permission.POS_SELL, hideForRoles: ['BILLER'] },
+  { href: '/purchase/payment-out/new', label: 'Pay Out', icon: ArrowUpRight, color: 'bg-[hsl(25,95%,53%)]', permission: Permission.EXPENSE_MANAGE },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
+  const { has } = usePermissions();
+  const visible = (item: { permission?: Permission | Permission[]; hideForRoles?: string[] }) =>
+    (!item.permission || has(item.permission)) && !(user?.role && item.hideForRoles?.includes(user.role));
   const [expanded, setExpanded] = useState<string | null>(() => {
     if (pathname.startsWith('/sale')) return 'Sale';
     if (pathname.startsWith('/purchase')) return 'Purchase';
@@ -183,7 +194,7 @@ export function Sidebar() {
       <ShopSwitcher />
 
       <div className="p-3 grid grid-cols-2 gap-2 border-b bg-[hsl(348,30%,97%)]">
-        {QUICK_ACTIONS.map((action) => {
+        {QUICK_ACTIONS.filter(visible).map((action) => {
           const Icon = action.icon;
           return (
             <Link key={action.label} href={action.href} className="flex flex-col items-center gap-1 rounded-lg p-2 hover:bg-white transition-colors group">
@@ -197,12 +208,12 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-        {NAV.map((item) => renderItem(item))}
+        {NAV.filter(visible).map((item) => renderItem(item))}
 
         <div className="pt-3 pb-1 px-3">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">More</span>
         </div>
-        {MORE_NAV.map((item) => renderItem(item, true))}
+        {MORE_NAV.filter(visible).map((item) => renderItem(item, true))}
       </nav>
 
       <div className="p-2 border-t">

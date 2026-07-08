@@ -18,7 +18,7 @@ export class NotificationsController {
   }
 
   @Patch(':id/read')
-  markRead(@Param('id') id: string) {
-    return this.notifications.markRead(id);
+  markRead(@CurrentUser('businessId') businessId: string, @Param('id') id: string) {
+    return this.notifications.markRead(businessId, id);
   }
 }

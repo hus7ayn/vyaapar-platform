@@ -38,6 +38,7 @@ import { PlatformModule } from './platform/platform.module';
 import { RemindersModule } from './reminders/reminders.module';
 import { InsightsModule } from './insights/insights.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { BranchScopeGuard } from './common/guards/branch-scope.guard';
 
 @Module({
   imports: [
@@ -84,6 +85,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: BranchScopeGuard },
   ],
 })
 export class AppModule {}

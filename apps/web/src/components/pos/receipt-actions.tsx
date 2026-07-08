@@ -18,8 +18,9 @@ export function ReceiptActions({ txnId }: { txnId: string }) {
     const res = await api<{ content: string }>(`/receipts/${txnId}/thermal`, { token });
     const w = window.open('', '_blank');
     if (w) {
-      w.document.write(`<pre style="font-family:monospace;font-size:12px">${res.content}</pre>`);
-      w.print();
+      w.document.write(res.content);
+      w.document.close();
+      w.onload = () => w.print();
     }
     toast.success('Receipt sent to printer');
   };

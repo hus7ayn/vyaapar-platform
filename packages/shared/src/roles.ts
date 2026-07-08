@@ -11,7 +11,7 @@ export enum SystemRole {
 export const ROLE_LABELS: Record<SystemRole, string> = {
   [SystemRole.SUPER_ADMIN]: 'Super Admin',
   [SystemRole.HOTEL_OWNER]: 'Hotel Owner',
-  [SystemRole.BRANCH_MANAGER]: 'Branch Manager',
+  [SystemRole.BRANCH_MANAGER]: 'Shop Admin',
   [SystemRole.RECEPTIONIST]: 'Receptionist',
   [SystemRole.HOUSEKEEPING]: 'Housekeeping',
   [SystemRole.ACCOUNTANT]: 'Accountant',

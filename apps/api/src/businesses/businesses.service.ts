@@ -13,6 +13,11 @@ export class BusinessesService {
   }
 
   update(businessId: string, data: Record<string, unknown>) {
-    return this.prisma.business.update({ where: { id: businessId }, data: data as never });
+    const ALLOWED_FIELDS = ['name', 'phone', 'address', 'gstNumber', 'state', 'logoUrl', 'currency', 'timezone'] as const;
+    const update: Record<string, unknown> = {};
+    for (const field of ALLOWED_FIELDS) {
+      if (data[field] !== undefined) update[field] = data[field];
+    }
+    return this.prisma.business.update({ where: { id: businessId }, data: update });
   }
 }

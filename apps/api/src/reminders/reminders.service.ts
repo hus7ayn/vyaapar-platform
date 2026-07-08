@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { branchWhere } from '../common/branch.util';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -41,7 +41,9 @@ export class RemindersService {
     return reminders;
   }
 
-  markSent(businessId: string, id: string) {
+  async markSent(businessId: string, id: string) {
+    const existing = await this.prisma.paymentReminder.findFirst({ where: { id, businessId } });
+    if (!existing) throw new NotFoundException('Reminder not found');
     return this.prisma.paymentReminder.update({
       where: { id },
       data: { status: 'SENT', sentAt: new Date() },

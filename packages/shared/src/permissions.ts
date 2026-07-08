@@ -83,14 +83,13 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     Permission.AUDIT_VIEW,
     Permission.SETTINGS_MANAGE,
   ],
+  // Front-counter cashier: POS selling only, plus customers (parties) since
+  // ringing up a sale needs a party picker — no back-office visibility.
   BILLER: [
     Permission.POS_SELL,
     Permission.POS_REFUND,
     Permission.POS_DISCOUNT,
     Permission.POS_HOLD_ORDER,
-    Permission.INVENTORY_VIEW,
-    Permission.EXPENSE_VIEW,
-    Permission.REPORTS_VIEW,
   ],
   HOTEL_OWNER: [
     Permission.BUSINESS_MANAGE,

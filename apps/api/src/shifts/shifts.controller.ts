@@ -1,11 +1,16 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Permission } from '@nexus/shared';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequirePermissions } from '../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { ShiftsService } from './shifts.service';
 
 @ApiTags('shifts')
 @ApiBearerAuth()
 @Controller('shifts')
+@UseGuards(PermissionsGuard)
+@RequirePermissions(Permission.POS_SELL)
 export class ShiftsController {
   constructor(private shifts: ShiftsService) {}
 
@@ -27,7 +32,12 @@ export class ShiftsController {
   }
 
   @Post(':id/close')
-  close(@Param('id') id: string, @Body() body: { closingCash: number }) {
-    return this.shifts.closeShift(id, body.closingCash);
+  close(
+    @CurrentUser('businessId') businessId: string,
+    @CurrentUser('sub') userId: string,
+    @Param('id') id: string,
+    @Body() body: { closingCash: number },
+  ) {
+    return this.shifts.closeShift(businessId, userId, id, body.closingCash);
   }
 }

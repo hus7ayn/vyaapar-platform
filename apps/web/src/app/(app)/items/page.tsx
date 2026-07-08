@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Barcode, Package, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { VyaparStatCard } from '@/components/vyapar/stat-card';
 import { cn } from '@/lib/utils';
 import { formatDate, formatMoney, TXN_META, TXN_STATUS_LABELS, TxnType } from '@/lib/txn-meta';
+import { printBarcodeTags } from '@/lib/print-tags';
 
 type ItemType = 'PRODUCT' | 'SERVICE';
 
@@ -219,7 +220,7 @@ export default function ItemsPage() {
         itemType: form.itemType,
         categoryId: form.categoryId || undefined,
         sku: form.sku || undefined,
-        barcode: form.barcode || undefined,
+        barcode: editingItem ? (form.barcode.trim() || null) : (form.barcode || undefined),
         hsnCode: form.hsnCode || undefined,
         salePrice: num(form.salePrice),
         purchasePrice: num(form.purchasePrice),
@@ -510,8 +511,11 @@ export default function ItemsPage() {
             </div>
 
             <BarcodeTagPanel
+              itemId={selected.id}
               barcode={selected.barcode}
               costPrice={Number(selected.costPrice) || Number(selected.purchasePrice)}
+              name={selected.name}
+              price={Number(selected.mrp) || Number(selected.salePrice)}
               token={token}
               onGenerate={() => barcodeMutation.mutate()}
               onEdit={() => openEdit(selected)}
@@ -817,25 +821,53 @@ export default function ItemsPage() {
   );
 }
 
+
 function BarcodeTagPanel({
+  itemId,
   barcode,
   costPrice,
+  name,
+  price,
   token,
   onGenerate,
   onEdit,
   generating,
 }: {
+  itemId: string;
   barcode?: string | null;
   costPrice: number;
+  name: string;
+  price: number;
   token?: string;
   onGenerate: () => void;
   onEdit: () => void;
   generating: boolean;
 }) {
+  const queryClient = useQueryClient();
+  const [qty, setQty] = useState(1);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(barcode ?? '');
+
+  useEffect(() => {
+    if (!editing) setDraft(barcode ?? '');
+  }, [barcode, editing]);
+
   const { data: image } = useQuery({
     queryKey: ['barcode-image', barcode],
     queryFn: () => api<{ dataUrl: string }>(`/items/barcode-image?text=${encodeURIComponent(barcode!)}`, { token }),
     enabled: !!token && !!barcode,
+  });
+
+  const saveBarcodeMutation = useMutation({
+    mutationFn: (value: string) =>
+      api(`/items/${itemId}`, { method: 'PATCH', token, body: JSON.stringify({ barcode: value.trim() || null }) }),
+    onSuccess: () => {
+      toast.success('Barcode updated');
+      setEditing(false);
+      queryClient.invalidateQueries({ queryKey: ['items'] });
+      queryClient.invalidateQueries({ queryKey: ['item'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const decoded = decodeBarcodeCost(barcode);
@@ -843,7 +875,7 @@ function BarcodeTagPanel({
   return (
     <div className="bg-white rounded-lg border shadow-sm p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-[220px]">
           <p className="text-sm font-semibold flex items-center gap-2">
             <Barcode className="h-4 w-4" /> Barcode Tag
           </p>
@@ -852,23 +884,71 @@ function BarcodeTagPanel({
             {decoded != null && <> · decoded: <span className="font-medium">{formatMoney(decoded)}</span></>}
             {decoded == null && costPrice > 0 && <> · expected suffix: <span className="font-mono">{String(Math.round(costPrice * 100)).padStart(5, '0')}</span></>}
           </p>
-          {barcode ? (
-            <p className="font-mono text-sm mt-2 tracking-wider">{barcode}</p>
+          {editing ? (
+            <div className="flex items-center gap-2 mt-2">
+              <Input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Enter barcode value"
+                className="h-8 font-mono text-sm w-48"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveBarcodeMutation.mutate(draft);
+                  if (e.key === 'Escape') { setEditing(false); setDraft(barcode ?? ''); }
+                }}
+              />
+              <Button size="sm" disabled={saveBarcodeMutation.isPending} onClick={() => saveBarcodeMutation.mutate(draft)}>
+                Save
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setDraft(barcode ?? ''); }}>
+                Cancel
+              </Button>
+            </div>
           ) : (
-            <p className="text-sm text-muted-foreground mt-2">No barcode assigned yet</p>
+            <div className="flex items-center gap-2 mt-2">
+              {barcode ? (
+                <p className="font-mono text-sm tracking-wider">{barcode}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">No barcode assigned yet</p>
+              )}
+              <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => setEditing(true)}>
+                <Pencil className="h-3 w-3" />
+              </Button>
+            </div>
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onEdit}>Edit Barcode</Button>
+          <Button variant="outline" size="sm" onClick={onEdit}>Edit Item</Button>
           <Button variant="outline" size="sm" disabled={generating} onClick={onGenerate}>
             <Barcode className="h-3 w-3 mr-1" /> {barcode ? 'Regenerate' : 'Generate'}
           </Button>
         </div>
       </div>
       {image?.dataUrl && (
-        <div className="mt-3 inline-block rounded border bg-white p-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={image.dataUrl} alt={`Barcode ${barcode}`} className="h-16 max-w-full" />
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <div className="inline-block rounded border bg-white p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={image.dataUrl} alt={`Barcode ${barcode}`} className="h-16 max-w-full" />
+          </div>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Qty</label>
+              <Input
+                type="number"
+                min={1}
+                max={200}
+                value={qty}
+                onChange={(e) => setQty(Number(e.target.value))}
+                className="w-20 h-9"
+              />
+            </div>
+            <Button
+              size="sm"
+              onClick={() => printBarcodeTags([{ dataUrl: image.dataUrl, barcode: barcode!, name, price, qty }])}
+            >
+              <Barcode className="h-3.5 w-3.5 mr-1" /> Print Tags
+            </Button>
+          </div>
         </div>
       )}
     </div>

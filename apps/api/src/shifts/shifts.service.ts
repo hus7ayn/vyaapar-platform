@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -15,7 +15,11 @@ export class ShiftsService {
     });
   }
 
-  async closeShift(shiftId: string, closingCash: number) {
+  async closeShift(businessId: string, userId: string, shiftId: string, closingCash: number) {
+    const shift = await this.prisma.shift.findFirst({
+      where: { id: shiftId, userId, branch: { businessId } },
+    });
+    if (!shift) throw new NotFoundException('Shift not found');
     return this.prisma.shift.update({
       where: { id: shiftId },
       data: { closingCash, closedAt: new Date(), status: 'CLOSED' },

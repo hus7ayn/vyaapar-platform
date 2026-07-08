@@ -1,7 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { ROLE_PERMISSIONS } from '@nexus/shared';
+import { Permission, ROLE_PERMISSIONS, SystemRole } from '@nexus/shared';
 import { PrismaService } from '../prisma/prisma.service';
+
+// Business-wide roles (SUPER_ADMIN, and anything holding BUSINESS_MANAGE like
+// HOTEL_OWNER/ADMIN) are never assignable through this tenant-scoped endpoint —
+// a business owner is only ever created by a platform super admin (see
+// PlatformService.createTenant) or at signup, never by another tenant user.
+const STAFF_ASSIGNABLE_ROLES: string[] = Object.values(SystemRole).filter(
+  (r) => r !== SystemRole.SUPER_ADMIN && !(ROLE_PERMISSIONS[r] ?? []).includes(Permission.BUSINESS_MANAGE),
+);
 
 @Injectable()
 export class UsersService {
@@ -34,8 +42,17 @@ export class UsersService {
       branchId?: string;
     },
   ) {
-    const passwordHash = await bcrypt.hash(data.password, 12);
+    if (!STAFF_ASSIGNABLE_ROLES.includes(data.role)) {
+      throw new BadRequestException('Invalid role');
+    }
     const permissions = ROLE_PERMISSIONS[data.role] ?? [];
+    // Every assignable role here is shop-scoped (business-wide roles are
+    // excluded above), so it must be pinned to one branch — otherwise
+    // branch-scoping silently falls back to "see all branches".
+    if (!data.branchId) throw new BadRequestException('This role must be assigned to a specific shop/branch');
+    const branch = await this.prisma.branch.findFirst({ where: { id: data.branchId, businessId } });
+    if (!branch) throw new NotFoundException('Branch not found');
+    const passwordHash = await bcrypt.hash(data.password, 12);
     return this.prisma.user.create({
       data: {
         businessId,

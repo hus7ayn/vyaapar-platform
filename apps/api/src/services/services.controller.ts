@@ -31,7 +31,11 @@ export class ServicesController {
 
   @Patch(':id')
   @RequirePermissions(Permission.SERVICE_MANAGE)
-  update(@Param('id') id: string, @Body() body: { status: string; assignedTo?: string }) {
-    return this.services.updateStatus(id, body.status, body.assignedTo);
+  update(
+    @CurrentUser('businessId') businessId: string,
+    @Param('id') id: string,
+    @Body() body: { status: string; assignedTo?: string },
+  ) {
+    return this.services.updateStatus(businessId, id, body.status, body.assignedTo);
   }
 }

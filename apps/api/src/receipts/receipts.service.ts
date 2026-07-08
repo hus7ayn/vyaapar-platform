@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import PDFDocument from 'pdfkit';
+import PDFDocument = require('pdfkit');
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TXN_LABELS, TxnType } from '../txns/txn.constants';
 
@@ -24,49 +25,99 @@ export class ReceiptsService {
 
   async generateThermal(txnId: string, businessId: string): Promise<string> {
     const txn = await this.getTxnData(txnId, businessId);
-    const lines: string[] = [];
-    const w = 32;
-    const center = (s: string) => {
-      const pad = Math.max(0, Math.floor((w - s.length) / 2));
-      return ' '.repeat(pad) + s;
-    };
     const label = TXN_LABELS[txn.txnType as TxnType] ?? txn.txnType;
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const money = (n: number | string | Prisma.Decimal) => Number(n).toFixed(2);
 
-    lines.push(center(txn.business.name));
-    if (txn.business.gstNumber) lines.push(center(`GSTIN: ${txn.business.gstNumber}`));
-    if (txn.branch) lines.push(center(txn.branch.name));
-    lines.push('-'.repeat(w));
-    lines.push(center(label.toUpperCase()));
-    lines.push(`No: ${txn.txnNumber}`);
-    lines.push(`Date: ${txn.date.toLocaleString('en-IN')}`);
-    if (txn.partyName) lines.push(`Party: ${txn.partyName}`);
-    lines.push('-'.repeat(w));
+    const itemRows = txn.lines
+      .map(
+        (item) => `
+          <tr>
+            <td colspan="3" class="item-name">${esc(item.name)}</td>
+          </tr>
+          <tr class="item-detail">
+            <td>${Number(item.quantity)} ${esc(item.unit)} &times; ${money(item.unitPrice)}</td>
+            <td></td>
+            <td class="right">${money(item.total)}</td>
+          </tr>`,
+      )
+      .join('');
 
-    for (const item of txn.lines) {
-      lines.push(item.name.slice(0, w));
-      lines.push(
-        ` ${Number(item.quantity)} ${item.unit} x ${Number(item.unitPrice).toFixed(2)} = ${Number(item.total).toFixed(2)}`,
-      );
-    }
-
-    lines.push('-'.repeat(w));
-    lines.push(`Subtotal: ${Number(txn.subtotal).toFixed(2)}`.padStart(w));
-    if (Number(txn.taxAmount) > 0) lines.push(`Tax: ${Number(txn.taxAmount).toFixed(2)}`.padStart(w));
-    if (Number(txn.discountAmount) > 0) lines.push(`Discount: -${Number(txn.discountAmount).toFixed(2)}`.padStart(w));
     const charges = (txn.additionalCharges as { name: string; amount: number }[] | null) ?? [];
-    for (const c of charges) lines.push(`${c.name}: ${Number(c.amount).toFixed(2)}`.padStart(w));
-    if (Number(txn.roundOff) !== 0) lines.push(`Round off: ${Number(txn.roundOff).toFixed(2)}`.padStart(w));
-    lines.push(`TOTAL: ${Number(txn.total).toFixed(2)}`.padStart(w));
-    lines.push('-'.repeat(w));
-    for (const p of txn.payments) {
-      lines.push(`${p.paymentType}: ${Number(p.amount).toFixed(2)}`.padStart(w));
-    }
-    if (Number(txn.balance) > 0) lines.push(`BALANCE DUE: ${Number(txn.balance).toFixed(2)}`.padStart(w));
-    lines.push('');
-    lines.push(center('Thank you!'));
-    lines.push(center(`Powered by ${txn.business.name}`));
+    const totalsRows = [
+      `<tr><td>Subtotal</td><td class="right">${money(txn.subtotal)}</td></tr>`,
+      Number(txn.discountAmount) > 0
+        ? `<tr><td>Discount</td><td class="right">-${money(txn.discountAmount)}</td></tr>`
+        : '',
+      Number(txn.taxAmount) > 0 ? `<tr><td>Tax</td><td class="right">${money(txn.taxAmount)}</td></tr>` : '',
+      ...charges.map((c) => `<tr><td>${esc(c.name)}</td><td class="right">${money(c.amount)}</td></tr>`),
+      Number(txn.roundOff) !== 0 ? `<tr><td>Round off</td><td class="right">${money(txn.roundOff)}</td></tr>` : '',
+    ].join('');
 
-    return lines.join('\n');
+    const paymentRows = txn.payments
+      .map((p) => `<tr><td>${esc(p.paymentType)}</td><td class="right">${money(p.amount)}</td></tr>`)
+      .join('');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${esc(txn.txnNumber)}</title>
+<style>
+  @page { size: 80mm auto; margin: 0; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Courier New', ui-monospace, monospace;
+    width: 80mm;
+    margin: 0 auto;
+    padding: 4mm 4mm 8mm;
+    color: #000;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .center { text-align: center; }
+  .right { text-align: right; }
+  .biz-name { font-size: 16px; font-weight: 700; }
+  .muted { color: #333; font-size: 11px; }
+  .divider { border-top: 1px dashed #000; margin: 6px 0; }
+  .divider.solid { border-top: 1px solid #000; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 1px 0; vertical-align: top; }
+  .item-name { font-weight: 600; padding-top: 4px; }
+  .item-detail td { color: #333; }
+  .total-row td { font-weight: 700; font-size: 14px; padding-top: 4px; }
+  .thank-you { margin-top: 10px; font-weight: 600; }
+  @media print {
+    body { width: auto; }
+  }
+</style>
+</head>
+<body>
+  <div class="center biz-name">${esc(txn.business.name)}</div>
+  ${txn.business.gstNumber ? `<div class="center muted">GSTIN: ${esc(txn.business.gstNumber)}</div>` : ''}
+  ${txn.branch ? `<div class="center muted">${esc(txn.branch.name)}</div>` : ''}
+  <div class="divider"></div>
+  <div class="center" style="font-weight:700">${esc(label.toUpperCase())}</div>
+  <table>
+    <tr><td>No: ${esc(txn.txnNumber)}</td><td class="right">${txn.date.toLocaleString('en-IN')}</td></tr>
+    ${txn.partyName ? `<tr><td colspan="2">Party: ${esc(txn.partyName)}</td></tr>` : ''}
+  </table>
+  <div class="divider"></div>
+  <table>${itemRows}</table>
+  <div class="divider"></div>
+  <table>
+    ${totalsRows}
+    <tr class="total-row"><td>TOTAL</td><td class="right">Rs. ${money(txn.total)}</td></tr>
+  </table>
+  <div class="divider solid"></div>
+  <table>
+    ${paymentRows}
+    ${Number(txn.balance) > 0 ? `<tr><td>BALANCE DUE</td><td class="right">${money(txn.balance)}</td></tr>` : ''}
+  </table>
+  <div class="center thank-you">Thank you!</div>
+  <div class="center muted">Powered by ${esc(txn.business.name)}</div>
+</body>
+</html>`;
   }
 
   async generatePdf(txnId: string, businessId: string): Promise<Buffer> {

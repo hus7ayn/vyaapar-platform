@@ -47,7 +47,8 @@ export default function LoginPage() {
         };
       }>('/auth/login', { method: 'POST', body: JSON.stringify(data) });
       setAuth(res);
-      router.push(res.user.role === SystemRole.SUPER_ADMIN ? '/platform' : '/dashboard');
+      const landing = res.user.role === SystemRole.SUPER_ADMIN ? '/platform' : res.user.role === 'BILLER' ? '/pos' : '/dashboard';
+      router.push(landing);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Login failed');
     } finally {

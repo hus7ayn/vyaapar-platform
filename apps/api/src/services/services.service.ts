@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -41,7 +41,9 @@ export class ServicesService {
     });
   }
 
-  updateStatus(id: string, status: string, assignedTo?: string) {
+  async updateStatus(businessId: string, id: string, status: string, assignedTo?: string) {
+    const existing = await this.prisma.serviceRequest.findFirst({ where: { id, businessId } });
+    if (!existing) throw new NotFoundException('Service request not found');
     return this.prisma.serviceRequest.update({
       where: { id },
       data: { status, assignedTo, completedAt: status === 'COMPLETED' ? new Date() : null },

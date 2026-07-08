@@ -7,9 +7,7 @@ export const CurrentUser = createParamDecorator(
     const user = request.user as JwtPayload;
 
     if (data === 'branchId') {
-      const headerBranchId = request.headers['x-branch-id'];
-      if (headerBranchId) return headerBranchId as string;
-      return user?.branchId;
+      return request.resolvedBranchId as string | undefined;
     }
 
     return data ? user?.[data] : user;

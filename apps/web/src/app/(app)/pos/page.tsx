@@ -17,6 +17,7 @@ import { usePosStore, CartItem } from '@/stores/pos-store';
 import { queueSyncOperation, findCachedProductByBarcode } from '@/lib/offline-db';
 import { startSyncInterval } from '@/lib/sync-manager';
 import { usePosCatalog, type PosProduct } from '@/hooks/use-pos-catalog';
+import { useBarcodeWedge } from '@/hooks/use-barcode-wedge';
 import { CustomerPicker } from '@/components/pos/customer-picker';
 import { HeldOrdersPanel } from '@/components/pos/held-orders-panel';
 import { RecentOrdersPanel } from '@/components/pos/recent-orders-panel';
@@ -24,6 +25,7 @@ import { SplitPaymentDialog } from '@/components/pos/split-payment-dialog';
 import { PosCartTable, PosLineEditDialog } from '@/components/pos/pos-cart-table';
 import { PosBillFooter } from '@/components/pos/pos-bill-footer';
 import { ReceiptActions } from '@/components/pos/receipt-actions';
+import { TagPrintPicker } from '@/components/pos/tag-print-picker';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const BarcodeScanner = dynamic(
@@ -49,6 +51,7 @@ export default function PosPage() {
   const [showSplit, setShowSplit] = useState(false);
   const [editLine, setEditLine] = useState<CartItem | null>(null);
   const [lastInvoiceId, setLastInvoiceId] = useState<string | null>(null);
+  const [lastInvoiceLines, setLastInvoiceLines] = useState<CartItem[]>([]);
   const [showReceipt, setShowReceipt] = useState(false);
 
   const { data: firm } = useQuery({
@@ -84,8 +87,9 @@ export default function PosPage() {
       const res = await api<{ content: string }>(`/receipts/${txnId}/thermal`, { token });
       const w = window.open('', '_blank');
       if (w) {
-        w.document.write(`<pre style="font-family:monospace;font-size:12px;white-space:pre-wrap">${res.content}</pre>`);
-        w.print();
+        w.document.write(res.content);
+        w.document.close();
+        w.onload = () => w.print();
       }
     } catch {
       toast.error('Print failed');
@@ -171,6 +175,7 @@ export default function PosPage() {
         toast.success('Bill saved successfully');
         if (data?.id) {
           setLastInvoiceId(data.id);
+          setLastInvoiceLines(cart);
           setShowReceipt(true);
         }
         clearCart();
@@ -249,6 +254,10 @@ export default function PosPage() {
     [token, branchId, addProduct, findByBarcode],
   );
 
+  // Catches USB/Bluetooth barcode scanners even when no input is focused
+  // (e.g. a dialog is open or the product grid was clicked).
+  useBarcodeWedge(handleBarcode);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.altKey && e.key.toLowerCase() === 'd') {
@@ -319,6 +328,7 @@ export default function PosPage() {
             <DialogTitle>Bill Saved</DialogTitle>
           </DialogHeader>
           {lastInvoiceId && <ReceiptActions txnId={lastInvoiceId} />}
+          <TagPrintPicker items={lastInvoiceLines} token={token} />
         </DialogContent>
       </Dialog>
 

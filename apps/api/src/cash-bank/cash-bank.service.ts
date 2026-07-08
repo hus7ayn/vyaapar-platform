@@ -137,11 +137,15 @@ export class CashBankService {
 
       if (needsFrom) {
         if (!body.fromAccountId) throw new BadRequestException('Source account required');
-        await tx.bankAccount.update({ where: { id: body.fromAccountId }, data: { balance: { decrement: amount } } });
+        const from = await tx.bankAccount.findFirst({ where: { id: body.fromAccountId, businessId } });
+        if (!from) throw new NotFoundException('Source account not found');
+        await tx.bankAccount.update({ where: { id: from.id }, data: { balance: { decrement: amount } } });
       }
       if (needsTo) {
         if (!body.toAccountId) throw new BadRequestException('Destination account required');
-        await tx.bankAccount.update({ where: { id: body.toAccountId }, data: { balance: { increment: amount } } });
+        const to = await tx.bankAccount.findFirst({ where: { id: body.toAccountId, businessId } });
+        if (!to) throw new NotFoundException('Destination account not found');
+        await tx.bankAccount.update({ where: { id: to.id }, data: { balance: { increment: amount } } });
       }
 
       return tx.bankTransfer.create({
@@ -179,10 +183,12 @@ export class CashBankService {
     const cheque = await this.prisma.cheque.findFirst({ where: { id, businessId } });
     if (!cheque) throw new NotFoundException('Cheque not found');
     if (cheque.status === 'CLOSED') throw new BadRequestException('Cheque already settled');
+    const account = await this.prisma.bankAccount.findFirst({ where: { id: body.accountId, businessId } });
+    if (!account) throw new NotFoundException('Account not found');
 
     return this.prisma.$transaction(async (tx) => {
       await tx.bankAccount.update({
-        where: { id: body.accountId },
+        where: { id: account.id },
         data: { balance: { increment: cheque.direction === 'RECEIVED' ? cheque.amount : cheque.amount.neg() } },
       });
       return tx.cheque.update({
@@ -245,8 +251,10 @@ export class CashBankService {
       });
 
       if (body.depositAccountId && opening.gt(0)) {
+        const depositAccount = await tx.bankAccount.findFirst({ where: { id: body.depositAccountId, businessId } });
+        if (!depositAccount) throw new NotFoundException('Deposit account not found');
         await tx.bankAccount.update({
-          where: { id: body.depositAccountId },
+          where: { id: depositAccount.id },
           data: { balance: { increment: opening } },
         });
         await tx.loanTxn.create({
@@ -280,8 +288,10 @@ export class CashBankService {
 
     return this.prisma.$transaction(async (tx) => {
       if (body.paidFromAccountId) {
+        const paidFromAccount = await tx.bankAccount.findFirst({ where: { id: body.paidFromAccountId, businessId } });
+        if (!paidFromAccount) throw new NotFoundException('Account not found');
         await tx.bankAccount.update({
-          where: { id: body.paidFromAccountId },
+          where: { id: paidFromAccount.id },
           data: { balance: { increment: isDisbursement ? amount : amount.neg() } },
         });
       }

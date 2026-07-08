@@ -26,6 +26,7 @@ export interface TxnLineInput {
 }
 
 export interface TxnPaymentInput {
+  id?: string; // present when restoring an existing TxnPayment row (avoids re-creating it)
   paymentType: string; // CASH | CHEQUE | BANK | UPI | CARD | WALLET | DEBT
   bankAccountId?: string;
   amount: number;
@@ -33,6 +34,7 @@ export interface TxnPaymentInput {
 }
 
 export interface AllocationInput {
+  id?: string; // present when restoring an existing BillWiseAllocation row (avoids re-creating it)
   againstTxnId: string;
   amount: number;
   discountAmount?: number;
@@ -291,6 +293,34 @@ export class TxnCoreService {
         continue;
       }
 
+      if (p.id) {
+        // Restore: the TxnPayment row was never deleted by deleteTxn's invert branch above,
+        // so just re-apply the cheque/balance effect against the existing row.
+        if (p.paymentType === 'CHEQUE') {
+          await tx.cheque.create({
+            data: {
+              businessId,
+              branchId: branchId ?? null,
+              txnPaymentId: p.id,
+              partyName,
+              amount,
+              direction: inbound ? 'RECEIVED' : 'PAID',
+              chequeNumber: p.referenceNo,
+              description: `${txnType} cheque`,
+            },
+          });
+        } else {
+          const account = await this.resolveMoneyAccount(tx, businessId, branchId, p);
+          if (account) {
+            await tx.bankAccount.update({
+              where: { id: account.id },
+              data: { balance: { increment: inbound ? amount : amount.neg() } },
+            });
+          }
+        }
+        continue;
+      }
+
       const payment = await tx.txnPayment.create({
         data: {
           txnId,
@@ -371,7 +401,7 @@ export class TxnCoreService {
           status: newBalance.lte(0) ? 'PAID' : newPaid.gt(0) ? 'PARTIAL' : 'OPEN',
         },
       });
-      if (!invert) {
+      if (!invert && !a.id) {
         await tx.billWiseAllocation.create({
           data: {
             businessId,
@@ -382,9 +412,6 @@ export class TxnCoreService {
           },
         });
       }
-    }
-    if (invert) {
-      await tx.billWiseAllocation.deleteMany({ where: { paymentTxnId } });
     }
   }
 
@@ -424,6 +451,10 @@ export class TxnCoreService {
     if (total.lt(0)) throw new BadRequestException('Total cannot be negative');
 
     const payments = (input.payments ?? []).filter((p) => D(p.amount).gt(0));
+    if (isPaymentTxn) {
+      const paymentsTotal = payments.reduce((s, p) => s.add(D(p.amount)), D(0));
+      if (!paymentsTotal.equals(total)) throw new BadRequestException('Sum of payments must equal total');
+    }
     const paidAmount = isPaymentTxn
       ? total
       : payments.filter((p) => p.paymentType !== 'DEBT').reduce((s, p) => s.add(D(p.amount)), D(0));
@@ -516,7 +547,11 @@ export class TxnCoreService {
         });
       }
     } else if (txn.partyId) {
-      const delta = this.partyDelta(txnType, txn.total, txn.balance);
+      // Use the balance as it stood right after this txn's own payments (not the live
+      // `balance` column, which later bill-wise allocations from other txns mutate), so
+      // reversal/restore always matches what was actually posted at creation time.
+      const originalPaid = payments.filter((p) => p.paymentType !== 'DEBT').reduce((s, p) => s.add(D(p.amount)), D(0));
+      const delta = this.partyDelta(txnType, txn.total, txn.total.sub(originalPaid));
       await this.applyPartyBalance(
         tx, businessId, txn.branchId, txn.id, txnType, txn.partyId, delta,
         `${txnType.replace(/_/g, ' ')} ${txn.txnNumber}`, txn.date, invert,
@@ -648,13 +683,21 @@ export class TxnCoreService {
     return this.prisma.$transaction(async (tx) => {
       if (txn.status !== 'HELD') {
         const payments: TxnPaymentInput[] = txn.payments.map((p) => ({
+          id: p.id,
           paymentType: p.paymentType,
           bankAccountId: p.bankAccountId ?? undefined,
           amount: Number(p.amount),
           referenceNo: p.referenceNo ?? undefined,
         }));
-        // Note: cheque/allocation rows were removed on delete; restore money + stock + party effects
-        await this.postEffects(tx, businessId, txn, {}, payments, false);
+        // Note: cheque rows were removed on delete; allocation rows survive, so re-apply
+        // their effect on the against-txn without re-creating the rows.
+        const allocations: AllocationInput[] = txn.allocationsAsPayment.map((a) => ({
+          id: a.id,
+          againstTxnId: a.againstTxnId,
+          amount: Number(a.amount),
+          discountAmount: Number(a.discountAmount),
+        }));
+        await this.postEffects(tx, businessId, txn, { allocations }, payments, false);
       }
       return tx.txn.update({ where: { id }, data: { deletedAt: null } });
     });
@@ -673,33 +716,44 @@ export class TxnCoreService {
     if (source.status === 'CONVERTED' || source.status === 'ORDER_CLOSED') {
       throw new BadRequestException('Already converted');
     }
-    const created = await this.createTxn(businessId, userId, {
-      txnType: targetType,
-      branchId: source.branchId ?? undefined,
-      partyId: source.partyId ?? undefined,
-      partyName: source.partyName ?? undefined,
-      lines: source.lines.map((l) => ({
-        itemId: l.itemId ?? undefined,
-        name: l.name,
-        hsnCode: l.hsnCode ?? undefined,
-        quantity: Number(l.quantity),
-        unit: l.unit,
-        unitPrice: Number(l.unitPrice),
-        discountPercent: l.discountPercent != null ? Number(l.discountPercent) : undefined,
-        discountAmount: Number(l.discountAmount),
-        taxRate: Number(l.taxRate),
-      })),
-      discountPercent: source.discountPercent != null ? Number(source.discountPercent) : undefined,
-      additionalCharges: (source.additionalCharges as { name: string; amount: number }[] | null) ?? undefined,
-      description: source.description ?? undefined,
-      sourceTxnId: source.id,
-      ...overrides,
+    // Atomically claim the conversion (compare-and-swap on status) before creating the
+    // target txn, so two concurrent conversions of the same source can't both proceed.
+    const newStatus = source.txnType === 'ESTIMATE' || source.txnType === 'DELIVERY_CHALLAN' ? 'CONVERTED' : 'ORDER_CLOSED';
+    const claim = await this.prisma.txn.updateMany({
+      where: { id: source.id, businessId, status: source.status },
+      data: { status: newStatus },
     });
-    await this.prisma.txn.update({
-      where: { id: source.id },
-      data: { status: source.txnType === 'ESTIMATE' || source.txnType === 'DELIVERY_CHALLAN' ? 'CONVERTED' : 'ORDER_CLOSED' },
-    });
-    return created;
+    if (claim.count === 0) {
+      throw new BadRequestException('Already converted');
+    }
+    try {
+      return await this.createTxn(businessId, userId, {
+        txnType: targetType,
+        branchId: source.branchId ?? undefined,
+        partyId: source.partyId ?? undefined,
+        partyName: source.partyName ?? undefined,
+        lines: source.lines.map((l) => ({
+          itemId: l.itemId ?? undefined,
+          name: l.name,
+          hsnCode: l.hsnCode ?? undefined,
+          quantity: Number(l.quantity),
+          unit: l.unit,
+          unitPrice: Number(l.unitPrice),
+          discountPercent: l.discountPercent != null ? Number(l.discountPercent) : undefined,
+          discountAmount: Number(l.discountAmount),
+          taxRate: Number(l.taxRate),
+        })),
+        discountPercent: source.discountPercent != null ? Number(source.discountPercent) : undefined,
+        additionalCharges: (source.additionalCharges as { name: string; amount: number }[] | null) ?? undefined,
+        description: source.description ?? undefined,
+        sourceTxnId: source.id,
+        ...overrides,
+      });
+    } catch (err) {
+      // Creation failed - release the claim so the source can still be converted.
+      await this.prisma.txn.update({ where: { id: source.id }, data: { status: source.status } }).catch(() => {});
+      throw err;
+    }
   }
 }
 
