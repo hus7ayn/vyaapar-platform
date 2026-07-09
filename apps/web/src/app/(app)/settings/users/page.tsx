@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Permission, ROLE_LABELS, ROLE_PERMISSIONS, SystemRole } from '@nexus/shared';
+import { usePermissions } from '@/hooks/use-permissions';
 
 interface UserRow {
   id: string;
@@ -34,6 +35,9 @@ const ASSIGNABLE_ROLES = Object.entries(ROLE_LABELS).filter(
 
 export default function UsersPage() {
   const token = useAuthStore((s) => s.accessToken)!;
+  const user = useAuthStore((s) => s.user);
+  const { has } = usePermissions();
+  const canSwitchBranches = has(Permission.BUSINESS_MANAGE);
   const qc = useQueryClient();
   const [form, setForm] = useState({
     email: '',
@@ -41,7 +45,7 @@ export default function UsersPage() {
     firstName: '',
     lastName: '',
     role: 'RECEPTIONIST',
-    branchId: '',
+    branchId: user?.branchId ?? '',
   });
 
   const { data: users } = useQuery({
@@ -59,7 +63,7 @@ export default function UsersPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] });
       toast.success('User created');
-      setForm({ email: '', password: '', firstName: '', lastName: '', role: 'RECEPTIONIST', branchId: '' });
+      setForm({ email: '', password: '', firstName: '', lastName: '', role: 'RECEPTIONIST', branchId: user?.branchId ?? '' });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -86,16 +90,22 @@ export default function UsersPage() {
               <option key={key} value={key}>{label}</option>
             ))}
           </select>
-          <select
-            className="h-10 rounded-lg border px-3"
-            value={form.branchId}
-            onChange={(e) => setForm({ ...form, branchId: e.target.value })}
-          >
-            <option value="">Select shop/branch...</option>
-            {branches?.map((b) => (
-              <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
-            ))}
-          </select>
+          {canSwitchBranches ? (
+            <select
+              className="h-10 rounded-lg border px-3"
+              value={form.branchId}
+              onChange={(e) => setForm({ ...form, branchId: e.target.value })}
+            >
+              <option value="">Select shop/branch...</option>
+              {branches?.map((b) => (
+                <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
+              ))}
+            </select>
+          ) : (
+            <div className="h-10 rounded-lg border px-3 flex items-center text-sm text-muted-foreground bg-muted/30">
+              {branches?.find((b) => b.id === user?.branchId)?.name ?? 'Your shop'} (staff are added to your own shop)
+            </div>
+          )}
         </div>
         <Button onClick={() => create.mutate()} disabled={!form.branchId || create.isPending}>Create user</Button>
       </Card>

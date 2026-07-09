@@ -55,7 +55,7 @@ const NAV: NavItem[] = [
   { label: 'Parties', icon: Users, href: '/parties', match: (p) => p.startsWith('/parties'), permission: Permission.POS_SELL, hideForRoles: ['BILLER'] },
   { label: 'Items', icon: Package, href: '/items', match: (p) => p.startsWith('/items'), permission: Permission.INVENTORY_VIEW },
   {
-    label: 'Sale', icon: FileText, match: (p) => p.startsWith('/sale'), permission: Permission.POS_SELL, hideForRoles: ['BILLER'],
+    label: 'Sale', icon: FileText, match: (p) => p.startsWith('/sale'), permission: Permission.POS_SELL, hideForRoles: ['BILLER', 'RECEPTIONIST'],
     children: [
       { href: '/sale/invoices', label: 'Sale Invoices' },
       { href: '/sale/estimates', label: 'Estimate / Quotation' },
@@ -66,7 +66,7 @@ const NAV: NavItem[] = [
     ],
   },
   {
-    label: 'Purchase', icon: ShoppingBag, match: (p) => p.startsWith('/purchase'), permission: Permission.INVENTORY_VIEW,
+    label: 'Purchase', icon: ShoppingBag, match: (p) => p.startsWith('/purchase'), permission: Permission.INVENTORY_VIEW, hideForRoles: ['RECEPTIONIST'],
     children: [
       { href: '/purchase/bills', label: 'Purchase Bills' },
       { href: '/purchase/payment-out', label: 'Payment Out' },
@@ -93,7 +93,8 @@ const MORE_NAV: NavItem[] = [
   { label: 'Shops', icon: Building2, href: '/shops', match: (p) => p.startsWith('/shops'), permission: Permission.BRANCH_MANAGE },
   { label: 'Hotel PMS', icon: Building2, href: '/hotel/dashboard', match: (p) => p.startsWith('/hotel') || p.startsWith('/housekeeping') || p.startsWith('/services'), permission: Permission.HOTEL_VIEW },
   { label: 'Payroll / HR', icon: Briefcase, href: '/payroll', match: (p) => p.startsWith('/payroll'), permission: Permission.PAYROLL_VIEW },
-  { label: 'Settings', icon: Settings, href: '/settings', match: (p) => p.startsWith('/settings'), permission: Permission.SETTINGS_MANAGE },
+  { label: 'Staff', icon: Users, href: '/settings/users', match: (p) => p.startsWith('/settings/users'), permission: Permission.USER_MANAGE, hideForRoles: ['ADMIN', 'HOTEL_OWNER', 'SUPER_ADMIN'] },
+  { label: 'Settings', icon: Settings, href: '/settings', match: (p) => p === '/settings', permission: Permission.SETTINGS_MANAGE },
 ];
 
 const QUICK_ACTIONS = [

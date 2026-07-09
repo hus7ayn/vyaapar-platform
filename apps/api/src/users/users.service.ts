@@ -15,9 +15,9 @@ const STAFF_ASSIGNABLE_ROLES: string[] = Object.values(SystemRole).filter(
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  findAll(businessId: string) {
+  findAll(businessId: string, branchId?: string) {
     return this.prisma.user.findMany({
-      where: { businessId, deletedAt: null },
+      where: { businessId, deletedAt: null, ...(branchId ? { branchId } : {}) },
       select: {
         id: true,
         email: true,
@@ -41,16 +41,21 @@ export class UsersService {
       role: string;
       branchId?: string;
     },
+    callerBranchId?: string,
   ) {
     if (!STAFF_ASSIGNABLE_ROLES.includes(data.role)) {
       throw new BadRequestException('Invalid role');
     }
     const permissions = ROLE_PERMISSIONS[data.role] ?? [];
+    // A branch-locked caller (shop admin, not a business-wide owner) can only
+    // ever create staff within their own branch — ignore any other branchId
+    // they might pass, rather than trusting client input.
+    const targetBranchId = callerBranchId ?? data.branchId;
     // Every assignable role here is shop-scoped (business-wide roles are
     // excluded above), so it must be pinned to one branch — otherwise
     // branch-scoping silently falls back to "see all branches".
-    if (!data.branchId) throw new BadRequestException('This role must be assigned to a specific shop/branch');
-    const branch = await this.prisma.branch.findFirst({ where: { id: data.branchId, businessId } });
+    if (!targetBranchId) throw new BadRequestException('This role must be assigned to a specific shop/branch');
+    const branch = await this.prisma.branch.findFirst({ where: { id: targetBranchId, businessId } });
     if (!branch) throw new NotFoundException('Branch not found');
     const passwordHash = await bcrypt.hash(data.password, 12);
     return this.prisma.user.create({
@@ -61,7 +66,7 @@ export class UsersService {
         firstName: data.firstName,
         lastName: data.lastName,
         role: data.role,
-        branchId: data.branchId,
+        branchId: targetBranchId,
         permissions,
       },
     });

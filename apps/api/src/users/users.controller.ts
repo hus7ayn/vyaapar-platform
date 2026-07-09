@@ -15,13 +15,13 @@ export class UsersController {
 
   @Get()
   @RequirePermissions(Permission.USER_MANAGE)
-  findAll(@CurrentUser('businessId') businessId: string) {
-    return this.users.findAll(businessId);
+  findAll(@CurrentUser('businessId') businessId: string, @CurrentUser('branchId') branchId?: string) {
+    return this.users.findAll(businessId, branchId);
   }
 
   @Post()
   @RequirePermissions(Permission.USER_MANAGE)
-  create(@CurrentUser('businessId') businessId: string, @Body() body: never) {
-    return this.users.create(businessId, body);
+  create(@CurrentUser('businessId') businessId: string, @CurrentUser('branchId') branchId: string | undefined, @Body() body: never) {
+    return this.users.create(businessId, body, branchId);
   }
 }
