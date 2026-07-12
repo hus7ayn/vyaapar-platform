@@ -1,5 +1,4 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import PDFDocument = require('pdfkit');
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TXN_LABELS, TxnType } from '../txns/txn.constants';
@@ -124,10 +123,14 @@ export class ReceiptsService {
     const txn = await this.getTxnData(txnId, businessId);
     const label = TXN_LABELS[txn.txnType as TxnType] ?? txn.txnType;
 
+    // Lazy — the common thermal-receipt path returns HTML and never loads pdfkit.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const PDFDocument = require('pdfkit');
+
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ margin: 36, size: 'A4' });
       const chunks: Buffer[] = [];
-      doc.on('data', (c) => chunks.push(c));
+      doc.on('data', (c: Buffer) => chunks.push(c));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 

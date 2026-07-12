@@ -1233,7 +1233,11 @@ export default function HotelPage() {
                     variant="outline" 
                     className="flex-1" 
                     onClick={() => {
-                      window.print();
+                      try {
+                        window.print();
+                      } catch {
+                        toast.error('Print failed');
+                      }
                     }}
                   >
                     Print Bill

@@ -1,6 +1,6 @@
 # Deploy on Oracle Cloud Always Free
 
-One VM runs everything (web + API + Postgres + Redis + MinIO) for **3 shops at $0/month**.
+One VM runs everything (web + API + Postgres) for **3 shops at $0/month**.
 
 ---
 

@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
-import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { BusinessesModule } from './businesses/businesses.module';
@@ -32,7 +31,6 @@ import { FilesModule } from './files/files.module';
 import { ReceiptsModule } from './receipts/receipts.module';
 import { ExportsModule } from './exports/exports.module';
 import { AuditModule } from './audit/audit.module';
-import { QueuesModule } from './queues/queues.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { PlatformModule } from './platform/platform.module';
 import { RemindersModule } from './reminders/reminders.module';
@@ -44,9 +42,6 @@ import { BranchScopeGuard } from './common/guards/branch-scope.guard';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
-    BullModule.forRoot({
-      connection: { url: process.env.REDIS_URL || 'redis://localhost:6379' },
-    }),
     PrismaModule,
     AuthModule,
     BusinessesModule,
@@ -76,7 +71,6 @@ import { BranchScopeGuard } from './common/guards/branch-scope.guard';
     ReceiptsModule,
     ExportsModule,
     AuditModule,
-    QueuesModule,
     ShiftsModule,
     PlatformModule,
     RemindersModule,

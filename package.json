@@ -16,7 +16,7 @@
     "docker:prod:up": "docker compose -f docker-compose.prod.yml up -d",
     "deploy:oracle:install": "bash deploy/oracle/install.sh",
     "deploy:oracle:backup": "bash deploy/oracle/backup.sh",
-    "desktop:dev": "concurrently -n api,web,desktop -c blue,green,magenta \"pnpm --filter @nexus/api dev\" \"pnpm --filter @nexus/web dev\" \"wait-on http://localhost:3000 http://localhost:4000/api/v1/health && pnpm --filter @nexus/desktop dev\"",
+    "desktop:dev": "concurrently -n api,web,desktop -c blue,green,magenta \"pnpm --filter @nexus/api dev\" \"pnpm --filter @nexus/web dev\" \"wait-on http://localhost:3000 http://localhost:4000/api/v1/health && DESKTOP_SERVER_URL=http://localhost:3000 pnpm --filter @nexus/desktop dev\"",
     "desktop:build": "pnpm --filter @nexus/desktop build",
     "desktop:win": "pnpm --filter @nexus/desktop dist:win",
     "lint": "pnpm -r lint",

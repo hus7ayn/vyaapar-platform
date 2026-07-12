@@ -44,14 +44,18 @@ async function bootstrap() {
     }),
   );
 
-  const config = new DocumentBuilder()
-    .setTitle('Vyaapar API')
-    .setDescription('Billing, accounting & inventory API')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  // Skip building the Swagger document in production — it's a dev aid and the
+  // build/mount cost is pure overhead on a small server.
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Vyaapar API')
+      .setDescription('Billing, accounting & inventory API')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   const port = process.env.API_PORT || 4000;
   await app.listen(port);

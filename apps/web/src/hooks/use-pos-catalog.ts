@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { cacheProducts } from '@/lib/offline-db';
+import { useSocket } from '@/hooks/use-socket';
 
 export interface PosProduct {
   id: string;
@@ -42,6 +43,7 @@ function resolveUnitPrice(salePrice: number, taxRate: number, taxInclusive: bool
 }
 
 export function usePosCatalog(token: string, branchId?: string) {
+  const qc = useQueryClient();
   const query = useQuery({
     queryKey: ['pos-catalog', branchId],
     queryFn: async () => {
@@ -74,6 +76,14 @@ export function usePosCatalog(token: string, branchId?: string) {
     refetchOnMount: false,
     retry: 2,
   });
+
+  // An admin editing a price/stock level elsewhere pushes this event so an
+  // open POS tab picks it up within seconds instead of waiting out staleTime
+  // (or a re-login) — see EventsGateway.emitInventoryUpdate on the backend.
+  const onInventoryUpdate = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ['pos-catalog', branchId] });
+  }, [qc, branchId]);
+  useSocket('inventory:updated', onInventoryUpdate);
 
   const catalog = query.data?.products ?? [];
 

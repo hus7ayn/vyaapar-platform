@@ -4,15 +4,18 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { isStrongPassword, PASSWORD_POLICY_MESSAGE } from '@nexus/shared';
 
 export default function ForgotPasswordPage() {
   const [step, setStep] = useState<'email' | 'reset'>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const requestOtp = async (e: React.FormEvent) => {
@@ -31,6 +34,11 @@ export default function ForgotPasswordPage() {
 
   const reset = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isStrongPassword(password)) {
+      setPasswordError(PASSWORD_POLICY_MESSAGE);
+      return;
+    }
+    setPasswordError('');
     setLoading(true);
     try {
       await api('/auth/reset-password', {
@@ -61,7 +69,10 @@ export default function ForgotPasswordPage() {
           ) : (
             <form onSubmit={reset} className="space-y-4">
               <Input placeholder="OTP code" required value={code} onChange={(e) => setCode(e.target.value)} />
-              <Input type="password" placeholder="New password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+              <div className="space-y-1">
+                <PasswordInput placeholder="New password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+                {passwordError && <p className="text-xs text-destructive">{passwordError}</p>}
+              </div>
               <Button type="submit" className="w-full" disabled={loading}>Reset password</Button>
             </form>
           )}

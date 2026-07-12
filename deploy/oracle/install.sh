@@ -45,12 +45,10 @@ if [[ ! -f .env ]]; then
     DB_PASS="$(openssl rand -hex 16)"
     JWT1="$(openssl rand -hex 32)"
     JWT2="$(openssl rand -hex 32)"
-    MINIO="$(openssl rand -hex 16)"
     ENC="$(openssl rand -hex 32)"
     sed -i "s|CHANGE_ME_STRONG_DB_PASSWORD|${DB_PASS}|g" .env
     sed -i "s|CHANGE_ME_jwt_secret_min_32_chars|${JWT1}|g" .env
     sed -i "s|CHANGE_ME_refresh_secret_min_32_chars|${JWT2}|g" .env
-    sed -i "s|CHANGE_ME_minio_secret|${MINIO}|g" .env
     sed -i "s|0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef|${ENC}|g" .env
     echo ">> Generated random secrets in .env"
   else

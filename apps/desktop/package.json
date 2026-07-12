@@ -5,8 +5,9 @@
   "description": "Vyaapar Windows desktop — full web app in Electron shell",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "tsc -p tsconfig.electron.json && DESKTOP_DEVTOOLS=1 electron .",
-    "build": "tsc -p tsconfig.electron.json",
+    "copy-assets": "node -e \"require('fs').cpSync('electron/pages','dist-electron/pages',{recursive:true})\"",
+    "dev": "tsc -p tsconfig.electron.json && pnpm copy-assets && DESKTOP_DEVTOOLS=1 electron .",
+    "build": "tsc -p tsconfig.electron.json && pnpm copy-assets",
     "pack": "pnpm build && electron-builder --dir",
     "dist:win": "pnpm build && electron-builder --win"
   },

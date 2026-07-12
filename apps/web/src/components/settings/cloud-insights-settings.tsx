@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/stores/auth-store';
-import { getDesktopDeviceId, isDesktopApp } from '@/lib/desktop';
+import { getDesktopDeviceId } from '@/lib/desktop';
 import {
   getInsightsCloudUrl,
   getLastInsightsSync,
@@ -68,9 +68,8 @@ export function CloudInsightsSettings() {
         <h2 className="font-semibold">Cloud insights sync</h2>
       </div>
       <p className="text-sm text-muted-foreground">
-        {isDesktopApp()
-          ? 'Desktop mode: all billing data stays on this PC. Only daily revenue summaries upload to cloud.'
-          : 'Upload daily revenue summaries to a cloud server (optional). Full invoices are never uploaded.'}
+        The desktop and web apps both talk to your server directly — this is an optional extra
+        summary upload, not how your regular data gets there. Full invoices are never uploaded here.
       </p>
 
       <div className="space-y-1">

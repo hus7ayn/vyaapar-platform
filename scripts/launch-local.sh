@@ -19,7 +19,7 @@ for i in $(seq 1 60); do
   sleep 10
 done
 
-echo "==> Starting Postgres, Redis, MinIO..."
+echo "==> Starting Postgres..."
 docker compose up -d
 
 echo "==> Waiting for Postgres..."

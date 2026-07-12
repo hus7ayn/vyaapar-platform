@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
 import { Txn } from '@/lib/txn-meta';
+import { printHtmlDocument } from '@/lib/print-html';
 
 export function ReceiptActions({ txnId }: { txnId: string }) {
   const token = useAuthStore((s) => s.accessToken)!;
@@ -15,14 +16,12 @@ export function ReceiptActions({ txnId }: { txnId: string }) {
   const [email, setEmail] = useState('');
 
   const printThermal = async () => {
-    const res = await api<{ content: string }>(`/receipts/${txnId}/thermal`, { token });
-    const w = window.open('', '_blank');
-    if (w) {
-      w.document.write(res.content);
-      w.document.close();
-      w.onload = () => w.print();
+    try {
+      const res = await api<{ content: string }>(`/receipts/${txnId}/thermal`, { token });
+      if (printHtmlDocument(res.content)) toast.success('Receipt sent to printer');
+    } catch {
+      toast.error('Failed to print receipt');
     }
-    toast.success('Receipt sent to printer');
   };
 
   const printPdf = async () => {

@@ -8,13 +8,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
 import { APP_NAME, SystemRole } from '@nexus/shared';
 
 const schema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
+  email: z.string().email('Enter a valid email address'),
+  password: z.string().min(1, 'Password is required'),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -25,9 +26,8 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { register, handleSubmit } = useForm<FormData>({
+  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { email: 'admin@grandplaza.demo', password: 'Demo@123456' },
   });
 
   const onSubmit = async (data: FormData) => {
@@ -111,16 +111,17 @@ export default function LoginPage() {
                 className="h-11 bg-white"
                 {...register('email')}
               />
+              {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
             </div>
 
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Password</label>
-              <Input
-                type="password"
+              <PasswordInput
                 placeholder="••••••••"
                 className="h-11 bg-white"
                 {...register('password')}
               />
+              {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
             </div>
 
             {error && (

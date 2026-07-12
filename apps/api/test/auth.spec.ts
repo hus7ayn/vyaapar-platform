@@ -13,6 +13,6 @@ describe('RBAC', () => {
 describe('Auth constants', () => {
   it('has all role permission maps', () => {
     expect(ROLE_PERMISSIONS.SUPER_ADMIN.length).toBeGreaterThan(0);
-    expect(ROLE_PERMISSIONS.HR_MANAGER).toBeDefined();
+    expect(ROLE_PERMISSIONS.ACCOUNTANT).toBeDefined();
   });
 });

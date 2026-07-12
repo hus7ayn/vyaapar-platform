@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   LayoutDashboard,
   FileText,
@@ -52,7 +52,14 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { label: 'Home', icon: LayoutDashboard, href: '/dashboard', match: (p) => p === '/dashboard', hideForRoles: ['BILLER'] },
-  { label: 'Parties', icon: Users, href: '/parties', match: (p) => p.startsWith('/parties'), permission: Permission.POS_SELL, hideForRoles: ['BILLER'] },
+  {
+    label: 'Parties', icon: Users, match: (p) => p.startsWith('/parties'), permission: Permission.POS_SELL, hideForRoles: ['BILLER'],
+    children: [
+      { href: '/parties?type=CUSTOMER', label: 'Customers' },
+      { href: '/parties?type=SUPPLIER', label: 'Suppliers' },
+      { href: '/parties', label: 'All parties' },
+    ],
+  },
   { label: 'Items', icon: Package, href: '/items', match: (p) => p.startsWith('/items'), permission: Permission.INVENTORY_VIEW },
   {
     label: 'Sale', icon: FileText, match: (p) => p.startsWith('/sale'), permission: Permission.POS_SELL, hideForRoles: ['BILLER', 'RECEPTIONIST'],
@@ -106,6 +113,7 @@ const QUICK_ACTIONS = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, logout } = useAuthStore();
   const { has } = usePermissions();
   const visible = (item: { permission?: Permission | Permission[]; hideForRoles?: string[] }) =>
@@ -140,7 +148,10 @@ export function Sidebar() {
           {isOpen && (
             <div className="ml-7 border-l pl-2 space-y-0.5 py-0.5">
               {item.children.map((c) => {
-                const childActive = pathname === c.href || pathname.startsWith(`${c.href}/`);
+                const [childPath, childQuery] = c.href.split('?');
+                const childActive = childQuery
+                  ? pathname === childPath && searchParams.toString() === childQuery
+                  : pathname === c.href || pathname.startsWith(`${c.href}/`);
                 return (
                   <Link
                     key={c.href}

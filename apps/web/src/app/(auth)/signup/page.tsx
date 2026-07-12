@@ -3,27 +3,39 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
-import { APP_NAME } from '@nexus/shared';
+import { APP_NAME, PASSWORD_MIN_LENGTH, PASSWORD_COMPLEXITY_REGEX, PASSWORD_POLICY_MESSAGE } from '@nexus/shared';
+
+const schema = z.object({
+  businessName: z.string().min(1, 'Business name is required'),
+  firstName: z.string().min(1, 'First name is required'),
+  lastName: z.string().min(1, 'Last name is required'),
+  email: z.string().email('Enter a valid email address'),
+  password: z.string().min(PASSWORD_MIN_LENGTH, PASSWORD_POLICY_MESSAGE).regex(PASSWORD_COMPLEXITY_REGEX, PASSWORD_POLICY_MESSAGE),
+});
+
+type FormData = z.infer<typeof schema>;
+
+const FIELDS = ['businessName', 'firstName', 'lastName', 'email', 'password'] as const;
 
 export default function SignupPage() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({
-    businessName: '',
-    firstName: '',
-    lastName: '',
-    email: '',
-    password: '',
+
+  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+    resolver: zodResolver(schema),
   });
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: FormData) => {
     setLoading(true);
     setError('');
     try {
@@ -31,7 +43,7 @@ export default function SignupPage() {
         accessToken: string;
         refreshToken: string;
         user: { id: string; email: string; businessId: string; branchId?: string; role: string; permissions: string[] };
-      }>('/auth/signup', { method: 'POST', body: JSON.stringify(form) });
+      }>('/auth/signup', { method: 'POST', body: JSON.stringify(data) });
       setAuth(res);
       router.push('/dashboard');
     } catch (err) {
@@ -52,17 +64,25 @@ export default function SignupPage() {
           <p className="text-sm text-muted-foreground">Create your business account — free to get started</p>
         </div>
 
-        <form onSubmit={submit} className="space-y-3 bg-white rounded-xl border p-6 shadow-sm">
-          {(['businessName', 'firstName', 'lastName', 'email', 'password'] as const).map((field) => (
-            <Input
-              key={field}
-              placeholder={field.replace(/([A-Z])/g, ' $1')}
-              type={field === 'password' ? 'password' : field === 'email' ? 'email' : 'text'}
-              required
-              value={form[field]}
-              onChange={(e) => setForm({ ...form, [field]: e.target.value })}
-              className="h-11"
-            />
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 bg-white rounded-xl border p-6 shadow-sm">
+          {FIELDS.map((field) => (
+            <div key={field} className="space-y-1">
+              {field === 'password' ? (
+                <PasswordInput
+                  placeholder="Password"
+                  className="h-11"
+                  {...register(field)}
+                />
+              ) : (
+                <Input
+                  placeholder={field.replace(/([A-Z])/g, ' $1')}
+                  type={field === 'email' ? 'email' : 'text'}
+                  className="h-11"
+                  {...register(field)}
+                />
+              )}
+              {errors[field] && <p className="text-xs text-destructive">{errors[field]?.message}</p>}
+            </div>
           ))}
           {error && <p className="text-sm text-destructive bg-destructive/10 rounded-lg p-3">{error}</p>}
           <Button

@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { formatMoney, PAYMENT_TYPES, TXN_META, Txn, TxnType } from '@/lib/txn-meta';
 
@@ -100,6 +101,7 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
   const [expenseCategoryId, setExpenseCategoryId] = useState('');
   const [activeItemRow, setActiveItemRow] = useState<number | null>(null);
   const [itemSearch, setItemSearch] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
 
   const { data: parties } = useQuery({
     queryKey: ['parties-all'],
@@ -219,6 +221,7 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
       return api<Txn>(meta.createEndpoint, { method: 'POST', token, body: JSON.stringify(body) });
     },
     onSuccess: (txn) => {
+      setShowPreview(false);
       toast.success(`${meta.label} ${txn.txnNumber} saved`);
       queryClient.invalidateQueries();
       router.push(meta.listPath);
@@ -509,12 +512,51 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
         <Button
           className="bg-[hsl(348,85%,52%)] hover:bg-[hsl(348,85%,45%)]"
           disabled={saveMutation.isPending}
-          onClick={() => { if (validate()) saveMutation.mutate(); }}
+          onClick={() => { if (validate()) setShowPreview(true); }}
         >
           <Save className="h-4 w-4 mr-2" />
           {saveMutation.isPending ? 'Saving…' : `Save ${meta.label}`}
         </Button>
       </div>
+
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm {meta.label}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            {(partyId || partySearch) && (
+              <div className="flex justify-between"><span className="text-muted-foreground">{meta.partyLabel}</span><span className="font-medium">{selectedParty?.name ?? partySearch}</span></div>
+            )}
+            {meta.hasLines && (
+              <div className="max-h-56 overflow-y-auto divide-y border-t border-b">
+                {lines.filter((l) => (l.itemId || l.name) && Number(l.quantity) > 0).map((l) => (
+                  <div key={l.key} className="flex justify-between py-1.5">
+                    <span className="truncate pr-2">{l.name} <span className="text-muted-foreground">x{l.quantity}</span></span>
+                    <span className="shrink-0">{formatMoney((Number(l.quantity) || 0) * (Number(l.unitPrice) || 0))}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-between text-base font-bold pt-1">
+              <span>Total</span><span>{formatMoney(effectiveTotal)}</span>
+            </div>
+            {meta.hasLines && !meta.isOrder && meta.side !== 'other' && (
+              <div className="flex justify-between text-red-600"><span>Balance</span><span>{formatMoney(balance)}</span></div>
+            )}
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setShowPreview(false)}>Back</Button>
+            <Button
+              className="flex-1 bg-[hsl(348,85%,52%)] hover:bg-[hsl(348,85%,45%)]"
+              disabled={saveMutation.isPending}
+              onClick={() => saveMutation.mutate()}
+            >
+              {saveMutation.isPending ? 'Saving…' : 'Confirm & Save'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -525,11 +567,18 @@ export function PrintButton({ txnId }: { txnId: string }) {
     <Button
       variant="outline" size="sm"
       onClick={async () => {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/v1/receipts/${txnId}/pdf`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const blob = await res.blob();
-        window.open(URL.createObjectURL(blob), '_blank');
+        try {
+          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/v1/receipts/${txnId}/pdf`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!res.ok) throw new Error('Failed to generate receipt');
+          const blob = await res.blob();
+          if (!window.open(URL.createObjectURL(blob), '_blank')) {
+            toast.error('Enable pop-ups for this site to print');
+          }
+        } catch {
+          toast.error('Failed to print receipt');
+        }
       }}
     >
       <Printer className="h-4 w-4" />

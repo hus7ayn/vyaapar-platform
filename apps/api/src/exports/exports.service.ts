@@ -1,26 +1,35 @@
 import { Injectable } from '@nestjs/common';
-import * as XLSX from 'xlsx';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ExportsService {
   constructor(private prisma: PrismaService) {}
 
-  private toBuffer(data: Record<string, unknown>[], sheetName: string): Buffer {
+  private async toBuffer(data: Record<string, unknown>[], sheetName: string): Promise<Buffer> {
+    // Lazy — xlsx (~14MB) only loads when an actual spreadsheet is requested.
+    const XLSX = await import('xlsx');
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
     return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
   }
 
+  // Hand-rolled so CSV export never pulls in xlsx.
   private toCsv(data: Record<string, unknown>[]): string {
-    const ws = XLSX.utils.json_to_sheet(data);
-    return XLSX.utils.sheet_to_csv(ws);
+    if (!data.length) return '';
+    const headers = Object.keys(data[0]);
+    const escape = (v: unknown) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [headers.join(',')];
+    for (const row of data) lines.push(headers.map((h) => escape(row[h])).join(','));
+    return lines.join('\n');
   }
 
-  private pack(rows: Record<string, unknown>[], sheet: string, format: 'xlsx' | 'csv') {
+  private async pack(rows: Record<string, unknown>[], sheet: string, format: 'xlsx' | 'csv') {
     if (format === 'csv') return { content: this.toCsv(rows), mime: 'text/csv', ext: 'csv' };
-    return { content: this.toBuffer(rows, sheet), mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' };
+    return { content: await this.toBuffer(rows, sheet), mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: 'xlsx' };
   }
 
   private dateRange(from?: string, to?: string) {

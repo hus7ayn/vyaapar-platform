@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Vyaapar Setup</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; background: #f7f3f4; margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,.08); padding: 32px; width: 360px; }
+  .logo { width: 48px; height: 48px; border-radius: 12px; background: #e21a4c; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 22px; margin-bottom: 16px; }
+  h1 { font-size: 18px; margin: 0 0 8px; color: #1a1a1a; }
+  p { font-size: 13px; color: #666; margin: 0 0 16px; line-height: 1.5; }
+  input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+  button { width: 100%; padding: 10px; border: 0; border-radius: 8px; background: #e21a4c; color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; }
+  button:disabled { opacity: .6; cursor: default; }
+  .error { color: #c0392b; font-size: 12px; margin-top: 8px; min-height: 16px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">V</div>
+    <h1>Connect this PC</h1>
+    <p>Enter your business's server address. Every PC in your business connects to the same one — ask whoever set up Vyaapar for your business if you don't have it.</p>
+    <input id="url" type="text" placeholder="https://yourbusiness.example.com" autofocus />
+    <button id="save">Connect</button>
+    <div class="error" id="error"></div>
+  </div>
+  <script>
+    const input = document.getElementById('url');
+    const btn = document.getElementById('save');
+    const error = document.getElementById('error');
+
+    async function submit() {
+      const url = input.value.trim().replace(/\/+$/, '');
+      if (!/^https?:\/\/.+/.test(url)) {
+        error.textContent = 'Enter a full address starting with http:// or https://';
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Connecting…';
+      error.textContent = '';
+      await window.desktop.setServerUrl(url);
+    }
+
+    btn.addEventListener('click', submit);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+    input.focus();
+  </script>
+</body>
+</html>

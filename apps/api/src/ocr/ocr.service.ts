@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { createWorker } from 'tesseract.js';
 import { encrypt, maskAadhaar } from '../common/utils/encryption.util';
 
 export interface AadhaarOcrResult {
@@ -15,6 +14,9 @@ export interface AadhaarOcrResult {
 @Injectable()
 export class OcrService {
   async extractAadhaar(buffer: Buffer): Promise<AadhaarOcrResult> {
+    // Lazy so the ~63MB tesseract WASM tree never loads at boot — only when a
+    // hotel actually scans an ID (a rare path on most deployments).
+    const { createWorker } = await import('tesseract.js');
     const worker = await createWorker('eng');
     try {
       const { data } = await worker.recognize(buffer);

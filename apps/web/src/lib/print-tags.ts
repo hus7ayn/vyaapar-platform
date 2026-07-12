@@ -1,3 +1,5 @@
+import { printHtmlDocument } from '@/lib/print-html';
+
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -42,10 +44,5 @@ export function printBarcodeTags(tags: TagSpec[]) {
 </style>
 </head><body>${body}</body></html>`;
 
-  const w = window.open('', '_blank');
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    w.onload = () => w.print();
-  }
+  printHtmlDocument(html);
 }

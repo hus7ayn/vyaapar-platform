@@ -1,11 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const bwipjs = require('bwip-js');
-import * as QRCode from 'qrcode';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveBranchWarehouse } from '../inventory/warehouse.util';
 import { buildItemBarcode, decodeCostFromBarcode } from './barcode.util';
+import { EventsGateway } from '../events/events.gateway';
 
 export interface ItemInput {
   name: string;
@@ -53,7 +51,7 @@ const DEFAULT_UNITS = [
 
 @Injectable()
 export class ItemsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private events: EventsGateway) {}
 
   private branchWhere(branchId?: string) {
     return branchId ? { branchId } : {};
@@ -225,7 +223,7 @@ export class ItemsService {
 
   async update(businessId: string, id: string, body: Partial<ItemInput> & { isActive?: boolean }) {
     await this.get(businessId, id);
-    return this.prisma.item.update({
+    const item = await this.prisma.item.update({
       where: { id },
       data: {
         ...(body.name !== undefined && { name: body.name }),
@@ -255,6 +253,8 @@ export class ItemsService {
         ...(body.isActive !== undefined && { isActive: body.isActive }),
       },
     });
+    this.events.emitInventoryUpdate(businessId, { itemId: id });
+    return item;
   }
 
   async remove(businessId: string, id: string) {
@@ -276,7 +276,7 @@ export class ItemsService {
     if (qty.lte(0)) throw new BadRequestException('Quantity must be positive');
     const signed = body.adjType === 'REDUCE' ? qty.neg() : qty;
 
-    return this.prisma.$transaction(async (tx) => {
+    const adj = await this.prisma.$transaction(async (tx) => {
       const adj = await tx.stockAdjustment.create({
         data: {
           businessId,
@@ -311,6 +311,8 @@ export class ItemsService {
       }
       return adj;
     });
+    this.events.emitInventoryUpdate(businessId, { itemId: id });
+    return adj;
   }
 
   // ─── Units ─────────────────────────────────────────────────────────────────
@@ -335,11 +337,15 @@ export class ItemsService {
   // ─── Barcode utilities ─────────────────────────────────────────────────────
 
   async generateBarcodePng(text: string): Promise<string> {
+    // Lazy — the ~25MB bwip-js symbology tables only load when a label is generated.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const bwipjs = require('bwip-js');
     const png = await bwipjs.toBuffer({ bcid: 'code128', text, scale: 3, height: 10, includetext: true });
     return `data:image/png;base64,${png.toString('base64')}`;
   }
 
-  generateQrPng(text: string): Promise<string> {
+  async generateQrPng(text: string): Promise<string> {
+    const QRCode = await import('qrcode');
     return QRCode.toDataURL(text, { width: 256, margin: 2 });
   }
 

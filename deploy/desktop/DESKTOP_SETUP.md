@@ -1,94 +1,79 @@
 # Vyaapar Windows Desktop
 
-The desktop app is an **Electron shell around the full web app** — same sidebar, POS, parties, purchases, hotel PMS, reports, and everything else you use in the browser.
+The desktop app is a **thin Electron client** — it doesn't run its own server. Every shop PC connects to the **same one centrally-hosted server** (deployed once, via `deploy/gcp` or `deploy/oracle`), the same way a browser connects to a website. A shop PC only runs the Electron shell — no Docker, no local Postgres, no local API or web server.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Electron window → http://localhost:3000 (full Next.js app) │
-│  ├── All Vyapar features (same as web)                      │
-│  ├── Local API + Postgres on this PC                        │
-│  └── Cloud: only daily revenue insights upload                │
-└─────────────────────────────────────────────────────────────┘
+┌───────────────────────┐        ┌───────────────────────┐
+│  Shop PC #1            │        │  Shop PC #2            │
+│  Electron shell only   │        │  Electron shell only   │        ...
+└───────────┬────────────┘        └───────────┬────────────┘
+            │                                  │
+            └──────────────┬───────────────────┘
+                            ▼
+              https://your-business.example.com
+     (one deploy: nginx + api + web + postgres —
+      see docker-compose.prod.yml, deploy/gcp, deploy/oracle)
 ```
 
-## Quick start (localhost)
+This is the same principle as any hosted web app — the "desktop app" just wraps it in a native window with a device ID for the offline POS queue.
 
-**1. Start Docker** (Postgres, Redis, MinIO):
+## One-time: deploy the central server
+
+Do this once per business, not per PC. Either:
+
+- `deploy/gcp/GCP_SETUP.md`, or
+- `deploy/oracle/install.sh` (+ `deploy/oracle/backup.sh` for backups)
+
+Both stand up the full `docker-compose.prod.yml` stack (nginx, api, web, postgres) on one server. Note the URL you end up with (e.g. `https://your-business.example.com`) — every shop PC's Electron app connects to that same address.
+
+## Setting up a shop PC
+
+1. Install `Vyaapar Setup.exe` (see build instructions below) and launch it.
+2. First launch shows a **"Connect this PC"** screen — enter the business's server address once. It's saved locally on that PC from then on.
+3. If the server can't be reached, an **offline screen** appears with a manual **Retry** button (and a **Change server address** option) instead of a blank window.
+
+No Docker, no local database, no other services to install on the shop PC.
+
+## Local development (testing the Electron shell itself)
+
+For developing/testing the desktop shell against a local dev stack:
 
 ```bash
-docker start nexus-postgres nexus-redis nexus-minio
-# or: pnpm docker:up
+pnpm docker:up      # postgres for local dev only
+pnpm desktop:dev     # API + Web + Electron, pre-wired to http://localhost:3000
 ```
 
-**2. Run everything** (API + Web + Desktop window):
-
-```bash
-pnpm desktop:dev
-```
-
-This opens the **full app** in a desktop window — not a stripped-down POS.
+`desktop:dev` sets `DESKTOP_SERVER_URL=http://localhost:3000` so it skips the first-run screen during development. This local stack is a **dev convenience**, not what ships to shop PCs — see the section above for that.
 
 **Demo login:** `admin@grandplaza.demo` / `Demo@123456`
 
-## What you get
-
-| Feature | Desktop |
-|---------|---------|
-| POS billing (Vyapar style) | ✅ |
-| Parties, items, inventory | ✅ |
-| Sales, purchases, expenses | ✅ |
-| Cash & bank, payroll | ✅ |
-| Hotel PMS (rooms, folio, HK) | ✅ |
-| Reports & GST documents | ✅ |
-| Offline POS queue | ✅ |
-| Cloud upload | **Insights only** (daily revenue) |
-
-A red banner at the top shows: *"Desktop app — full features on this PC"*.
-
-## Cloud insights sync
-
-1. Go to **Settings → Cloud insights sync**
-2. Set your cloud server URL (GCP/Oracle deploy URL, or `http://localhost:4000` for testing)
-3. Click **Sync insights now**
-
-Auto-sync runs every 5 minutes in desktop mode.
-
-**Uploaded:** daily sales total, bill count, tax, purchase/expense totals  
-**Never uploaded:** individual invoices, parties, stock
-
 ## Build Windows `.exe`
-
-On Windows, with API + Web built and running as services on the PC:
 
 ```bash
 pnpm --filter @nexus/desktop dist:win
 ```
 
-Output: `apps/desktop/release/Vyaapar Setup.exe`
-
-> Production Windows install should also bundle or auto-start local API + Postgres (see `docker-compose.prod.yml`). The Electron app opens the local web UI.
+Output: `apps/desktop/release/Vyaapar Setup.exe`. This installer does not bundle a server — it's the same thin client for every shop, pointed at whichever server address the shop owner enters on first launch (or bake one in for a single-tenant build via the `DESKTOP_SERVER_URL` env var at build/run time).
 
 ## Architecture
 
 | Layer | Runs on |
 |-------|---------|
-| Electron | Opens window, provides device ID |
-| `apps/web` | Full UI (Next.js) |
-| `apps/api` | Full backend (NestJS + Postgres) |
-| Cloud | `shop_daily_insights` table only |
+| Electron | Shop PC — opens window, stores server URL + device ID, provides offline POS queue |
+| `apps/web` + `apps/api` + Postgres | The one central server only |
 
 ## Scripts
 
 | Command | What it does |
 |---------|--------------|
-| `pnpm desktop:dev` | API + Web + Electron (recommended) |
-| `pnpm dev` | API + Web only (browser) |
-| `pnpm desktop:win` | Build Windows installer |
+| `pnpm desktop:dev` | Local dev: API + Web + Electron against localhost |
+| `pnpm dev` | API + Web only (browser, local dev) |
+| `pnpm desktop:win` | Build the Windows installer |
 
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
-| Blank Electron window | Wait for web on :3000, or run `pnpm dev` first |
-| Login fails | Start Docker + `pnpm --filter @nexus/api dev` |
-| Sync fails | Set cloud URL in Settings, select a shop in top bar |
+| "Connect this PC" keeps appearing | The address wasn't saved — re-enter it and click Connect; check the central server is reachable from this PC |
+| Offline screen on launch | Check this PC's internet connection, then click Retry; if it persists, check the central server is up |
+| Wrong server / moved to a new deploy | Click "Change server address" on the offline screen, or clear `desktop.json` in the app's userData folder |

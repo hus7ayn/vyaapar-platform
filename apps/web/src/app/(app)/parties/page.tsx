@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDownLeft, ArrowUpRight, Pencil, Plus, Search, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
@@ -129,9 +130,13 @@ function BalanceText({ balance, className }: { balance: string | number; classNa
 export default function PartiesPage() {
   const queryClient = useQueryClient();
   const token = useAuthStore((s) => s.accessToken) ?? undefined;
+  const searchParams = useSearchParams();
+  const initialType = searchParams.get('type');
 
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER'>('ALL');
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER'>(
+    initialType === 'CUSTOMER' || initialType === 'SUPPLIER' ? initialType : 'ALL',
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<'transactions' | 'ledger'>('transactions');
   const [ledgerFrom, setLedgerFrom] = useState('');

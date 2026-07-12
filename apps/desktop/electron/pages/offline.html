@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Vyaapar — Offline</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; background: #f7f3f4; margin: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,.08); padding: 32px; width: 380px; }
+  .logo { width: 48px; height: 48px; border-radius: 12px; background: #e21a4c; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 22px; margin-bottom: 16px; }
+  h1 { font-size: 18px; margin: 0 0 8px; color: #1a1a1a; }
+  p { font-size: 13px; color: #666; margin: 0 0 20px; line-height: 1.5; word-break: break-all; }
+  button { width: 100%; padding: 10px; border: 0; border-radius: 8px; background: #e21a4c; color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; margin-bottom: 8px; }
+  button.secondary { background: #fff; color: #e21a4c; border: 1px solid #e21a4c; }
+  button:disabled { opacity: .6; cursor: default; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">V</div>
+    <h1>Can't reach your server</h1>
+    <p id="detail">Checking connection…</p>
+    <button id="retry">Retry</button>
+    <button id="change" class="secondary">Change server address</button>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const url = params.get('url') || '';
+    document.getElementById('detail').textContent = url
+      ? `Couldn't connect to ${url}. Check this PC's internet connection and that the address is correct.`
+      : `Couldn't connect. Check this PC's internet connection.`;
+
+    document.getElementById('retry').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = 'Retrying…';
+      await window.desktop.retryConnection();
+    });
+
+    document.getElementById('change').addEventListener('click', async () => {
+      await window.desktop.setServerUrl('');
+    });
+  </script>
+</body>
+</html>

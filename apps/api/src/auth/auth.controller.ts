@@ -11,6 +11,7 @@ import {
   OtpRequestDto,
   OtpVerifyDto,
   ForgotPasswordDto,
+  ResetPasswordDto,
 } from './dto/auth.dto';
 
 @ApiTags('auth')
@@ -56,8 +57,8 @@ export class AuthController {
 
   @Public()
   @Post('reset-password')
-  resetPassword(@Body() body: { email: string; code: string; newPassword: string }) {
-    return this.auth.resetPassword(body.email, body.code, body.newPassword);
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(dto.email, dto.code, dto.newPassword);
   }
 
   @ApiBearerAuth()

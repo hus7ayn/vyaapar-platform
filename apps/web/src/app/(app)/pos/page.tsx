@@ -27,6 +27,7 @@ import { PosBillFooter } from '@/components/pos/pos-bill-footer';
 import { ReceiptActions } from '@/components/pos/receipt-actions';
 import { TagPrintPicker } from '@/components/pos/tag-print-picker';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { printHtmlDocument } from '@/lib/print-html';
 
 const BarcodeScanner = dynamic(
   () => import('@/components/pos/barcode-scanner').then((m) => m.BarcodeScanner),
@@ -53,6 +54,8 @@ export default function PosPage() {
   const [lastInvoiceId, setLastInvoiceId] = useState<string | null>(null);
   const [lastInvoiceLines, setLastInvoiceLines] = useState<CartItem[]>([]);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [pendingCheckout, setPendingCheckout] = useState<{ print?: boolean } | null>(null);
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
 
   const { data: firm } = useQuery({
     queryKey: ['business-me'],
@@ -65,7 +68,10 @@ export default function PosPage() {
   const cart = usePosStore((s) => s.cart);
   const addItem = usePosStore((s) => s.addItem);
   const clearCart = usePosStore((s) => s.clearCart);
+  const getSubtotal = usePosStore((s) => s.getSubtotal);
+  const getTax = usePosStore((s) => s.getTax);
   const getTotal = usePosStore((s) => s.getTotal);
+  const discountAmount = usePosStore((s) => s.discountAmount);
   const discountPercent = usePosStore((s) => s.discountPercent);
   const secondaryDiscountAmount = usePosStore((s) => s.secondaryDiscountAmount);
   const removeTax = usePosStore((s) => s.removeTax);
@@ -85,12 +91,7 @@ export default function PosPage() {
   const printThermal = async (txnId: string) => {
     try {
       const res = await api<{ content: string }>(`/receipts/${txnId}/thermal`, { token });
-      const w = window.open('', '_blank');
-      if (w) {
-        w.document.write(res.content);
-        w.document.close();
-        w.onload = () => w.print();
-      }
+      printHtmlDocument(res.content);
     } catch {
       toast.error('Print failed');
     }
@@ -261,6 +262,20 @@ export default function PosPage() {
   // (e.g. a dialog is open or the product grid was clicked).
   useBarcodeWedge(handleBarcode);
 
+  // Invoice preview is mandatory before a sale finalizes — Save/Save & Print
+  // (and F12) open this review instead of checking out directly. F12 twice in
+  // a row still finalizes a sale in two keystrokes, so a fast keyboard-driven
+  // cashier barely notices the extra step.
+  const confirmCheckout = useCallback(() => {
+    if (!pendingCheckout) return;
+    checkout.mutate({ status: 'COMPLETED', print: pendingCheckout.print });
+    setPendingCheckout(null);
+  }, [pendingCheckout, checkout]);
+
+  useEffect(() => {
+    if (pendingCheckout) confirmBtnRef.current?.focus();
+  }, [pendingCheckout]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.altKey && e.key.toLowerCase() === 'd') {
@@ -270,13 +285,17 @@ export default function PosPage() {
       if (e.key === 'F2') { e.preventDefault(); searchRef.current?.focus(); }
       if (e.key === 'F12' && cart.length && !checkout.isPending) {
         e.preventDefault();
-        checkout.mutate({ status: 'COMPLETED', print: true });
+        if (pendingCheckout) confirmCheckout();
+        else setPendingCheckout({ print: true });
       }
-      if (e.key === 'Escape') { setSearch(''); searchRef.current?.focus(); }
+      if (e.key === 'Escape') {
+        if (pendingCheckout) { setPendingCheckout(null); return; }
+        setSearch(''); searchRef.current?.focus();
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [cart.length, checkout]);
+  }, [cart.length, checkout, pendingCheckout, confirmCheckout]);
 
   const gridCols = 4;
   const rowCount = Math.ceil(products.length / gridCols) || 0;
@@ -287,7 +306,7 @@ export default function PosPage() {
     overscan: 4,
   });
 
-  const handleSave = (print?: boolean) => checkout.mutate({ status: 'COMPLETED', print });
+  const handleSave = (print?: boolean) => setPendingCheckout({ print });
 
   return (
     <div className="h-full flex flex-col bg-[hsl(0,0%,96%)]">
@@ -319,11 +338,48 @@ export default function PosPage() {
           onConfirm={(payments) => {
             usePosStore.getState().setSplitPayments(payments);
             setShowSplit(false);
-            checkout.mutate({ status: 'COMPLETED' });
+            setPendingCheckout({ print: false });
           }}
         />
       )}
       <PosLineEditDialog item={editLine} open={!!editLine} onClose={() => setEditLine(null)} />
+
+      <Dialog open={!!pendingCheckout} onOpenChange={(open) => !open && setPendingCheckout(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm invoice</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-72 overflow-y-auto divide-y text-sm">
+            {cart.map((c) => (
+              <div key={c.itemId} className="flex justify-between py-1.5">
+                <span className="truncate pr-2">{c.name} <span className="text-muted-foreground">x{c.quantity}</span></span>
+                <span className="shrink-0">{formatCurrency(c.unitPrice * c.quantity)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-0.5 text-sm border-t pt-2">
+            <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatCurrency(getSubtotal())}</span></div>
+            {discountAmount > 0 && (
+              <div className="flex justify-between text-emerald-700"><span>Discount</span><span>&minus;{formatCurrency(discountAmount)}</span></div>
+            )}
+            {!removeTax && getTax() > 0 && (
+              <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span>{formatCurrency(getTax())}</span></div>
+            )}
+            <div className="flex justify-between text-base font-bold text-[hsl(348,85%,52%)] pt-1 border-t border-dashed">
+              <span>Grand Total</span>
+              <span>{formatCurrency(getTotal())}</span>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setPendingCheckout(null)}>
+              Back (Esc)
+            </Button>
+            <Button ref={confirmBtnRef} className="flex-1 font-bold" onClick={confirmCheckout}>
+              Confirm{pendingCheckout?.print ? ' & Print' : ''} (Enter)
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showReceipt && !!lastInvoiceId} onOpenChange={setShowReceipt}>
         <DialogContent className="max-w-md">

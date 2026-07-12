@@ -1,11 +1,14 @@
 import { IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
+import { IsStrongPassword } from '../../common/validators/is-strong-password.decorator';
 
 export class LoginDto {
   @IsEmail()
   email: string;
 
+  // Intentionally just a sanity check, not the full strength policy — existing
+  // accounts predate that rule and shouldn't be rejected at login time.
   @IsString()
-  @MinLength(6)
+  @MinLength(1)
   password: string;
 
   @IsOptional()
@@ -21,7 +24,7 @@ export class SignupDto {
   email: string;
 
   @IsString()
-  @MinLength(6)
+  @IsStrongPassword()
   password: string;
 
   @IsString()
@@ -56,4 +59,16 @@ export class OtpVerifyDto {
 export class ForgotPasswordDto {
   @IsEmail()
   email: string;
+}
+
+export class ResetPasswordDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  code: string;
+
+  @IsString()
+  @IsStrongPassword()
+  newPassword: string;
 }

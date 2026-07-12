@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import * as bcrypt from 'bcrypt';
 import { Permission, ROLE_PERMISSIONS, SystemRole } from '@nexus/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateUserDto } from './dto/create-user.dto';
 
 // Business-wide roles (SUPER_ADMIN, and anything holding BUSINESS_MANAGE like
 // HOTEL_OWNER/ADMIN) are never assignable through this tenant-scoped endpoint —
@@ -33,14 +34,7 @@ export class UsersService {
 
   async create(
     businessId: string,
-    data: {
-      email: string;
-      password: string;
-      firstName: string;
-      lastName: string;
-      role: string;
-      branchId?: string;
-    },
+    data: CreateUserDto,
     callerBranchId?: string,
   ) {
     if (!STAFF_ASSIGNABLE_ROLES.includes(data.role)) {
