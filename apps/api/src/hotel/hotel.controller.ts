@@ -17,7 +17,6 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { HotelService } from './hotel.service';
-import { OcrService } from '../ocr/ocr.service';
 import { FilesService } from '../files/files.service';
 
 @ApiTags('hotel')
@@ -27,7 +26,6 @@ import { FilesService } from '../files/files.service';
 export class HotelController {
   constructor(
     private hotel: HotelService,
-    private ocr: OcrService,
     private files: FilesService,
   ) {}
 
@@ -182,13 +180,12 @@ export class HotelController {
     return this.hotel.cancelReservation(businessId, id, body);
   }
 
-  @Post('aadhaar/ocr')
+  @Post('guest-document')
   @RequirePermissions(Permission.HOTEL_AADHAAR)
   @UseInterceptors(FileInterceptor('file'))
-  async aadhaarOcr(@UploadedFile() file: Express.Multer.File) {
-    const ocrResult = await this.ocr.extractAadhaar(file.buffer);
-    const uploaded = await this.files.upload(file, 'aadhaar');
-    return { ...ocrResult, documentUrl: uploaded.key };
+  async uploadGuestDocument(@UploadedFile() file: Express.Multer.File) {
+    const uploaded = await this.files.upload(file, 'guest-id');
+    return { documentUrl: uploaded.key };
   }
 
   @Post('room-categories')

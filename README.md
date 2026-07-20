@@ -7,9 +7,9 @@ A **Vyapar-parity billing, inventory & accounting platform** for Indian SMBs —
 | Layer | Technology |
 |-------|------------|
 | Frontend | Next.js 15, TypeScript, Tailwind, Zustand, TanStack Query, Sonner |
-| Backend | NestJS, Prisma, PostgreSQL, Redis, BullMQ, Socket.IO |
-| Storage | MinIO (S3-compatible) |
-| Infra | Docker Compose, Nginx, GitHub Actions CI |
+| Backend | NestJS, Prisma, PostgreSQL, Pusher (realtime) |
+| Storage | Local disk (dev) / MinIO-S3 or Vercel Blob (prod) |
+| Infra | Docker Compose + Nginx (Oracle Cloud), or Vercel (see below) |
 
 ## Quick start
 
@@ -129,4 +129,28 @@ bash deploy/oracle/install.sh
 
 - Rotate `JWT_SECRET`, `JWT_REFRESH_SECRET`, `ENCRYPTION_KEY`
 - Set `PUBLIC_URL` to your VM IP or domain in `.env`
-- Use managed Postgres, Redis, S3; put Nginx in front (`deploy/nginx.conf`)
+- Put Nginx in front (`deploy/nginx.conf`); Postgres runs in the same Docker Compose stack
+
+## Production (Vercel)
+
+Two separate Vercel projects — the NestJS API can't run as a normal always-on
+server on Vercel, so it's wrapped as a single serverless function; the
+Next.js app deploys as-is.
+
+| Project | Root Directory | Notes |
+|---------|-----------------|-------|
+| `vyaapar-api` | `apps/api` | Serverless entry: `apps/api/api/index.js`. Enable "Include files outside the Root Directory" in project settings (the build command reaches up to the pnpm workspace root). |
+| `vyaapar-web` | `apps/web` | Framework auto-detected (Next.js). |
+
+External services (accounts you create yourself — Vercel doesn't provision these):
+
+- **Supabase** (Postgres) → `DATABASE_URL` (pooled, port 6543, `?pgbouncer=true`) + `DIRECT_URL` (direct, port 5432, used only by `prisma migrate`)
+- **Pusher** (Channels app, realtime) → `PUSHER_APP_ID` / `PUSHER_KEY` / `PUSHER_SECRET` / `PUSHER_CLUSTER` on the API, `NEXT_PUBLIC_PUSHER_KEY` / `NEXT_PUBLIC_PUSHER_CLUSTER` on the web app
+- **Vercel Blob** → attach a store to the `vyaapar-api` project (auto-populates `BLOB_READ_WRITE_TOKEN`); set `STORAGE_DRIVER=vercel-blob`
+
+Set `CORS_ORIGIN` on the API project to the web app's deployed URL(s), and
+`NEXT_PUBLIC_API_URL` on the web project to the API project's deployed URL.
+
+Aadhaar OCR (`tesseract.js`) and report/export generation can run long —
+Vercel's Hobby plan caps function duration at 10s regardless of config; the
+API's `vercel.json` requests `maxDuration: 60`, which needs a Pro plan to take effect.

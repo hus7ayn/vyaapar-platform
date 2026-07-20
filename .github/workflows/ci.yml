@@ -52,11 +52,16 @@ jobs:
         run: pnpm --filter @nexus/api prisma:generate
         env:
           DATABASE_URL: postgresql://nexus:nexus_secret@localhost:5433/nexus_platform
+          DIRECT_URL: postgresql://nexus:nexus_secret@localhost:5433/nexus_platform
 
       - name: Migrate database
         run: cd apps/api && pnpm exec prisma migrate deploy
         env:
           DATABASE_URL: postgresql://nexus:nexus_secret@localhost:5433/nexus_platform
+          DIRECT_URL: postgresql://nexus:nexus_secret@localhost:5433/nexus_platform
+
+      - name: Typecheck API
+        run: pnpm --filter @nexus/api typecheck
 
       - name: Build API
         run: pnpm --filter @nexus/api build

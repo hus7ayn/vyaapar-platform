@@ -3,7 +3,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 
-type StorageDriver = 'disk' | 's3';
+type StorageDriver = 'disk' | 's3' | 'vercel-blob';
 
 const MIME_BY_EXT: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -17,12 +17,19 @@ const MIME_BY_EXT: Record<string, string> = {
 /**
  * File storage with a zero-infrastructure default: STORAGE_DRIVER=disk (default)
  * writes uploads to a local folder served back via a signed route, so no MinIO/S3
- * daemon is required. Set STORAGE_DRIVER=s3 to keep the old object-storage behavior;
- * the AWS SDK is only imported in that mode.
+ * daemon is required. Set STORAGE_DRIVER=s3 to keep the old object-storage behavior
+ * (the AWS SDK is only imported in that mode), or STORAGE_DRIVER=vercel-blob when
+ * running as a Vercel serverless function, since the local disk isn't writable
+ * across invocations there.
  */
 @Injectable()
 export class FilesService {
-  private driver: StorageDriver = process.env.STORAGE_DRIVER === 's3' ? 's3' : 'disk';
+  private driver: StorageDriver =
+    process.env.STORAGE_DRIVER === 's3'
+      ? 's3'
+      : process.env.STORAGE_DRIVER === 'vercel-blob'
+        ? 'vercel-blob'
+        : 'disk';
   private uploadsDir = process.env.UPLOADS_DIR || path.resolve(process.cwd(), 'uploads');
   // Absolute base of THIS API (uploads are served by the API, not the web app),
   // so stored URLs resolve regardless of which origin renders them.
@@ -32,6 +39,18 @@ export class FilesService {
 
   // ─── S3 (lazy — only touched when STORAGE_DRIVER=s3) ─────────────────────────
   private s3Client: unknown;
+
+  constructor() {
+    // Fail fast on Vercel: the 'disk' driver writes to a read-only, non-persistent
+    // filesystem there, so uploads would silently error at request time. Force an
+    // explicit object-storage driver instead of leaking a confusing runtime EROFS.
+    if (this.driver === 'disk' && process.env.VERCEL) {
+      throw new Error(
+        'STORAGE_DRIVER=disk is not usable on Vercel (read-only, non-persistent filesystem). ' +
+          'Set STORAGE_DRIVER=vercel-blob and attach a Vercel Blob store (BLOB_READ_WRITE_TOKEN).',
+      );
+    }
+  }
 
   private async getS3() {
     if (this.s3Client) return this.s3Client;
@@ -80,6 +99,15 @@ export class FilesService {
       return { key, url: this.getPublicUrl(key) };
     }
 
+    if (this.driver === 'vercel-blob') {
+      const { put } = await import('@vercel/blob');
+      // Blob URLs already carry an unguessable random suffix, so — unlike the
+      // disk/s3 drivers — the URL isn't reconstructable from `key` alone.
+      // Store the full URL as the key; getPublicUrl() passes it straight through.
+      const blob = await put(key, file.buffer, { access: 'public', contentType: file.mimetype });
+      return { key: blob.url, url: blob.url };
+    }
+
     const dest = path.join(this.uploadsDir, safeFolder);
     await fs.mkdir(dest, { recursive: true });
     await fs.writeFile(path.join(this.uploadsDir, key), file.buffer);
@@ -87,6 +115,8 @@ export class FilesService {
   }
 
   getPublicUrl(key: string): string {
+    // vercel-blob keys are already full URLs (see upload() above).
+    if (/^https?:\/\//.test(key)) return key;
     if (this.driver === 's3') {
       const endpoint = (process.env.S3_ENDPOINT || 'http://localhost:9000').replace(/\/+$/, '');
       return `${endpoint}/${this.bucket}/${key}`;

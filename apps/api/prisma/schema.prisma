@@ -1,10 +1,19 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" keeps local dev working; "rhel-openssl-3.0.x" is the query-engine
+  // binary for Vercel's Node 20 runtime (AWS Lambda / Amazon Linux, OpenSSL 3).
+  // Without it, PrismaClient crashes on the first query in production.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Only used by `prisma migrate`/`prisma db push` — a direct (non-pooled)
+  // connection, since Supabase's pooled DATABASE_URL (pgbouncer, port 6543)
+  // doesn't support the advisory locks migrations need. Same value as
+  // DATABASE_URL for a non-pooled setup (e.g. local Docker Postgres).
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── Core / Multi-tenant ───────────────────────────────────────────────────

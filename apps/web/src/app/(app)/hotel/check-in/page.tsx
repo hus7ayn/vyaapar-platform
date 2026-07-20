@@ -56,13 +56,13 @@ function CheckInForm() {
     }
   }, [preSelectedRoomId, rooms]);
 
-  const runOcr = async () => {
+  const uploadDocument = async () => {
     if (!file) return;
     const fd = new FormData();
     fd.append('file', file);
     try {
-      toast.loading('Processing document...');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/hotel/aadhaar/ocr`, {
+      toast.loading('Uploading document...');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/hotel/guest-document`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -70,16 +70,11 @@ function CheckInForm() {
       const data = await res.json();
       toast.dismiss();
       if (!res.ok) throw new Error(data.message);
-      setForm((f) => ({
-        ...f,
-        firstName: data.firstName || f.firstName,
-        lastName: data.lastName || f.lastName,
-        documentUrl: data.documentUrl || '',
-      }));
-      toast.success('Document uploaded' + (data.firstName ? ' and details extracted' : ''));
+      setForm((f) => ({ ...f, documentUrl: data.documentUrl || '' }));
+      toast.success('Document uploaded');
     } catch (err) {
       toast.dismiss();
-      toast.error(err instanceof Error ? err.message : 'OCR Failed');
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
     }
   };
 
@@ -160,7 +155,7 @@ function CheckInForm() {
       <Card className="p-4 space-y-3">
         <p className="font-medium flex items-center gap-1.5 text-sm">
           <Sparkles className="h-4 w-4 text-primary" />
-          Guest ID Upload (Auto-extract if Aadhaar)
+          Guest ID Upload
         </p>
         <div className="flex gap-3 items-center">
           <select 
@@ -175,8 +170,8 @@ function CheckInForm() {
           </select>
           <Input type="file" className="flex-1" accept="image/*,.pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </div>
-        <Button type="button" variant="outline" onClick={runOcr} disabled={!file}>
-          {form.documentUrl ? 'Uploaded ✓' : 'Upload & Extract'}
+        <Button type="button" variant="outline" onClick={uploadDocument} disabled={!file}>
+          {form.documentUrl ? 'Uploaded ✓' : 'Upload'}
         </Button>
         {form.documentUrl && <p className="text-xs text-emerald-600">Document saved securely.</p>}
       </Card>

@@ -1,40 +1,44 @@
-import {
-  WebSocketGateway,
-  WebSocketServer,
-  SubscribeMessage,
-  ConnectedSocket,
-  MessageBody,
-} from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { Injectable } from '@nestjs/common';
+import Pusher from 'pusher';
 
-@WebSocketGateway({ cors: { origin: '*' }, namespace: '/events' })
+/**
+ * Realtime push via Pusher Channels (replaces the old Socket.IO gateway —
+ * Vercel serverless functions can't hold a persistent WebSocket connection).
+ * Method names/signatures are unchanged from the Socket.IO version so
+ * hotel/items/sale services didn't need to change.
+ */
+@Injectable()
 export class EventsGateway {
-  @WebSocketServer()
-  server: Server;
+  private pusher = new Pusher({
+    appId: process.env.PUSHER_APP_ID || '',
+    key: process.env.PUSHER_KEY || '',
+    secret: process.env.PUSHER_SECRET || '',
+    cluster: process.env.PUSHER_CLUSTER || '',
+    useTLS: true,
+  });
 
-  @SubscribeMessage('join')
-  handleJoin(@ConnectedSocket() client: Socket, @MessageBody() room: string) {
-    if (room?.startsWith('business:') || room?.startsWith('branch:')) {
-      client.join(room);
-    }
-    return { joined: room };
+  /** Authorizes a private channel subscription for the given socket. Called from EventsController after verifying the caller owns the channel. */
+  authorizeChannel(socketId: string, channel: string) {
+    return this.pusher.authorizeChannel(socketId, channel);
   }
 
   emitOrderUpdate(businessId: string, branchId: string, order: unknown) {
-    this.server?.to(`business:${businessId}`).emit('order:updated', order);
-    this.server?.to(`branch:${branchId}`).emit('order:updated', order);
+    const channels = [`private-business-${businessId}`];
+    if (branchId) channels.push(`private-branch-${branchId}`);
+    this.pusher.trigger(channels, 'order:updated', order).catch(() => {});
   }
 
   emitRoomUpdate(businessId: string, room: unknown) {
-    this.server?.to(`business:${businessId}`).emit('room:updated', room);
+    this.pusher.trigger(`private-business-${businessId}`, 'room:updated', room).catch(() => {});
   }
 
   emitInventoryUpdate(businessId: string, data: unknown) {
-    this.server?.to(`business:${businessId}`).emit('inventory:updated', data);
+    this.pusher.trigger(`private-business-${businessId}`, 'inventory:updated', data).catch(() => {});
   }
 
   emitNotification(businessId: string, userId: string | null, data: unknown) {
-    this.server?.to(`business:${businessId}`).emit('notification:new', data);
-    if (userId) this.server?.to(`user:${userId}`).emit('notification:new', data);
+    const channels = [`private-business-${businessId}`];
+    if (userId) channels.push(`private-user-${userId}`);
+    this.pusher.trigger(channels, 'notification:new', data).catch(() => {});
   }
 }
