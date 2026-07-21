@@ -1125,6 +1125,7 @@ model PayrollLine {
   overtime   Decimal @default(0) @db.Decimal(12, 2)
   bonus      Decimal @default(0) @db.Decimal(12, 2)
   deductions Decimal @default(0) @db.Decimal(12, 2)
+  advance    Decimal @default(0) @db.Decimal(12, 2)
   netSalary  Decimal @map("net_salary") @db.Decimal(12, 2)
 
   payroll  Payroll  @relation(fields: [payrollId], references: [id], onDelete: Cascade)

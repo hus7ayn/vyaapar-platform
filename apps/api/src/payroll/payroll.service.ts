@@ -15,8 +15,10 @@ export interface EmployeeInput {
   joinDate?: string;
 }
 
-function calcNet(base: number, overtime: number, bonus: number, deductions: number) {
-  return Math.max(0, base + overtime + bonus - deductions);
+function calcNet(base: number, overtime: number, bonus: number, deductions: number, advance: number) {
+  // Advance is salary already paid out earlier in the month, so it's netted off
+  // what's still owed at payday.
+  return Math.max(0, base + overtime + bonus - deductions - advance);
 }
 
 @Injectable()
@@ -128,55 +130,53 @@ export class PayrollService {
     });
   }
 
-  async generatePayroll(businessId: string, period: string, branchId?: string) {
+  async generatePayroll(businessId: string, period: string) {
     if (!period?.match(/^\d{4}-\d{2}$/)) throw new BadRequestException('Period must be YYYY-MM');
 
-    const resolvedBranch =
-      branchId
-      ?? (await this.prisma.branch.findFirst({ where: { businessId, isDefault: true, deletedAt: null } }))?.id;
-
-    const existing = await this.prisma.payroll.findFirst({
-      where: { businessId, period, branchId: resolvedBranch ?? null },
-    });
-    if (existing) throw new BadRequestException(`Payroll for ${period} already exists for this shop`);
-
+    // Cover EVERY active staff member across the whole business, not just one
+    // branch. Group by branch so each shop still gets its own payroll run
+    // (matches the per-branch Payroll model + per-shop salary expense at payout).
     const employees = await this.prisma.employee.findMany({
-      where: { businessId, isActive: true, ...this.branchWhere(resolvedBranch) },
+      where: { businessId, isActive: true },
     });
-    if (!employees.length) throw new BadRequestException('No staff in this shop to pay');
+    if (!employees.length) throw new BadRequestException('No active staff to pay');
 
-    const lines = employees.map((e) => {
-      const base = Number(e.baseSalary);
-      return {
-        employeeId: e.id,
-        baseSalary: base,
-        overtime: 0,
-        bonus: 0,
-        deductions: 0,
-        netSalary: base,
-      };
-    });
+    const byBranch = new Map<string | null, typeof employees>();
+    for (const e of employees) {
+      const key = e.branchId ?? null;
+      const arr = byBranch.get(key) ?? [];
+      arr.push(e);
+      byBranch.set(key, arr);
+    }
 
-    const totalAmount = lines.reduce((s, l) => s + l.netSalary, 0);
+    const created: Prisma.PayrollGetPayload<{ include: { lines: { include: { employee: true } }; branch: true } }>[] = [];
+    let skipped = 0;
+    for (const [bId, emps] of byBranch) {
+      const existing = await this.prisma.payroll.findFirst({ where: { businessId, period, branchId: bId } });
+      if (existing) { skipped++; continue; }
 
-    return this.prisma.payroll.create({
-      data: {
-        businessId,
-        branchId: resolvedBranch,
-        period,
-        status: 'DRAFT',
-        totalAmount,
-        lines: { create: lines },
-      },
-      include: { lines: { include: { employee: true } }, branch: true },
-    });
+      const lines = emps.map((e) => {
+        const base = Number(e.baseSalary);
+        return { employeeId: e.id, baseSalary: base, overtime: 0, bonus: 0, deductions: 0, advance: 0, netSalary: base };
+      });
+      const totalAmount = lines.reduce((s, l) => s + l.netSalary, 0);
+
+      const payroll = await this.prisma.payroll.create({
+        data: { businessId, branchId: bId, period, status: 'DRAFT', totalAmount, lines: { create: lines } },
+        include: { lines: { include: { employee: true } }, branch: true },
+      });
+      created.push(payroll);
+    }
+
+    if (!created.length) throw new BadRequestException(`Payroll for ${period} already exists for all shops`);
+    return { created: created.length, skipped, payrolls: created };
   }
 
   async updateLine(
     businessId: string,
     payrollId: string,
     lineId: string,
-    body: { overtime?: number; bonus?: number; deductions?: number },
+    body: { overtime?: number; bonus?: number; deductions?: number; advance?: number },
   ) {
     const payroll = await this.prisma.payroll.findFirst({ where: { id: payrollId, businessId } });
     if (!payroll) throw new NotFoundException('Payroll not found');
@@ -188,12 +188,13 @@ export class PayrollService {
     const overtime = body.overtime ?? Number(line.overtime);
     const bonus = body.bonus ?? Number(line.bonus);
     const deductions = body.deductions ?? Number(line.deductions);
-    const netSalary = calcNet(Number(line.baseSalary), overtime, bonus, deductions);
+    const advance = body.advance ?? Number(line.advance);
+    const netSalary = calcNet(Number(line.baseSalary), overtime, bonus, deductions, advance);
 
     return this.prisma.$transaction(async (tx) => {
       await tx.payrollLine.update({
         where: { id: lineId },
-        data: { overtime, bonus, deductions, netSalary },
+        data: { overtime, bonus, deductions, advance, netSalary },
       });
       const allLines = await tx.payrollLine.findMany({ where: { payrollId } });
       const totalAmount = allLines.reduce((s, l) => s + Number(l.netSalary), 0);

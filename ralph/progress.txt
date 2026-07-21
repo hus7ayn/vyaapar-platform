@@ -20,6 +20,8 @@
 
 ## Iterations
 
+- R7 (payroll) PASS: generatePayroll now business-wide — fetches all active staff, groups by branch, creates one DRAFT payroll per shop (skips shops already generated), returns {created,skipped,payrolls}. Controller generate drops branchId. Added PayrollLine.advance (schema.prisma; prisma generate run; db push will add column on deploy) factored into calcNet (net = base+ot+bonus-deductions-advance). updateLine accepts advance. UI: generate toasts shop count; per-line Bonus + Advance now editable alongside Deductions (custom/advance salary). api + web typecheck green.
+
 - R6 (credit settle) PASS: added "Collect Payment"/"Pay Now" button on party detail (parties/page.tsx collectPayment) shown when currentBalance != 0. Customer (bal>0) -> POST /sale/payments-in; supplier (bal<0) -> POST /purchase/payments-out; both autoAllocate:true FIFO against open invoices/bills (flips OPEN->PARTIAL/PAID). Amount via prompt, defaults to full balance. Frontend-only; reused existing endpoints.
 
 - R9 (return) PASS: refund/return already wired in TWO places (txn-list-page sale invoices + POS recent-orders-panel), both POS_REFUND-gated. Real gap was discoverability: buttons were unlabeled ↻ icons. Added visible "Return" label to both + a confirm() to the POS panel. Backend refundInvoice unchanged.

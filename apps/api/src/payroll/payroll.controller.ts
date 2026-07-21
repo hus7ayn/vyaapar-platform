@@ -66,10 +66,10 @@ export class PayrollController {
   @RequirePermissions(Permission.PAYROLL_MANAGE)
   generate(
     @CurrentUser('businessId') businessId: string,
-    @CurrentUser('branchId') branchId: string | undefined,
     @Body() body: { period: string },
   ) {
-    return this.payroll.generatePayroll(businessId, body.period, branchId);
+    // Business-wide: generates a payroll run for every shop's active staff.
+    return this.payroll.generatePayroll(businessId, body.period);
   }
 
   @Patch(':payrollId/lines/:lineId')
@@ -78,7 +78,7 @@ export class PayrollController {
     @CurrentUser('businessId') businessId: string,
     @Param('payrollId') payrollId: string,
     @Param('lineId') lineId: string,
-    @Body() body: { overtime?: number; bonus?: number; deductions?: number },
+    @Body() body: { overtime?: number; bonus?: number; deductions?: number; advance?: number },
   ) {
     return this.payroll.updateLine(businessId, payrollId, lineId, body);
   }

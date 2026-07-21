@@ -29,6 +29,7 @@ interface PayrollLine {
   overtime: string | number;
   bonus: string | number;
   deductions: string | number;
+  advance: string | number;
   netSalary: string | number;
   employee: { firstName: string; lastName: string; employeeId: string };
 }
@@ -125,10 +126,10 @@ export default function PayrollPage() {
   });
 
   const generate = useMutation({
-    mutationFn: () => api('/payroll/generate', { method: 'POST', token, body: JSON.stringify({ period }) }),
-    onSuccess: () => {
+    mutationFn: () => api<{ created: number; skipped: number }>('/payroll/generate', { method: 'POST', token, body: JSON.stringify({ period }) }),
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['payrolls'] });
-      toast.success('Payroll generated for this shop');
+      toast.success(`Payroll generated for ${res.created} shop(s) — all active staff`);
       setTab('runs');
     },
     onError: (e: Error) => toast.error(e.message),
@@ -156,11 +157,11 @@ export default function PayrollPage() {
   });
 
   const updateLine = useMutation({
-    mutationFn: ({ payrollId, lineId, deductions }: { payrollId: string; lineId: string; deductions: number }) =>
+    mutationFn: ({ payrollId, lineId, ...patch }: { payrollId: string; lineId: string; overtime?: number; bonus?: number; deductions?: number; advance?: number }) =>
       api(`/payroll/${payrollId}/lines/${lineId}`, {
         method: 'PATCH',
         token,
-        body: JSON.stringify({ deductions }),
+        body: JSON.stringify(patch),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['payrolls'] }),
     onError: (e: Error) => toast.error(e.message),
@@ -273,7 +274,9 @@ export default function PayrollPage() {
                     <tr className="text-xs text-muted-foreground border-b">
                       <th className="py-1 text-left">Staff</th>
                       <th className="py-1 text-right">Base</th>
+                      <th className="py-1 text-right">Bonus</th>
                       <th className="py-1 text-right">Deductions</th>
+                      <th className="py-1 text-right">Advance</th>
                       <th className="py-1 text-right">Net</th>
                     </tr>
                   </thead>
@@ -283,21 +286,21 @@ export default function PayrollPage() {
                         <td className="py-1.5">{l.employee.firstName} {l.employee.lastName}</td>
                         <td className="py-1.5 text-right">{formatMoney(l.baseSalary)}</td>
                         <td className="py-1.5 text-right">
-                          {p.status === 'PAID' ? (
-                            formatMoney(l.deductions)
-                          ) : (
-                            <Input
-                              type="number"
-                              min="0"
-                              className="h-7 w-20 ml-auto text-right"
-                              defaultValue={Number(l.deductions)}
-                              onBlur={(e) => {
-                                const v = Number(e.target.value);
-                                if (v !== Number(l.deductions)) {
-                                  updateLine.mutate({ payrollId: p.id, lineId: l.id, deductions: v });
-                                }
-                              }}
-                            />
+                          {p.status === 'PAID' ? formatMoney(l.bonus) : (
+                            <Input type="number" min="0" className="h-7 w-20 ml-auto text-right" defaultValue={Number(l.bonus)}
+                              onBlur={(e) => { const v = Number(e.target.value); if (v !== Number(l.bonus)) updateLine.mutate({ payrollId: p.id, lineId: l.id, bonus: v }); }} />
+                          )}
+                        </td>
+                        <td className="py-1.5 text-right">
+                          {p.status === 'PAID' ? formatMoney(l.deductions) : (
+                            <Input type="number" min="0" className="h-7 w-20 ml-auto text-right" defaultValue={Number(l.deductions)}
+                              onBlur={(e) => { const v = Number(e.target.value); if (v !== Number(l.deductions)) updateLine.mutate({ payrollId: p.id, lineId: l.id, deductions: v }); }} />
+                          )}
+                        </td>
+                        <td className="py-1.5 text-right">
+                          {p.status === 'PAID' ? formatMoney(l.advance) : (
+                            <Input type="number" min="0" className="h-7 w-20 ml-auto text-right" defaultValue={Number(l.advance)}
+                              onBlur={(e) => { const v = Number(e.target.value); if (v !== Number(l.advance)) updateLine.mutate({ payrollId: p.id, lineId: l.id, advance: v }); }} />
                           )}
                         </td>
                         <td className="py-1.5 text-right font-medium">{formatMoney(l.netSalary)}</td>
