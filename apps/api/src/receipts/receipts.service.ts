@@ -24,6 +24,7 @@ export class ReceiptsService {
 
   async generateThermal(txnId: string, businessId: string): Promise<string> {
     const txn = await this.getTxnData(txnId, businessId);
+    const settings = await this.prisma.firmSettings.findUnique({ where: { businessId } });
     const label = TXN_LABELS[txn.txnType as TxnType] ?? txn.txnType;
     const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const money = (n: number | string | Prisma.Decimal) => Number(n).toFixed(2);
@@ -95,6 +96,7 @@ export class ReceiptsService {
   <div class="center biz-name">${esc(txn.business.name)}</div>
   ${txn.business.gstNumber ? `<div class="center muted">GSTIN: ${esc(txn.business.gstNumber)}</div>` : ''}
   ${txn.branch ? `<div class="center muted">${esc(txn.branch.name)}</div>` : ''}
+  ${settings?.receiptHeader ? `<div class="center muted">${esc(settings.receiptHeader)}</div>` : ''}
   <div class="divider"></div>
   <div class="center" style="font-weight:700">${esc(label.toUpperCase())}</div>
   <table>
@@ -113,7 +115,7 @@ export class ReceiptsService {
     ${paymentRows}
     ${Number(txn.balance) > 0 ? `<tr><td>BALANCE DUE</td><td class="right">${money(txn.balance)}</td></tr>` : ''}
   </table>
-  <div class="center thank-you">Thank you!</div>
+  <div class="center thank-you">${settings?.receiptFooter ? esc(settings.receiptFooter) : 'Thank you!'}</div>
   <div class="center muted">Powered by ${esc(txn.business.name)}</div>
 </body>
 </html>`;

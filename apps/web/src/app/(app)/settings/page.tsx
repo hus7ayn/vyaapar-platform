@@ -18,6 +18,8 @@ interface FirmSettings {
   hsnEnabled: boolean;
   roundOffEnabled: boolean;
   printTheme?: string;
+  receiptHeader?: string | null;
+  receiptFooter?: string | null;
   termsAndConditions?: string | null;
   txnPrefixes?: Record<string, string>;
   sequences?: { txnType: string; prefix: string; nextNumber: number }[];
@@ -116,6 +118,31 @@ export default function SettingsPage() {
                 updateFirm.mutate({ termsAndConditions: e.target.value });
               }
             }}
+          />
+        </div>
+      </Card>
+
+      <Card className="p-6 space-y-4">
+        <div>
+          <h2 className="font-semibold">Thermal Receipt</h2>
+          <p className="text-xs text-muted-foreground">Customize the 80mm thermal bill — a header line under the shop name and a footer line at the bottom of every printed receipt.</p>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Header line (under shop name)</label>
+          <input
+            className="w-full rounded-lg border p-2 text-sm"
+            placeholder="e.g. 123 Main St · +91 98765 43210"
+            defaultValue={data?.receiptHeader ?? ''}
+            onBlur={(e) => { if (e.target.value !== (data?.receiptHeader ?? '')) updateFirm.mutate({ receiptHeader: e.target.value }); }}
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Footer line (bottom of bill)</label>
+          <input
+            className="w-full rounded-lg border p-2 text-sm"
+            placeholder="e.g. Thank you! Visit again."
+            defaultValue={data?.receiptFooter ?? ''}
+            onBlur={(e) => { if (e.target.value !== (data?.receiptFooter ?? '')) updateFirm.mutate({ receiptFooter: e.target.value }); }}
           />
         </div>
       </Card>

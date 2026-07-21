@@ -694,6 +694,8 @@ model FirmSettings {
   // { SALE_INVOICE: { prefix: "INV", nextNumber: 1 }, ... } — display config; sequence table is source of truth
   txnPrefixes Json?   @map("txn_prefixes")
   printTheme  String  @default("REGULAR") @map("print_theme") // REGULAR | THERMAL
+  receiptHeader String? @map("receipt_header") // extra line(s) under the shop name on thermal bills
+  receiptFooter String? @map("receipt_footer") // custom footer/thank-you line on thermal bills
   termsAndConditions String? @map("terms_and_conditions")
   signatureUrl String? @map("signature_url")
   gstEnabled  Boolean @default(true) @map("gst_enabled")

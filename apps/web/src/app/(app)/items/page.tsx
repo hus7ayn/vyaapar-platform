@@ -860,7 +860,7 @@ function BarcodeTagPanel({
   generating: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [qty, setQty] = useState(1);
+  const [qty, setQty] = useState(2); // default to 2 slips per item; adjustable
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(barcode ?? '');
 

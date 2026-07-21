@@ -80,7 +80,7 @@
       "id": "R10",
       "title": "Barcode 2-up print + thermal bill customization",
       "priority": 10,
-      "status": "pending",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/items/page.tsx", "apps/web/src/lib/print-tags.ts", "apps/web/src/app/(app)/settings/page.tsx", "apps/api/src/receipts/receipts.service.ts"],
       "accept": "User can print 2 barcode slips from the items page; Settings lets them customize the thermal bill and the printed receipt reflects it."
     }

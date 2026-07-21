@@ -29,6 +29,8 @@ export class SettingsService {
 
   async updateFirmSettings(businessId: string, body: {
     printTheme?: string;
+    receiptHeader?: string;
+    receiptFooter?: string;
     termsAndConditions?: string;
     signatureUrl?: string;
     gstEnabled?: boolean;
@@ -41,6 +43,8 @@ export class SettingsService {
       where: { businessId },
       data: {
         ...(body.printTheme !== undefined && { printTheme: body.printTheme }),
+        ...(body.receiptHeader !== undefined && { receiptHeader: body.receiptHeader }),
+        ...(body.receiptFooter !== undefined && { receiptFooter: body.receiptFooter }),
         ...(body.termsAndConditions !== undefined && { termsAndConditions: body.termsAndConditions }),
         ...(body.signatureUrl !== undefined && { signatureUrl: body.signatureUrl }),
         ...(body.gstEnabled !== undefined && { gstEnabled: body.gstEnabled }),
