@@ -32,7 +32,7 @@
       "id": "R4",
       "title": "Password strength on staff-create + eye everywhere",
       "priority": 4,
-      "status": "pending",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/settings/users/page.tsx"],
       "accept": "Weak staff passwords rejected client-side with a clear message; every password field has a working eye toggle."
     },

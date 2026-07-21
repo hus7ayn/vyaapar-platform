@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Card } from '@/components/ui/card';
-import { Permission, ROLE_LABELS, ROLE_PERMISSIONS, SystemRole } from '@nexus/shared';
+import { Permission, ROLE_LABELS, ROLE_PERMISSIONS, SystemRole, isStrongPassword, PASSWORD_MIN_LENGTH } from '@nexus/shared';
 import { usePermissions } from '@/hooks/use-permissions';
 
 interface UserRow {
@@ -69,6 +69,18 @@ export default function UsersPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const submit = () => {
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim()) {
+      toast.error('First name, last name and email are required');
+      return;
+    }
+    if (!isStrongPassword(form.password)) {
+      toast.error(`Password must be at least ${PASSWORD_MIN_LENGTH} characters and include a letter and a number`);
+      return;
+    }
+    create.mutate();
+  };
+
   return (
     <div className="p-6 space-y-6 max-w-4xl">
       <h1 className="text-2xl font-bold">Staff management</h1>
@@ -108,7 +120,10 @@ export default function UsersPage() {
             </div>
           )}
         </div>
-        <Button onClick={() => create.mutate()} disabled={!form.branchId || create.isPending}>Create user</Button>
+        <p className="text-xs text-muted-foreground">
+          Password must be at least {PASSWORD_MIN_LENGTH} characters and include a letter and a number.
+        </p>
+        <Button onClick={submit} disabled={!form.branchId || create.isPending}>Create user</Button>
       </Card>
 
       <div className="space-y-2">

@@ -20,6 +20,8 @@
 
 ## Iterations
 
+- R4 (password) PASS: eye toggle already present everywhere (PasswordInput). Added client-side validation to settings/users staff-create (isStrongPassword + required-field check via new submit()) plus a visible rule hint. isStrongPassword/PASSWORD_MIN_LENGTH exported from @nexus/shared (index re-exports password-policy). No shared rebuild needed.
+
 - R3 (party supplier) PASS: backend verified CORRECT via live API (POST partyType=SUPPLIER persists+filters as SUPPLIER). Real cause was frontend: "Add Party" always reset to EMPTY_FORM (partyType CUSTOMER) even on the Suppliers tab. Fixed openCreate() in parties/page.tsx to default partyType to the active typeFilter. POS customer-picker intentionally hardcodes CUSTOMER (correct). No backend change.
 
 - R2 (auto-refresh) PASS: use-pos-catalog.ts query now refetchOnMount:true, refetchOnWindowFocus:true, staleTime 30s, refetchInterval 60s (foreground). Global list queries already refetch on mount/focus (providers.tsx staleTime 60s). Pusher stays the instant path. No typecheck run (config-literal change).
