@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
 import { TopBar } from '@/components/layout/top-bar';
@@ -11,7 +11,9 @@ import { useAuthStore } from '@/stores/auth-store';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const accessToken = useAuthStore((s) => s.accessToken);
+  const role = useAuthStore((s) => s.user?.role);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -23,6 +25,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       router.replace('/login');
     }
   }, [mounted, accessToken, router]);
+
+  // Biller lockdown: a Biller may only use the POS (billing) area — they can
+  // see the day's sales there but must not reach reports/P&L, inventory,
+  // parties, settings, etc. Redirect any non-POS route back to POS. (Managers
+  // and owners are unaffected; their access is scoped server-side.)
+  useEffect(() => {
+    if (mounted && accessToken && role === 'BILLER' && !pathname.startsWith('/pos')) {
+      router.replace('/pos');
+    }
+  }, [mounted, accessToken, role, pathname, router]);
 
   if (!mounted) {
     return (

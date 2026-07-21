@@ -72,7 +72,7 @@
       "id": "R8",
       "title": "RBAC Super Admin / Manager / Biller scoping + route guards",
       "priority": 9,
-      "status": "pending",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/layout.tsx", "apps/web/src/hooks/use-permissions.ts", "apps/web/src/app/(app)/settings/users/page.tsx", "apps/web/src/app/(app)/pos/page.tsx"],
       "accept": "Biller reaches only POS + today's sales (no P&L), redirected elsewhere; Manager sees all features for assigned shop(s) only; Super Admin sees everything."
     },

@@ -62,6 +62,19 @@ export default function PosPage() {
     queryFn: () => api<{ name: string }>('/businesses/me', { token }),
   });
 
+  // Today's total sales — shown in the POS header. This is the one figure a
+  // Biller is allowed to see (no P&L). Refreshes as bills are rung up.
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: todaySales } = useQuery({
+    queryKey: ['pos-today-sales', branchId, today],
+    queryFn: () => {
+      const qs = new URLSearchParams({ from: today, to: today });
+      if (branchId) qs.set('branchId', branchId);
+      return api<{ summary: { totalAmount: number } }>(`/sale/invoices?${qs.toString()}`, { token });
+    },
+    refetchInterval: 60_000,
+  });
+
   const { catalog, filterProducts, categoryNames, findByBarcode, isLoading: catalogLoading } =
     usePosCatalog(token, branchId);
 
@@ -320,6 +333,10 @@ export default function PosPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="text-right hidden sm:block mr-1">
+            <p className="text-[10px] text-white/80 leading-none">Today&apos;s Sales</p>
+            <p className="font-bold text-sm leading-tight">{formatCurrency(todaySales?.summary.totalAmount ?? 0)}</p>
+          </div>
           <HeldOrdersPanel branchId={branchId} />
           <RecentOrdersPanel branchId={branchId} />
           {cart.length > 0 && (
