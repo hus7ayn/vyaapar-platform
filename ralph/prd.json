@@ -40,7 +40,7 @@
       "id": "R5",
       "title": "Add-category UI for items + expenses",
       "priority": 5,
-      "status": "pending",
+      "status": "pass",
       "files": ["apps/api/src/categories/categories.service.ts", "apps/web/src/app/(app)/items/page.tsx", "apps/web/src/components/vyapar/txn-form.tsx"],
       "accept": "User can create a new item category and expense category from their forms and select it immediately; backend auto-slugs and handles duplicates."
     },

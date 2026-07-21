@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { branchWhere } from '../common/branch.util';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -13,9 +13,32 @@ export class CategoriesService {
     });
   }
 
-  create(businessId: string, branchId: string | undefined, data: { name: string; slug: string; parentId?: string }) {
+  async create(businessId: string, branchId: string | undefined, data: { name: string; slug?: string; parentId?: string }) {
+    const name = data.name?.trim();
+    if (!name) throw new BadRequestException('Category name is required');
+
+    // Auto-generate the slug from the name (clients no longer need to supply one)
+    // and guarantee it's unique within (businessId, branchId) — the model has a
+    // unique constraint on that triple, so a missing/duplicate slug used to throw
+    // a raw Prisma error and make "add category" appear broken.
+    const base =
+      (data.slug?.trim() || name)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'category';
+    let slug = base;
+    let n = 1;
+    while (
+      await this.prisma.category.findFirst({
+        where: { businessId, branchId: branchId ?? null, slug },
+        select: { id: true },
+      })
+    ) {
+      slug = `${base}-${++n}`;
+    }
+
     return this.prisma.category.create({
-      data: { ...data, businessId, branchId: branchId ?? null },
+      data: { name, slug, parentId: data.parentId, businessId, branchId: branchId ?? null },
     });
   }
 }

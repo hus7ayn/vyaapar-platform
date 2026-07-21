@@ -322,6 +322,19 @@ export default function ItemsPage() {
 
   const list = items ?? [];
   const set = (patch: Partial<ItemForm>) => setForm((f) => ({ ...f, ...patch }));
+
+  const addCategory = async () => {
+    const name = window.prompt('New category name');
+    if (!name?.trim()) return;
+    try {
+      const cat = await api<Category>('/categories', { method: 'POST', token, body: JSON.stringify({ name: name.trim() }) });
+      await queryClient.invalidateQueries({ queryKey: ['categories'] });
+      set({ categoryId: cat.id });
+      toast.success('Category added');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to add category');
+    }
+  };
   const isService = form.itemType === 'SERVICE';
   const fieldCls = 'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
@@ -659,10 +672,13 @@ export default function ItemsPage() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground">Category</label>
-                  <select className={fieldCls} value={form.categoryId} onChange={(e) => set({ categoryId: e.target.value })}>
-                    <option value="">No category</option>
-                    {(categories ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
+                  <div className="flex gap-2">
+                    <select className={fieldCls} value={form.categoryId} onChange={(e) => set({ categoryId: e.target.value })}>
+                      <option value="">No category</option>
+                      {(categories ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <button type="button" onClick={addCategory} title="Add category" className="shrink-0 rounded-lg border px-3 text-sm font-medium text-primary hover:bg-primary/5">+ New</button>
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground">Item Code (SKU)</label>

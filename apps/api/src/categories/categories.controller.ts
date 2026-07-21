@@ -27,7 +27,7 @@ export class CategoriesController {
   create(
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('branchId') branchId: string | undefined,
-    @Body() body: { name: string; slug: string; parentId?: string },
+    @Body() body: { name: string; slug?: string; parentId?: string },
   ) {
     return this.categories.create(businessId, branchId, body);
   }
