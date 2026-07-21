@@ -24,7 +24,7 @@
       "id": "R3",
       "title": "Party supplier saved as customer",
       "priority": 3,
-      "status": "pending",
+      "status": "pass",
       "files": ["apps/api/src/parties/parties.service.ts", "apps/api/src/parties/parties.controller.ts", "apps/web/src/app/(app)/parties/page.tsx"],
       "accept": "Creating a party as Supplier persists partyType=SUPPLIER and shows under Suppliers."
     },

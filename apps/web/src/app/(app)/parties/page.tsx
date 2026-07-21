@@ -228,7 +228,9 @@ export default function PartiesPage() {
 
   const openCreate = () => {
     setEditingParty(null);
-    setForm(EMPTY_FORM);
+    // Default the party type to whichever tab the user is on, so "Add Party"
+    // on the Suppliers tab creates a Supplier instead of silently a Customer.
+    setForm({ ...EMPTY_FORM, partyType: typeFilter === 'SUPPLIER' ? 'SUPPLIER' : 'CUSTOMER' });
     setDialogOpen(true);
   };
 

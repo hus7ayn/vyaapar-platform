@@ -20,6 +20,8 @@
 
 ## Iterations
 
+- R3 (party supplier) PASS: backend verified CORRECT via live API (POST partyType=SUPPLIER persists+filters as SUPPLIER). Real cause was frontend: "Add Party" always reset to EMPTY_FORM (partyType CUSTOMER) even on the Suppliers tab. Fixed openCreate() in parties/page.tsx to default partyType to the active typeFilter. POS customer-picker intentionally hardcodes CUSTOMER (correct). No backend change.
+
 - R2 (auto-refresh) PASS: use-pos-catalog.ts query now refetchOnMount:true, refetchOnWindowFocus:true, staleTime 30s, refetchInterval 60s (foreground). Global list queries already refetch on mount/focus (providers.tsx staleTime 60s). Pusher stays the instant path. No typecheck run (config-literal change).
 
 - R1 (rename) PASS: APP_NAME='MSW Global' (constants.ts, shared rebuilt); literals in layout.tsx/top-bar/platform-sidebar/sidebar(nav 'MSW POS')/pos header; brand glyph "V"->"M" (sidebar, pos, login x2, signup); main.ts swagger+log. api typecheck green. Only code identifiers (VyaparActionButton, components/vyapar dir, --vyapar css vars, vyaapar-insights localStorage keys) remain — non-user-facing, left as-is.
