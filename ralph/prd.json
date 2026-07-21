@@ -1,0 +1,88 @@
+{
+  "project": "MSW Global",
+  "repo": "/Users/hussain/nill3 copy 2",
+  "branch": "vercel-ready",
+  "validate": "pnpm --filter @nexus/api typecheck && pnpm --filter @nexus/web lint",
+  "stories": [
+    {
+      "id": "R1",
+      "title": "Rename app Vyaapar -> MSW Global",
+      "priority": 1,
+      "status": "pending",
+      "files": ["packages/shared/src/constants.ts", "apps/web/src/app/layout.tsx", "apps/web/src/components/layout/sidebar.tsx", "apps/web/src/components/layout/top-bar.tsx", "apps/web/src/components/platform/platform-sidebar.tsx", "apps/web/src/app/(app)/pos/page.tsx", "apps/api/src/main.ts"],
+      "accept": "No user-facing 'Vyaapar/Vyapar' remains; brand reads 'MSW Global' in tab, sidebar, login, POS header, platform portal."
+    },
+    {
+      "id": "R2",
+      "title": "Auto-refresh data lists (no manual reload)",
+      "priority": 2,
+      "status": "pending",
+      "files": ["apps/web/src/hooks/use-pos-catalog.ts", "apps/web/src/app/providers.tsx"],
+      "accept": "Adding a product and returning to POS or refocusing the tab shows it without a hard reload."
+    },
+    {
+      "id": "R3",
+      "title": "Party supplier saved as customer",
+      "priority": 3,
+      "status": "pending",
+      "files": ["apps/api/src/parties/parties.service.ts", "apps/api/src/parties/parties.controller.ts", "apps/web/src/app/(app)/parties/page.tsx"],
+      "accept": "Creating a party as Supplier persists partyType=SUPPLIER and shows under Suppliers."
+    },
+    {
+      "id": "R4",
+      "title": "Password strength on staff-create + eye everywhere",
+      "priority": 4,
+      "status": "pending",
+      "files": ["apps/web/src/app/(app)/settings/users/page.tsx"],
+      "accept": "Weak staff passwords rejected client-side with a clear message; every password field has a working eye toggle."
+    },
+    {
+      "id": "R5",
+      "title": "Add-category UI for items + expenses",
+      "priority": 5,
+      "status": "pending",
+      "files": ["apps/api/src/categories/categories.service.ts", "apps/web/src/app/(app)/items/page.tsx", "apps/web/src/components/vyapar/txn-form.tsx"],
+      "accept": "User can create a new item category and expense category from their forms and select it immediately; backend auto-slugs and handles duplicates."
+    },
+    {
+      "id": "R6",
+      "title": "Credit settle: collect payment (unpaid -> paid)",
+      "priority": 6,
+      "status": "pending",
+      "files": ["apps/web/src/app/(app)/parties/page.tsx", "apps/api/src/sale/sale.service.ts", "apps/api/src/sale/sale.controller.ts"],
+      "accept": "From a credit customer's page, one action records payment and the balance/invoice flips toward PAID."
+    },
+    {
+      "id": "R9",
+      "title": "Product return button in UI",
+      "priority": 7,
+      "status": "pending",
+      "files": ["apps/web/src/components/pos/receipt-actions.tsx", "apps/web/src/app/(app)/pos/page.tsx"],
+      "accept": "From a completed sale an authorized user can issue a return; invoice shows REFUNDED and balances update."
+    },
+    {
+      "id": "R7",
+      "title": "Payroll all staff/branches + advance/custom salary",
+      "priority": 8,
+      "status": "pending",
+      "files": ["apps/api/src/payroll/payroll.service.ts", "apps/web/src/app/(app)/payroll/page.tsx"],
+      "accept": "One Generate run covers every active staff member across entities; user can pay an advance or set a custom amount."
+    },
+    {
+      "id": "R8",
+      "title": "RBAC Super Admin / Manager / Biller scoping + route guards",
+      "priority": 9,
+      "status": "pending",
+      "files": ["apps/web/src/app/(app)/layout.tsx", "apps/web/src/hooks/use-permissions.ts", "apps/web/src/app/(app)/settings/users/page.tsx", "apps/web/src/app/(app)/pos/page.tsx"],
+      "accept": "Biller reaches only POS + today's sales (no P&L), redirected elsewhere; Manager sees all features for assigned shop(s) only; Super Admin sees everything."
+    },
+    {
+      "id": "R10",
+      "title": "Barcode 2-up print + thermal bill customization",
+      "priority": 10,
+      "status": "pending",
+      "files": ["apps/web/src/app/(app)/items/page.tsx", "apps/web/src/lib/print-tags.ts", "apps/web/src/app/(app)/settings/page.tsx", "apps/api/src/receipts/receipts.service.ts"],
+      "accept": "User can print 2 barcode slips from the items page; Settings lets them customize the thermal bill and the printed receipt reflects it."
+    }
+  ]
+}

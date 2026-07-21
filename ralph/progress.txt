@@ -1,0 +1,21 @@
+# Ralph progress log — append-only learnings across iterations.
+# Newest entries at the bottom. Keep entries short and factual.
+
+## Codebase map (seeded from investigation)
+- Monorepo: apps/api (NestJS 10 + Prisma/Supabase), apps/web (Next 15), packages/shared. pnpm workspace.
+- Deploy: Vercel, two projects (vyaapar-api, vyaapar-web), rootDirectory set. DB schema managed by `prisma db push` (migrations were incomplete). Region bom1.
+- Validate locally: `pnpm --filter @nexus/api typecheck` and `pnpm --filter @nexus/web lint`. API build: `pnpm --filter @nexus/api build` (swc). Rebuild shared after editing packages/shared: `pnpm --filter @nexus/shared build`.
+- RBAC: roles in packages/shared/src/roles.ts, permission bundles in permissions.ts. Global guards: JwtAuthGuard + BranchScopeGuard (app.module). PermissionsGuard per-controller via @RequirePermissions. Branch/tenant isolation enforced server-side.
+
+## Root causes found (before fixing)
+- R3 party bug: create reads body.partyType (parties.service.ts:128, default CUSTOMER) but rest of app uses `type` (parties.controller.ts:22). Form sends `type` -> partyType undefined -> CUSTOMER. Fix: accept `type` alias + validate enum CUSTOMER|SUPPLIER|BOTH.
+- R2 auto-refresh: use-pos-catalog.ts:73-76 has refetchOnMount:false, refetchOnWindowFocus:false, staleTime 10min, no poll; Pusher off (no keys) so nothing invalidates. Fix: enable refetch on mount/focus + lower staleTime.
+- R4 password: backend already enforces >=8 + letter + digit (password-policy.ts). Eye toggle already exists (ui/password-input.tsx) on all auth forms. Only gap: staff-create form lacks client-side validation.
+- R5 categories: item-category create needs client slug + no dup handling (categories.service.ts:16). No add-category UI for items/expenses (hotel room-types has one).
+- R6 credit settle: only via POST /sale/payments-in (auto-allocates FIFO). No settle button on party/ledger UI.
+- R9 return: refund API exists (sale.service.ts:112 refundInvoice, credit-notes, debit-notes). Missing UI button only.
+- R7 payroll: generatePayroll scoped to one branch (payroll.service.ts:143 branchWhere). No advance/custom salary field.
+- R8 RBAC: front-end pages not route-guarded (nav hidden only). Biller has no today's-sales view. super-admin portal exists at app/platform.
+- R1 rename: APP_NAME in packages/shared/src/constants.ts + hardcoded literals (layout.tsx, sidebar.tsx, top-bar.tsx, platform-sidebar.tsx, pos/page.tsx) + "V" glyph + main.ts.
+
+## Iterations
