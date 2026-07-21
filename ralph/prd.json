@@ -16,7 +16,7 @@
       "id": "R2",
       "title": "Auto-refresh data lists (no manual reload)",
       "priority": 2,
-      "status": "pending",
+      "status": "pass",
       "files": ["apps/web/src/hooks/use-pos-catalog.ts", "apps/web/src/app/providers.tsx"],
       "accept": "Adding a product and returning to POS or refocusing the tab shows it without a hard reload."
     },

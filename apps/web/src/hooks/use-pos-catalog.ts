@@ -70,10 +70,16 @@ export function usePosCatalog(token: string, branchId?: string) {
       await cacheProducts(products as unknown as Record<string, unknown>[]);
       return { products, categories: data.categories };
     },
-    staleTime: 10 * 60_000,
+    // Auto-refresh so newly added/edited products appear without a manual page
+    // reload: refetch on mount and when the tab regains focus, treat data as
+    // stale after 30s, and poll every 60s while the tab is focused. Pusher
+    // (inventory:updated) is still the instant path when configured; this is
+    // the always-on fallback for when it isn't.
+    staleTime: 30_000,
     gcTime: 30 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    refetchInterval: 60_000,
     retry: 2,
   });
 
