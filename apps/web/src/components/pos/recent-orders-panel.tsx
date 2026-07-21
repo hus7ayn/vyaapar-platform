@@ -82,10 +82,11 @@ export function RecentOrdersPanel({ branchId }: { branchId?: string }) {
                         <Button
                           size="sm"
                           variant="outline"
+                          className="gap-1 text-amber-600"
                           disabled={refund.isPending}
-                          onClick={() => refund.mutate(o.id)}
+                          onClick={() => { if (confirm(`Return / refund ${o.txnNumber} in full? A credit note will be created.`)) refund.mutate(o.id); }}
                         >
-                          <RefreshCcw className="h-3.5 w-3.5" />
+                          <RefreshCcw className="h-3.5 w-3.5" /> Return
                         </Button>
                       </PermissionGate>
                     )}

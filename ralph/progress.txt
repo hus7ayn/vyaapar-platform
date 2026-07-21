@@ -20,6 +20,8 @@
 
 ## Iterations
 
+- R9 (return) PASS: refund/return already wired in TWO places (txn-list-page sale invoices + POS recent-orders-panel), both POS_REFUND-gated. Real gap was discoverability: buttons were unlabeled ↻ icons. Added visible "Return" label to both + a confirm() to the POS panel. Backend refundInvoice unchanged.
+
 - R5 (add-category) PASS: backend categories.service.create now auto-generates a unique slug from name (loop-dedup on businessId+branchId+slug) + validates name -> no more raw Prisma unique errors; controller slug optional. Frontend: inline "+ New" add-category on item form (items/page.tsx addCategory) and expense form (txn-form.tsx addExpenseCategory) via window.prompt -> POST -> invalidate -> auto-select. Hotel room categories already had an add flow. api typecheck green.
 
 - R4 (password) PASS: eye toggle already present everywhere (PasswordInput). Added client-side validation to settings/users staff-create (isStrongPassword + required-field check via new submit()) plus a visible rule hint. isStrongPassword/PASSWORD_MIN_LENGTH exported from @nexus/shared (index re-exports password-policy). No shared rebuild needed.

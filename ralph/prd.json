@@ -56,7 +56,7 @@
       "id": "R9",
       "title": "Product return button in UI",
       "priority": 7,
-      "status": "pending",
+      "status": "pass",
       "files": ["apps/web/src/components/pos/receipt-actions.tsx", "apps/web/src/app/(app)/pos/page.tsx"],
       "accept": "From a completed sale an authorized user can issue a return; invoice shows REFUNDED and balances update."
     },

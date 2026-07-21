@@ -142,16 +142,16 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
                       )}
                       {txnType === 'SALE_INVOICE' && t.status !== 'REFUNDED' && (
                         <Button
-                          variant="ghost" size="sm" title="Refund (create credit note)"
+                          variant="ghost" size="sm" className="gap-1 text-amber-600" title="Return / refund (creates a credit note)"
                           onClick={() => {
-                            if (confirm(`Refund ${t.txnNumber} in full? A credit note will be created.`)) {
+                            if (confirm(`Return / refund ${t.txnNumber} in full? A credit note will be created.`)) {
                               api(`/sale/invoices/${t.id}/refund`, { method: 'POST', token, body: JSON.stringify({}) })
-                                .then(() => { toast.success('Refunded'); queryClient.invalidateQueries(); })
+                                .then(() => { toast.success('Returned / refunded'); queryClient.invalidateQueries(); })
                                 .catch((e) => toast.error(e.message));
                             }
                           }}
                         >
-                          <RefreshCcw className="h-4 w-4" />
+                          <RefreshCcw className="h-4 w-4" /> Return
                         </Button>
                       )}
                       <Button
