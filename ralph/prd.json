@@ -48,7 +48,7 @@
       "id": "R6",
       "title": "Credit settle: collect payment (unpaid -> paid)",
       "priority": 6,
-      "status": "pending",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/parties/page.tsx", "apps/api/src/sale/sale.service.ts", "apps/api/src/sale/sale.controller.ts"],
       "accept": "From a credit customer's page, one action records payment and the balance/invoice flips toward PAID."
     },

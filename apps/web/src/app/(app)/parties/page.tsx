@@ -234,6 +234,28 @@ export default function PartiesPage() {
     setDialogOpen(true);
   };
 
+  // Record a payment against the party's outstanding balance. Positive balance
+  // = customer owes us -> Payment In (auto-allocated FIFO to their open credit
+  // invoices, flipping them toward PAID). Negative = we owe a supplier -> Payment Out.
+  const collectPayment = async () => {
+    if (!selected) return;
+    const bal = Number(selected.currentBalance);
+    if (bal === 0) { toast.info('Nothing outstanding to settle'); return; }
+    const receivable = bal > 0;
+    const input = window.prompt(`${receivable ? 'Collect payment from' : 'Pay'} ${selected.name} — amount (₹):`, String(Math.abs(bal)));
+    if (input == null) return;
+    const amount = Number(input);
+    if (!Number.isFinite(amount) || amount <= 0) { toast.error('Enter a valid amount'); return; }
+    try {
+      const endpoint = receivable ? '/sale/payments-in' : '/purchase/payments-out';
+      await api(endpoint, { method: 'POST', token, body: JSON.stringify({ partyId: selected.id, amount, autoAllocate: true, payments: [{ paymentType: 'CASH', amount }] }) });
+      toast.success(receivable ? 'Payment collected — invoices updated' : 'Payment recorded');
+      queryClient.invalidateQueries();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to record payment');
+    }
+  };
+
   const openEdit = (p: Party) => {
     setEditingParty(p);
     setForm({
@@ -385,6 +407,11 @@ export default function PartiesPage() {
                     </p>
                   </div>
                   <div className="flex gap-2 justify-end">
+                    {Number(selected.currentBalance) !== 0 && (
+                      <Button size="sm" onClick={collectPayment}>
+                        {Number(selected.currentBalance) > 0 ? 'Collect Payment' : 'Pay Now'}
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={() => openEdit(selected)}>
                       <Pencil className="h-4 w-4 mr-1" /> Edit
                     </Button>
