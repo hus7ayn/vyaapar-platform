@@ -48,7 +48,7 @@ async function bootstrap() {
   // build/mount cost is pure overhead on a small server.
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
-      .setTitle('Vyaapar API')
+      .setTitle('MSW Global API')
       .setDescription('Billing, accounting & inventory API')
       .setVersion('1.0')
       .addBearerAuth()
@@ -59,7 +59,7 @@ async function bootstrap() {
 
   const port = process.env.API_PORT || 4000;
   await app.listen(port);
-  console.log(`Vyaapar API running on http://localhost:${port}`);
+  console.log(`MSW Global API running on http://localhost:${port}`);
   console.log(`Web app (UI):  ${webUrl}`);
   console.log(`Swagger docs:  http://localhost:${port}/api/docs`);
 }

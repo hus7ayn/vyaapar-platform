@@ -20,7 +20,7 @@ export function PlatformSidebar() {
   return (
     <aside className="hidden lg:flex w-64 flex-col border-r bg-slate-950 text-slate-100">
       <div className="p-6 border-b border-slate-800">
-        <p className="text-xs uppercase tracking-wider text-slate-400">Vyaapar</p>
+        <p className="text-xs uppercase tracking-wider text-slate-400">MSW Global</p>
         <p className="font-bold text-lg">Platform Console</p>
       </div>
       <nav className="flex-1 p-4 space-y-1">

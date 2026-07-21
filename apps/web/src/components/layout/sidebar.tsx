@@ -90,7 +90,7 @@ const NAV: NavItem[] = [
       { href: '/cash-bank/loans', label: 'Loan Accounts' },
     ],
   },
-  { label: 'Vyapar POS', icon: MonitorSmartphone, href: '/pos', match: (p) => p.startsWith('/pos'), permission: Permission.POS_SELL },
+  { label: 'MSW POS', icon: MonitorSmartphone, href: '/pos', match: (p) => p.startsWith('/pos'), permission: Permission.POS_SELL },
   { label: 'Reports', icon: BarChart3, href: '/reports', match: (p) => p.startsWith('/reports'), permission: Permission.REPORTS_VIEW },
   { label: 'Reminders', icon: Bell, href: '/reminders', match: (p) => p.startsWith('/reminders'), permission: Permission.REPORTS_VIEW },
   { label: 'Utilities', icon: Wrench, href: '/utilities', match: (p) => p.startsWith('/utilities'), permission: Permission.SETTINGS_MANAGE },
@@ -195,7 +195,7 @@ export function Sidebar() {
     <aside className="hidden lg:flex w-64 flex-col border-r bg-white h-screen sticky top-0 shadow-sm">
       <div className="p-4 border-b bg-[hsl(348,85%,52%)]">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-white flex items-center justify-center text-[hsl(348,85%,52%)] font-extrabold text-lg shadow">V</div>
+          <div className="h-10 w-10 rounded-lg bg-white flex items-center justify-center text-[hsl(348,85%,52%)] font-extrabold text-lg shadow">M</div>
           <div>
             <p className="font-bold text-white text-base">{APP_NAME}</p>
             <p className="text-xs text-white/80 truncate max-w-[150px]">{user?.email}</p>

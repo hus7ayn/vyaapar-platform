@@ -313,9 +313,9 @@ export default function PosPage() {
       {/* Vyapar POS top bar */}
       <div className="shrink-0 bg-[hsl(348,85%,52%)] text-white px-4 py-2 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-white text-[hsl(348,85%,52%)] font-extrabold flex items-center justify-center text-lg">V</div>
+          <div className="h-9 w-9 rounded-lg bg-white text-[hsl(348,85%,52%)] font-extrabold flex items-center justify-center text-lg">M</div>
           <div>
-            <p className="font-bold text-sm leading-tight">Vyapar POS</p>
+            <p className="font-bold text-sm leading-tight">MSW POS</p>
             <p className="text-[10px] text-white/80">{firm?.name ?? 'Billing'} · Tax Invoice</p>
           </div>
         </div>

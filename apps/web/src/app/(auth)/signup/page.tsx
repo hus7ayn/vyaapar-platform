@@ -58,7 +58,7 @@ export default function SignupPage() {
       <div className="w-full max-w-md space-y-6">
         <div className="text-center space-y-2">
           <div className="mx-auto h-14 w-14 rounded-xl bg-[hsl(348,85%,52%)] flex items-center justify-center text-white font-extrabold text-2xl shadow">
-            V
+            M
           </div>
           <h1 className="text-2xl font-bold">Start with {APP_NAME}</h1>
           <p className="text-sm text-muted-foreground">Create your business account — free to get started</p>

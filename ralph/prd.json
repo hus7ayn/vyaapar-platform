@@ -8,7 +8,7 @@
       "id": "R1",
       "title": "Rename app Vyaapar -> MSW Global",
       "priority": 1,
-      "status": "pending",
+      "status": "pass",
       "files": ["packages/shared/src/constants.ts", "apps/web/src/app/layout.tsx", "apps/web/src/components/layout/sidebar.tsx", "apps/web/src/components/layout/top-bar.tsx", "apps/web/src/components/platform/platform-sidebar.tsx", "apps/web/src/app/(app)/pos/page.tsx", "apps/api/src/main.ts"],
       "accept": "No user-facing 'Vyaapar/Vyapar' remains; brand reads 'MSW Global' in tab, sidebar, login, POS header, platform portal."
     },

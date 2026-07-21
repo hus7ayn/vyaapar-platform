@@ -19,3 +19,5 @@
 - R1 rename: APP_NAME in packages/shared/src/constants.ts + hardcoded literals (layout.tsx, sidebar.tsx, top-bar.tsx, platform-sidebar.tsx, pos/page.tsx) + "V" glyph + main.ts.
 
 ## Iterations
+
+- R1 (rename) PASS: APP_NAME='MSW Global' (constants.ts, shared rebuilt); literals in layout.tsx/top-bar/platform-sidebar/sidebar(nav 'MSW POS')/pos header; brand glyph "V"->"M" (sidebar, pos, login x2, signup); main.ts swagger+log. api typecheck green. Only code identifiers (VyaparActionButton, components/vyapar dir, --vyapar css vars, vyaapar-insights localStorage keys) remain — non-user-facing, left as-is.

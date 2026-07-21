@@ -61,7 +61,7 @@ export default function LoginPage() {
       <div className="hidden lg:flex lg:w-1/2 bg-[hsl(348,85%,52%)] flex-col justify-center items-center p-12 text-white">
         <div className="max-w-md space-y-6">
           <div className="h-16 w-16 rounded-2xl bg-white flex items-center justify-center text-[hsl(348,85%,52%)] font-extrabold text-3xl shadow-lg">
-            V
+            M
           </div>
           <h1 className="text-4xl font-extrabold leading-tight">{APP_NAME}</h1>
           <p className="text-lg text-white/90 leading-relaxed">
@@ -92,7 +92,7 @@ export default function LoginPage() {
         <div className="w-full max-w-sm space-y-6">
           <div className="lg:hidden text-center space-y-2">
             <div className="mx-auto h-14 w-14 rounded-xl bg-[hsl(348,85%,52%)] flex items-center justify-center text-white font-extrabold text-2xl shadow">
-              V
+              M
             </div>
             <h2 className="text-2xl font-bold">{APP_NAME}</h2>
           </div>

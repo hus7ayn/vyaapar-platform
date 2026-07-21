@@ -3,7 +3,7 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-  title: 'Vyaapar — Billing, Accounting & Inventory',
+  title: 'MSW Global — Billing, Accounting & Inventory',
   description: 'Enterprise SaaS for retail and hospitality',
 };
 

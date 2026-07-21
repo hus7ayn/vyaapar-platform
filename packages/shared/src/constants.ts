@@ -1,4 +1,4 @@
-export const APP_NAME = 'Vyaapar';
+export const APP_NAME = 'MSW Global';
 
 export const ORDER_STATUS = {
   DRAFT: 'DRAFT',

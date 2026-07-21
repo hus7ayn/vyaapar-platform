@@ -9,7 +9,7 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-card/95 backdrop-blur px-4 lg:px-6">
-      <p className="text-sm font-bold lg:hidden text-[hsl(348,85%,52%)]">Vyaapar</p>
+      <p className="text-sm font-bold lg:hidden text-[hsl(348,85%,52%)]">MSW Global</p>
       <div className="hidden lg:block" />
       <div className="flex items-center gap-3">
         <NotificationBell />
