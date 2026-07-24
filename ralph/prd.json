@@ -115,7 +115,7 @@
       "id": "R23",
       "title": "Return / Refund / Exchange: per-item + history",
       "priority": 23,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/api/src/sale/sale.service.ts", "apps/api/src/sale/sale.controller.ts", "apps/web/src/components/pos/recent-orders-panel.tsx", "apps/web/src/components/vyapar/txn-list-page.tsx"],
       "accept": "From a completed sale, an authorized user can return SPECIFIC items/quantities (not just the whole invoice), choose Refund (money back) or Exchange (return + new items), inventory auto-updates, and there is a Returns history view listing credit notes/returns."
     },

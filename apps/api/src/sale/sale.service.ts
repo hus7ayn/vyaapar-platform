@@ -109,34 +109,76 @@ export class SaleService {
     });
   }
 
-  /** Full refund of an invoice → creates a credit note against it. */
-  async refundInvoice(businessId: string, userId: string, id: string, body?: { payments?: TxnPaymentInput[] }) {
+  /**
+   * Return an invoice as a credit note. Full return (no lineIds) reproduces the
+   * whole invoice incl. bill discount/charges and refunds its exact total.
+   * Partial return (lineIds) returns those whole lines only, refunding the sum
+   * of their stored line totals (roundOff disabled so payment == total exactly).
+   * mode EXCHANGE / cashRefund:false records the return as store credit (no cash
+   * out) so a replacement sale can be rung up; REFUND (default) pays cash back.
+   */
+  async refundInvoice(
+    businessId: string,
+    userId: string,
+    id: string,
+    body?: { payments?: TxnPaymentInput[]; lineIds?: string[]; cashRefund?: boolean; mode?: 'REFUND' | 'EXCHANGE' },
+  ) {
     const txn = await this.core.getTxn(businessId, id);
     if (txn.txnType !== 'SALE_INVOICE') throw new BadRequestException('Not a sale invoice');
-    if (txn.returns.length) throw new BadRequestException('Invoice already refunded');
+    if (txn.returns.length) throw new BadRequestException('This invoice has already been returned');
 
-    const creditNote = await this.core.createTxn(businessId, userId, {
-      txnType: 'CREDIT_NOTE',
-      branchId: txn.branchId ?? undefined,
-      partyId: txn.partyId ?? undefined,
-      partyName: txn.partyName ?? undefined,
-      returnAgainstTxnId: txn.id,
-      lines: txn.lines.map((l) => ({
-        itemId: l.itemId ?? undefined,
-        name: l.name,
-        quantity: Number(l.quantity),
-        unit: l.unit,
-        unitPrice: Number(l.unitPrice),
-        discountAmount: Number(l.discountAmount),
-        taxRate: Number(l.taxRate),
-      })),
-      discountPercent: txn.discountPercent != null ? Number(txn.discountPercent) : undefined,
-      discountAmount: txn.discountPercent == null ? Number(txn.discountAmount) : undefined,
-      additionalCharges: (txn.additionalCharges as { name: string; amount: number }[] | null) ?? undefined,
-      payments: body?.payments ?? [{ paymentType: 'CASH', amount: Number(txn.total) }],
-      description: `Refund against ${txn.txnNumber}`,
-    });
-    await this.core.prisma.txn.update({ where: { id }, data: { status: 'REFUNDED' } });
+    const partial = !!body?.lineIds?.length;
+    const selected = partial ? txn.lines.filter((l) => body!.lineIds!.includes(l.id)) : txn.lines;
+    if (!selected.length) throw new BadRequestException('Select at least one item to return');
+
+    const cashRefund = body?.cashRefund !== false && body?.mode !== 'EXCHANGE';
+    const label = body?.mode === 'EXCHANGE' ? 'Exchange' : 'Return';
+
+    const lines = selected.map((l) => ({
+      itemId: l.itemId ?? undefined,
+      name: l.name,
+      quantity: Number(l.quantity),
+      unit: l.unit,
+      unitPrice: Number(l.unitPrice),
+      discountAmount: Number(l.discountAmount),
+      taxRate: Number(l.taxRate),
+    }));
+
+    let creditNote;
+    if (partial) {
+      // Sum of stored (2dp) line totals; roundOff off so createTxn's total matches exactly.
+      const refundTotal = selected.reduce((s, l) => s + Number(l.total), 0);
+      creditNote = await this.core.createTxn(businessId, userId, {
+        txnType: 'CREDIT_NOTE',
+        branchId: txn.branchId ?? undefined,
+        partyId: txn.partyId ?? undefined,
+        partyName: txn.partyName ?? undefined,
+        returnAgainstTxnId: txn.id,
+        lines,
+        roundOffEnabled: false,
+        payments: cashRefund ? [{ paymentType: 'CASH', amount: refundTotal }] : [],
+        description: `${label} against ${txn.txnNumber}`,
+      });
+    } else {
+      creditNote = await this.core.createTxn(businessId, userId, {
+        txnType: 'CREDIT_NOTE',
+        branchId: txn.branchId ?? undefined,
+        partyId: txn.partyId ?? undefined,
+        partyName: txn.partyName ?? undefined,
+        returnAgainstTxnId: txn.id,
+        lines,
+        discountPercent: txn.discountPercent != null ? Number(txn.discountPercent) : undefined,
+        discountAmount: txn.discountPercent == null ? Number(txn.discountAmount) : undefined,
+        additionalCharges: (txn.additionalCharges as { name: string; amount: number }[] | null) ?? undefined,
+        payments: body?.payments ?? (cashRefund ? [{ paymentType: 'CASH', amount: Number(txn.total) }] : []),
+        description: `${label} against ${txn.txnNumber}`,
+      });
+    }
+
+    // Mark the invoice REFUNDED only when the whole invoice was returned.
+    if (!partial) {
+      await this.core.prisma.txn.update({ where: { id }, data: { status: 'REFUNDED' } });
+    }
     return creditNote;
   }
 

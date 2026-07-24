@@ -62,7 +62,7 @@ export class SaleController {
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('sub') userId: string,
     @Param('id') id: string,
-    @Body() body?: { payments?: TxnPaymentInput[] },
+    @Body() body?: { payments?: TxnPaymentInput[]; lineIds?: string[]; cashRefund?: boolean; mode?: 'REFUND' | 'EXCHANGE' },
   ) {
     return this.sale.refundInvoice(businessId, userId, id, body);
   }
