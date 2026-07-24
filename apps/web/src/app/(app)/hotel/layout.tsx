@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, BedDouble, UserPlus, Users, Layers, DollarSign,
-  Sparkles, Moon, BarChart3, Wallet, Wrench, ArrowLeft, ConciergeBell,
+  Sparkles, Moon, BarChart3, Wallet, Wrench, ArrowLeft, ConciergeBell, Tag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ const tabs = [
   { name: 'Rates', href: '/hotel/rates', icon: DollarSign },
   { name: 'Housekeeping', href: '/hotel/housekeeping', icon: Sparkles },
   { name: 'Services', href: '/hotel/services', icon: ConciergeBell },
+  { name: 'Categories', href: '/hotel/categories', icon: Tag },
   { name: 'Night Audit', href: '/hotel/night-audit', icon: Moon },
   { name: 'Maintenance', href: '/hotel/maintenance', icon: Wrench },
   { name: 'Reports', href: '/hotel/reports', icon: BarChart3 },

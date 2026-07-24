@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { branchWhere } from '../common/branch.util';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -40,5 +40,11 @@ export class CategoriesService {
     return this.prisma.category.create({
       data: { name, slug, parentId: data.parentId, businessId, branchId: branchId ?? null },
     });
+  }
+
+  async remove(businessId: string, id: string) {
+    const existing = await this.prisma.category.findFirst({ where: { id, businessId, deletedAt: null } });
+    if (!existing) throw new NotFoundException('Category not found');
+    return this.prisma.category.update({ where: { id }, data: { deletedAt: new Date() } });
   }
 }

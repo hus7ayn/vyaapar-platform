@@ -91,7 +91,7 @@
       "id": "R20",
       "title": "Hotel module: item category management (Food/Beverages/etc.)",
       "priority": 20,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/hotel/layout.tsx", "apps/api/src/hotel/hotel.service.ts", "apps/web/src/app/(app)/services/page.tsx"],
       "accept": "A hotel user has a place to create and manage item categories for hotel items (Food, Beverages, Snacks, Desserts, Room Service) and can filter items/services by category. Reuses the retail Category backend (branch-scoped) or a hotel-scoped equivalent."
     },

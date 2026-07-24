@@ -94,6 +94,15 @@
   the row is created in-tx so the 60s bell poll surfaces it even with Pusher off. Uses existing Prisma.Decimal
   helpers (before.gt/after.lte, .toNumber()). Notifications = low-stock only per user's choice. api typecheck green.
 
+- R20 (hotel categories) PASS: answers "where to add category" for hotels. New /hotel/categories page +
+  "Categories" tab in hotel/layout.tsx. Reuses the retail Category backend scoped to the HOTEL branch. Backend:
+  categories.controller findAll/create now accept an explicit branchId (query for GET, body for POST) that
+  overrides the caller's active branch (needed because multi-branch admins view hotel via explicit branchId);
+  added DELETE /categories/:id -> categories.service.remove (soft delete deletedAt). Page resolves hotel branch
+  via /branches?type=HOTEL, lists/creates/deletes categories, and offers quick-add chips for Food/Beverages/
+  Snacks/Desserts/Room Service. FOLLOW-UP (not done): wiring category filter into folio/services item picker +
+  category reporting. api+web typecheck green.
+
 - R10 (barcode/thermal) PASS: barcode multi-print already existed on item detail (BarcodeTagPanel qty + Print Tags) — changed default qty 1->2 ("2 slips at once"). Thermal customization: added FirmSettings.receiptHeader/receiptFooter (schema; db push on deploy adds columns), settings.service accepts them, generateThermal loads firmSettings and injects header (under shop name) + footer (replaces "Thank you!"). Settings UI: new "Thermal Receipt" card with header/footer inputs. api + web typecheck green. ALL 10 STORIES PASS.
 
 - R8 (RBAC) PASS (core): added Biller lockdown in (app)/layout.tsx — role BILLER is redirected to /pos from any non-/pos route (client guard; backend PermissionsGuard already protects data/APIs). Added "Today's Sales" badge on POS header (GET /sale/invoices?from=today&to=today summary.totalAmount, 60s refresh) — the one figure a Biller may see, no P&L. Super-admin portal + manager/owner branch scoping already enforced server-side (BranchScopeGuard). FOLLOW-UP (not done): assigning a Manager to MULTIPLE shops (user has single branchId today) + 3-tier relabel in staff UI. web typecheck green.
