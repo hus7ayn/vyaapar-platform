@@ -19,8 +19,8 @@ export interface TagSpec {
   colour?: string | null;
 }
 
-// The text value for each configurable field (barcode image is always drawn).
-function fieldValue(field: LabelField, t: TagSpec): string | null {
+// The text value for each configurable text field (barcode image handled separately).
+export function labelFieldText(field: LabelField, t: TagSpec): string | null {
   switch (field) {
     case 'name': return t.name;
     case 'category': return t.category ?? null;
@@ -34,32 +34,30 @@ function fieldValue(field: LabelField, t: TagSpec): string | null {
   }
 }
 
-const FIELD_ORDER: LabelField[] = ['name', 'category', 'size', 'colour', 'sku', 'mrp', 'price'];
+const TEXT_FIELDS: LabelField[] = ['name', 'category', 'size', 'colour', 'sku', 'mrp', 'price', 'barcodeNumber'];
 
-/** Prints labels via the browser print dialog, laid out per the label designer config. */
+/** Prints labels via the browser print dialog, each field absolutely positioned per the designer config. */
 export function printBarcodeTags(tags: TagSpec[], config: LabelConfig = loadLabelConfig()) {
-  const emphasised = new Set<LabelField>(['name', 'mrp', 'price']);
-
   const body = tags
     .map((t) => {
       const count = Math.max(1, Math.min(200, Math.floor(t.qty) || 1));
-      const rows = FIELD_ORDER
-        .filter((f) => config.fields[f])
+
+      const textEls = TEXT_FIELDS
+        .filter((f) => config.fields[f]?.show)
         .map((f) => {
-          const val = fieldValue(f, t);
+          const val = labelFieldText(f, t);
           if (!val) return '';
-          return `<div class="line${emphasised.has(f) ? ' strong' : ''}">${escapeHtml(val)}</div>`;
+          const s = config.fields[f];
+          return `<div class="fld" style="left:${s.xMm}mm;top:${s.yMm}mm;font-size:${s.fontPt}px;font-weight:${s.bold ? 700 : 400}">${escapeHtml(val)}</div>`;
         })
         .join('');
-      const barcodeNum = config.fields.barcodeNumber
-        ? `<div class="line bcnum">${escapeHtml(t.barcode)}</div>`
+
+      const bc = config.fields.barcode;
+      const barcodeEl = bc?.show
+        ? `<img src="${t.dataUrl}" alt="${escapeHtml(t.barcode)}" style="left:${bc.xMm}mm;top:${bc.yMm}mm;height:${config.barcodeHeightMm}mm" />`
         : '';
-      const tag = `
-    <div class="tag">
-      ${rows}
-      <img src="${t.dataUrl}" alt="${escapeHtml(t.barcode)}" />
-      ${barcodeNum}
-    </div>`;
+
+      const tag = `<div class="tag">${textEls}${barcodeEl}</div>`;
       return tag.repeat(count);
     })
     .join('');
@@ -70,15 +68,9 @@ export function printBarcodeTags(tags: TagSpec[], config: LabelConfig = loadLabe
   @page { size: ${config.widthMm}mm ${config.heightMm}mm; margin: 0; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
-  .tag {
-    width: ${config.widthMm}mm; height: ${config.heightMm}mm; padding: ${config.marginMm}mm;
-    display: flex; flex-direction: column; align-items: ${config.align === 'left' ? 'flex-start' : config.align === 'right' ? 'flex-end' : 'center'}; justify-content: center;
-    page-break-after: always; text-align: ${config.align}; overflow: hidden;
-  }
-  .tag .line { font-size: ${config.fontPt}px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; }
-  .tag .line.strong { font-weight: 700; }
-  .tag .bcnum { font-size: ${Math.max(6, config.fontPt - 2)}px; letter-spacing: 0.5px; }
-  .tag img { max-width: 100%; height: ${config.barcodeHeightMm}mm; object-fit: contain; margin: 0.5mm 0; }
+  .tag { position: relative; width: ${config.widthMm}mm; height: ${config.heightMm}mm; page-break-after: always; overflow: hidden; }
+  .tag .fld { position: absolute; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
+  .tag img { position: absolute; max-width: 100%; object-fit: contain; }
 </style>
 </head><body>${body}</body></html>`;
 

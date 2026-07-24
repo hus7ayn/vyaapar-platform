@@ -164,7 +164,7 @@
       "id": "R29",
       "title": "Barcode label positional (drag) designer",
       "priority": 29,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/lib/label-config.ts", "apps/web/src/lib/print-tags.ts", "apps/web/src/components/settings/label-designer-card.tsx"],
       "accept": "The label designer lets the user MOVE fields (Item Name, MRP, Sale Price, SKU, Category, Barcode image, Barcode number, Size, Colour) to any position on the label via drag on a scaled preview, with per-field font size, alignment and show/hide. print-tags renders with absolute x/y positioning. Config persists (localStorage) and is backward-compatible with the existing toggle-based config."
     },
