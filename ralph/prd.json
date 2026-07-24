@@ -107,7 +107,7 @@
       "id": "R22",
       "title": "Credit payment proper form (mode, amount, allocation)",
       "priority": 22,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/parties/page.tsx"],
       "accept": "The Collect Payment action uses an in-app form (not window.prompt): amount (defaults to full balance, partial allowed), payment mode (Cash/Bank), optional note, and optional per-invoice allocation. Ledger/invoice status updates as before."
     },

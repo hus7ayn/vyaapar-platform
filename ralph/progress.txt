@@ -112,6 +112,14 @@
   User.branchId (single) -> many-to-many + BranchScopeGuard + JWT changes, a large cross-cutting change unsafe
   for one ralph iteration. web typecheck green.
 
+- R22 (credit payment form) PASS: replaced the window.prompt in parties/page.tsx collectPayment with a proper
+  Dialog. openCollectPayment() opens it prefilled to full balance; submitPayment() validates (amount>0, not
+  exceeding balance, bank account chosen when mode=BANK) and posts to /sale/payments-in or /purchase/payments-out
+  with payments:[{paymentType:CASH|BANK, amount, bankAccountId?}] (TxnPaymentInput) + description:note
+  (maps to Txn.description) + autoAllocate FIFO. Partial payments supported (toast notes "partial"). Added a
+  bank-accounts query (/cash-bank/accounts). Per-invoice manual allocation left as FIFO (backend accepts explicit
+  allocations if ever needed). web typecheck green.
+
 - R10 (barcode/thermal) PASS: barcode multi-print already existed on item detail (BarcodeTagPanel qty + Print Tags) — changed default qty 1->2 ("2 slips at once"). Thermal customization: added FirmSettings.receiptHeader/receiptFooter (schema; db push on deploy adds columns), settings.service accepts them, generateThermal loads firmSettings and injects header (under shop name) + footer (replaces "Thank you!"). Settings UI: new "Thermal Receipt" card with header/footer inputs. api + web typecheck green. ALL 10 STORIES PASS.
 
 - R8 (RBAC) PASS (core): added Biller lockdown in (app)/layout.tsx — role BILLER is redirected to /pos from any non-/pos route (client guard; backend PermissionsGuard already protects data/APIs). Added "Today's Sales" badge on POS header (GET /sale/invoices?from=today&to=today summary.totalAmount, 60s refresh) — the one figure a Biller may see, no P&L. Super-admin portal + manager/owner branch scoping already enforced server-side (BranchScopeGuard). FOLLOW-UP (not done): assigning a Manager to MULTIPLE shops (user has single branchId today) + 3-tier relabel in staff UI. web typecheck green.

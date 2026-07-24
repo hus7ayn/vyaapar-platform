@@ -146,6 +146,9 @@ export default function PartiesPage() {
   const [editingParty, setEditingParty] = useState<Party | null>(null);
   const [form, setForm] = useState<PartyForm>(EMPTY_FORM);
 
+  const [payOpen, setPayOpen] = useState(false);
+  const [payForm, setPayForm] = useState({ amount: '', mode: 'CASH', bankAccountId: '', note: '' });
+
   const listQs = new URLSearchParams();
   if (search) listQs.set('search', search);
   if (typeFilter !== 'ALL') listQs.set('type', typeFilter);
@@ -166,6 +169,12 @@ export default function PartiesPage() {
     queryKey: ['party', selectedId],
     queryFn: () => api<Party>(`/parties/${selectedId}`, { token }),
     enabled: !!token && !!selectedId,
+  });
+
+  const { data: bankAccounts } = useQuery({
+    queryKey: ['bank-accounts'],
+    queryFn: () => api<{ id: string; name: string }[]>('/cash-bank/accounts', { token }),
+    enabled: !!token,
   });
 
   const { data: partyTxns, isLoading: txnsLoading } = useQuery({
@@ -237,19 +246,43 @@ export default function PartiesPage() {
   // Record a payment against the party's outstanding balance. Positive balance
   // = customer owes us -> Payment In (auto-allocated FIFO to their open credit
   // invoices, flipping them toward PAID). Negative = we owe a supplier -> Payment Out.
-  const collectPayment = async () => {
+  const openCollectPayment = () => {
     if (!selected) return;
     const bal = Number(selected.currentBalance);
     if (bal === 0) { toast.info('Nothing outstanding to settle'); return; }
+    setPayForm({ amount: String(Math.abs(bal)), mode: 'CASH', bankAccountId: '', note: '' });
+    setPayOpen(true);
+  };
+
+  const submitPayment = async () => {
+    if (!selected) return;
+    const bal = Number(selected.currentBalance);
     const receivable = bal > 0;
-    const input = window.prompt(`${receivable ? 'Collect payment from' : 'Pay'} ${selected.name} — amount (₹):`, String(Math.abs(bal)));
-    if (input == null) return;
-    const amount = Number(input);
+    const amount = Number(payForm.amount);
     if (!Number.isFinite(amount) || amount <= 0) { toast.error('Enter a valid amount'); return; }
+    if (amount > Math.abs(bal) + 0.001) { toast.error('Amount exceeds the outstanding balance'); return; }
+    if (payForm.mode === 'BANK' && !payForm.bankAccountId) { toast.error('Select a bank account'); return; }
     try {
       const endpoint = receivable ? '/sale/payments-in' : '/purchase/payments-out';
-      await api(endpoint, { method: 'POST', token, body: JSON.stringify({ partyId: selected.id, amount, autoAllocate: true, payments: [{ paymentType: 'CASH', amount }] }) });
-      toast.success(receivable ? 'Payment collected — invoices updated' : 'Payment recorded');
+      const payment = payForm.mode === 'BANK'
+        ? { paymentType: 'BANK', amount, bankAccountId: payForm.bankAccountId }
+        : { paymentType: 'CASH', amount };
+      await api(endpoint, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          partyId: selected.id,
+          amount,
+          autoAllocate: true,
+          payments: [payment],
+          description: payForm.note.trim() || undefined,
+        }),
+      });
+      const partial = amount < Math.abs(bal) - 0.001;
+      toast.success(receivable
+        ? `Payment collected${partial ? ' (partial)' : ''} — invoices updated`
+        : `Payment recorded${partial ? ' (partial)' : ''}`);
+      setPayOpen(false);
       queryClient.invalidateQueries();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to record payment');
@@ -408,7 +441,7 @@ export default function PartiesPage() {
                   </div>
                   <div className="flex gap-2 justify-end">
                     {Number(selected.currentBalance) !== 0 && (
-                      <Button size="sm" onClick={collectPayment}>
+                      <Button size="sm" onClick={openCollectPayment}>
                         {Number(selected.currentBalance) > 0 ? 'Collect Payment' : 'Pay Now'}
                       </Button>
                     )}
@@ -639,6 +672,77 @@ export default function PartiesPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Collect / record payment */}
+      <Dialog open={payOpen} onOpenChange={setPayOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {selected && Number(selected.currentBalance) > 0 ? 'Collect Payment' : 'Record Payment'}
+              {selected ? ` — ${selected.name}` : ''}
+            </DialogTitle>
+          </DialogHeader>
+          {selected && (
+            <form
+              className="space-y-3"
+              onSubmit={(e) => { e.preventDefault(); submitPayment(); }}
+            >
+              <p className="text-sm text-muted-foreground">
+                Outstanding: <span className="font-semibold text-foreground">{formatMoney(Math.abs(Number(selected.currentBalance)))}</span>
+              </p>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Amount * (partial allowed)</label>
+                <Input
+                  type="number" min="0" step="0.01" autoFocus
+                  value={payForm.amount}
+                  onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Payment mode *</label>
+                <div className="flex gap-2">
+                  {(['CASH', 'BANK'] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setPayForm({ ...payForm, mode: m })}
+                      className={cn(
+                        'flex-1 h-10 rounded-lg border text-sm font-medium',
+                        payForm.mode === m ? 'bg-primary text-white border-primary' : 'bg-background text-muted-foreground',
+                      )}
+                    >
+                      {m === 'CASH' ? 'Cash' : 'Bank'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {payForm.mode === 'BANK' && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Bank account *</label>
+                  <select
+                    className="h-10 w-full rounded-lg border px-3 text-sm bg-background"
+                    value={payForm.bankAccountId}
+                    onChange={(e) => setPayForm({ ...payForm, bankAccountId: e.target.value })}
+                  >
+                    <option value="">Select account…</option>
+                    {(bankAccounts ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Note (optional)</label>
+                <Input value={payForm.note} onChange={(e) => setPayForm({ ...payForm, note: e.target.value })} placeholder="Reference / remark" />
+              </div>
+              <p className="text-[11px] text-muted-foreground">Applied to the oldest open invoices first (FIFO).</p>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button type="button" variant="outline" onClick={() => setPayOpen(false)}>Cancel</Button>
+                <Button type="submit">Save Payment</Button>
+              </div>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>
