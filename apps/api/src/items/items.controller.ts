@@ -105,7 +105,7 @@ export class ItemsController {
     @CurrentUser('branchId') branchId: string | undefined,
     @Body() body: ItemInput,
   ) {
-    return this.items.create(businessId, body, branchId);
+    return this.items.create(businessId, body, branchId, { requireComplete: true });
   }
 
   @Post(':id/adjust')

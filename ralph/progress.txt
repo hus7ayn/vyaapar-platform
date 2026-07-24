@@ -55,6 +55,13 @@
   (addingExpenseCategory/newExpenseCategory). Both still POST /categories or /expenses/categories,
   invalidate, and auto-select the new category. web typecheck green.
 
+- R15 (item required fields) PASS: per user, ADD ITEM now requires Name, Category, Sale Price, Cost Price,
+  Unit, Opening Stock (no. of products), Barcode. Client: validateNewItem() in items/page.tsx (services skip
+  openingStock+barcode); onSubmit runs it only for NEW items (edits stay name-only so legacy items still save);
+  added conditional " *" markers on those labels (shown when !editingItem). Backend: items.service.create now
+  takes opts.requireComplete and enforces the same set; controller POST /items passes requireComplete:true,
+  while items.import calls create() WITHOUT it so partial bulk catalogs still load (see R17). api+web typecheck green.
+
 - R10 (barcode/thermal) PASS: barcode multi-print already existed on item detail (BarcodeTagPanel qty + Print Tags) — changed default qty 1->2 ("2 slips at once"). Thermal customization: added FirmSettings.receiptHeader/receiptFooter (schema; db push on deploy adds columns), settings.service accepts them, generateThermal loads firmSettings and injects header (under shop name) + footer (replaces "Thank you!"). Settings UI: new "Thermal Receipt" card with header/footer inputs. api + web typecheck green. ALL 10 STORIES PASS.
 
 - R8 (RBAC) PASS (core): added Biller lockdown in (app)/layout.tsx — role BILLER is redirected to /pos from any non-/pos route (client guard; backend PermissionsGuard already protects data/APIs). Added "Today's Sales" badge on POS header (GET /sale/invoices?from=today&to=today summary.totalAmount, 60s refresh) — the one figure a Biller may see, no P&L. Super-admin portal + manager/owner branch scoping already enforced server-side (BranchScopeGuard). FOLLOW-UP (not done): assigning a Manager to MULTIPLE shops (user has single branchId today) + 3-tier relabel in staff UI. web typecheck green.

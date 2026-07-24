@@ -158,8 +158,23 @@ export class ItemsService {
     return { items, categories };
   }
 
-  async create(businessId: string, body: ItemInput, branchId?: string) {
+  async create(businessId: string, body: ItemInput, branchId?: string, opts?: { requireComplete?: boolean }) {
     if (!body.name?.trim()) throw new BadRequestException('Item name is required');
+    if (opts?.requireComplete) {
+      // Interactive "Add Item" requires a complete record; the bulk import path
+      // calls create() without this flag so partial catalogs can still load.
+      const isService = body.itemType === 'SERVICE';
+      if (!body.categoryId) throw new BadRequestException('Category is required');
+      if (body.salePrice === undefined || body.salePrice === null) throw new BadRequestException('Sale price is required');
+      if ((body.costPrice ?? body.purchasePrice) === undefined || (body.costPrice ?? body.purchasePrice) === null)
+        throw new BadRequestException('Cost price is required');
+      if (!body.baseUnit?.trim()) throw new BadRequestException('Unit is required');
+      if (!isService) {
+        if (body.openingStock === undefined || body.openingStock === null)
+          throw new BadRequestException('Opening stock (no. of products) is required');
+        if (!body.barcode?.trim()) throw new BadRequestException('Barcode is required');
+      }
+    }
     const sku = body.sku?.trim() || `ITM-${Date.now().toString(36).toUpperCase()}`;
     const openingStock = new Prisma.Decimal(body.openingStock ?? 0);
     const costPrice = body.costPrice ?? body.purchasePrice ?? 0;

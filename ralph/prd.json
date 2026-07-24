@@ -51,7 +51,7 @@
       "id": "R15",
       "title": "Add-item required fields + backend validation",
       "priority": 15,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/items/page.tsx", "apps/api/src/items/items.service.ts"],
       "accept": "Creating an item requires (client + backend): Name, Category, Sale Price, Cost/Purchase Price, Unit, Opening Stock quantity ('no. of products'), and Barcode. Each missing field shows a clear message; the backend rejects incomplete payloads with a specific message. SKU/Item Code stays optional (auto-generated)."
     },

@@ -343,6 +343,21 @@ export default function ItemsPage() {
   const isService = form.itemType === 'SERVICE';
   const fieldCls = 'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
+  // Required fields when ADDING a new item (edits stay lenient so legacy items
+  // without these fields can still be updated). Services skip stock/barcode.
+  const validateNewItem = (): string | null => {
+    if (!form.name.trim()) return 'Item name is required';
+    if (!form.categoryId) return 'Please select a category';
+    if (form.salePrice.trim() === '') return 'Sale price is required';
+    if (form.costPrice.trim() === '') return 'Cost price is required';
+    if (!form.baseUnit.trim()) return 'Please select a unit';
+    if (!isService) {
+      if (form.openingStock.trim() === '') return 'Opening stock (no. of products) is required';
+      if (!form.barcode.trim()) return 'Barcode is required';
+    }
+    return null;
+  };
+
   return (
     <div className="p-4 lg:p-6 flex gap-4 items-start">
       {/* LEFT pane */}
@@ -657,7 +672,12 @@ export default function ItemsPage() {
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              if (!form.name.trim()) { toast.error('Item name is required'); return; }
+              if (editingItem) {
+                if (!form.name.trim()) { toast.error('Item name is required'); return; }
+              } else {
+                const err = validateNewItem();
+                if (err) { toast.error(err); return; }
+              }
               saveMutation.mutate();
             }}
           >
@@ -676,7 +696,7 @@ export default function ItemsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Category</label>
+                  <label className="text-xs font-medium text-muted-foreground">Category{!editingItem && ' *'}</label>
                   {addingCategory ? (
                     <div className="flex gap-2">
                       <input
@@ -708,7 +728,7 @@ export default function ItemsPage() {
                   <Input value={form.sku} onChange={(e) => set({ sku: e.target.value })} placeholder="Auto-generated if empty" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Barcode (editable)</label>
+                  <label className="text-xs font-medium text-muted-foreground">Barcode (editable){!editingItem && !isService && ' *'}</label>
                   <Input value={form.barcode} onChange={(e) => set({ barcode: e.target.value })} placeholder="13-digit; last 5 digits = cost in paise" />
                   <p className="text-[10px] text-muted-foreground mt-1">Last 5 digits encode cost price (e.g. 00150 = ₹1.50)</p>
                 </div>
@@ -723,11 +743,11 @@ export default function ItemsPage() {
               <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">Pricing {isService ? '' : '& Stock'}</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Sale Price</label>
+                  <label className="text-xs font-medium text-muted-foreground">Sale Price{!editingItem && ' *'}</label>
                   <Input type="number" min="0" step="0.01" value={form.salePrice} onChange={(e) => set({ salePrice: e.target.value })} placeholder="0.00" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Cost Price</label>
+                  <label className="text-xs font-medium text-muted-foreground">Cost Price{!editingItem && ' *'}</label>
                   <Input type="number" min="0" step="0.01" value={form.costPrice} onChange={(e) => set({ costPrice: e.target.value })} placeholder="Landed cost" />
                 </div>
                 <div>
@@ -751,7 +771,7 @@ export default function ItemsPage() {
                   <Input type="number" min="0" max="100" step="0.01" value={form.taxRate} onChange={(e) => set({ taxRate: e.target.value })} placeholder="e.g. 18" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Unit</label>
+                  <label className="text-xs font-medium text-muted-foreground">Unit{!editingItem && ' *'}</label>
                   <select className={fieldCls} value={form.baseUnit} onChange={(e) => set({ baseUnit: e.target.value })}>
                     <option value="">Default</option>
                     {(units ?? []).map((u) => <option key={u.id} value={u.shortName}>{u.name} ({u.shortName})</option>)}
@@ -761,7 +781,7 @@ export default function ItemsPage() {
                   <>
                     {!editingItem && (
                       <div>
-                        <label className="text-xs font-medium text-muted-foreground">Opening Stock</label>
+                        <label className="text-xs font-medium text-muted-foreground">Opening Stock (no. of products) *</label>
                         <Input type="number" min="0" step="0.01" value={form.openingStock} onChange={(e) => set({ openingStock: e.target.value })} placeholder="0" />
                       </div>
                     )}
