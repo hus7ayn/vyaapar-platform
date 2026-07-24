@@ -140,6 +140,18 @@
   W/H/margin/font/barcode-height/alignment, Save/Reset). Size/Colour render only if item has that data (base item
   model lacks them). Persistence is per-device (localStorage); syncing via FirmSettings is a follow-up. web typecheck green.
 
+- R25 (payroll advance/payslip/history) PASS. Schema: Employee.advanceBalance Decimal @default(0) (prisma
+  generate run; db push adds the column on deploy, like R7/R10). Advance ledger: POST /payroll/employees/:id/advance
+  -> recordAdvance increments advanceBalance; generatePayroll now auto-recovers it — line.advance = min(balance, base),
+  net = base - advance, and decrements the employee's balance (in a $transaction with the payroll create) so
+  advances draw down over future runs until cleared. Payslip: printPayslip() renders a per-line payslip via
+  printHtmlDocument (base/OT/bonus/deductions/advance/net); "Payslip" buttons on each run line + in the history
+  dialog. Per-employee history: employeeHistory() aggregates a staff member's lines across all runs (getPayrolls
+  already includes lines+employee); "History" button on each staff row opens a dialog (period/status/advance/net +
+  payslip). Staff table gained an "Advance Due" column + "Advance"/"History" actions. LIMITATION (documented):
+  manually editing a line's advance after generate doesn't re-sync the ledger. api+web typecheck green. ALL 15
+  BATCH-2 STORIES (R11-R25) PASS.
+
 - R10 (barcode/thermal) PASS: barcode multi-print already existed on item detail (BarcodeTagPanel qty + Print Tags) — changed default qty 1->2 ("2 slips at once"). Thermal customization: added FirmSettings.receiptHeader/receiptFooter (schema; db push on deploy adds columns), settings.service accepts them, generateThermal loads firmSettings and injects header (under shop name) + footer (replaces "Thank you!"). Settings UI: new "Thermal Receipt" card with header/footer inputs. api + web typecheck green. ALL 10 STORIES PASS.
 
 - R8 (RBAC) PASS (core): added Biller lockdown in (app)/layout.tsx — role BILLER is redirected to /pos from any non-/pos route (client guard; backend PermissionsGuard already protects data/APIs). Added "Today's Sales" badge on POS header (GET /sale/invoices?from=today&to=today summary.totalAmount, 60s refresh) — the one figure a Biller may see, no P&L. Super-admin portal + manager/owner branch scoping already enforced server-side (BranchScopeGuard). FOLLOW-UP (not done): assigning a Manager to MULTIPLE shops (user has single branchId today) + 3-tier relabel in staff UI. web typecheck green.

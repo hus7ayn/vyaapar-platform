@@ -42,6 +42,16 @@ export class PayrollController {
     return this.payroll.updateEmployee(businessId, id, body);
   }
 
+  @Post('employees/:id/advance')
+  @RequirePermissions(Permission.PAYROLL_MANAGE)
+  recordAdvance(
+    @CurrentUser('businessId') businessId: string,
+    @Param('id') id: string,
+    @Body() body: { amount: number },
+  ) {
+    return this.payroll.recordAdvance(businessId, id, body.amount);
+  }
+
   @Get('summary')
   @RequirePermissions(Permission.PAYROLL_VIEW)
   summary(

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { printHtmlDocument } from '@/lib/print-html';
 
 interface Employee {
   id: string;
@@ -20,6 +21,7 @@ interface Employee {
   department?: string | null;
   designation?: string | null;
   baseSalary: string | number;
+  advanceBalance?: string | number;
   branch?: { name: string; code: string } | null;
 }
 
@@ -31,7 +33,7 @@ interface PayrollLine {
   deductions: string | number;
   advance: string | number;
   netSalary: string | number;
-  employee: { firstName: string; lastName: string; employeeId: string };
+  employee: { id: string; firstName: string; lastName: string; employeeId: string };
 }
 
 interface PayrollRun {
@@ -81,6 +83,9 @@ export default function PayrollPage() {
   const [payOpen, setPayOpen] = useState<string | null>(null);
   const [payMode, setPayMode] = useState<'CASH' | 'BANK'>('CASH');
   const [bankAccountId, setBankAccountId] = useState('');
+  const [advanceFor, setAdvanceFor] = useState<Employee | null>(null);
+  const [advanceAmount, setAdvanceAmount] = useState('');
+  const [historyFor, setHistoryFor] = useState<Employee | null>(null);
 
   const { data: employees } = useQuery({
     queryKey: ['employees', activeShopId],
@@ -167,6 +172,48 @@ export default function PayrollPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const recordAdvance = useMutation({
+    mutationFn: ({ employeeId, amount }: { employeeId: string; amount: number }) =>
+      api(`/payroll/employees/${employeeId}/advance`, { method: 'POST', token, body: JSON.stringify({ amount }) }),
+    onSuccess: () => {
+      toast.success('Advance recorded — auto-deducted from upcoming payroll');
+      setAdvanceFor(null);
+      setAdvanceAmount('');
+      qc.invalidateQueries({ queryKey: ['employees'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Per-employee salary history: their lines across every generated run.
+  const employeeHistory = (empId: string) =>
+    (payrolls ?? [])
+      .map((p) => ({ run: p, line: p.lines.find((l) => l.employee.id === empId) }))
+      .filter((x): x is { run: PayrollRun; line: PayrollLine } => !!x.line);
+
+  const printPayslip = (run: PayrollRun, line: PayrollLine) => {
+    const row = (k: string, v: string | number) =>
+      `<tr><td style="padding:4px 0">${k}</td><td style="padding:4px 0;text-align:right">${typeof v === 'number' ? formatMoney(v) : v}</td></tr>`;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Payslip</title>
+<style>body{font-family:Arial,sans-serif;max-width:420px;margin:24px auto;color:#111}h2{margin:0}hr{border:none;border-top:1px solid #ddd;margin:12px 0}table{width:100%;border-collapse:collapse;font-size:14px}.net{font-weight:700;font-size:16px;border-top:2px solid #111}</style>
+</head><body>
+<h2>Payslip</h2>
+<p style="color:#666;margin:4px 0">${run.branch?.name ?? 'Shop'} · Period ${run.period}</p>
+<hr/>
+<p><b>${line.employee.firstName} ${line.employee.lastName}</b> (${line.employee.employeeId})</p>
+<table>
+${row('Base salary', Number(line.baseSalary))}
+${row('Overtime', Number(line.overtime))}
+${row('Bonus', Number(line.bonus))}
+${row('Deductions', '-' + formatMoney(Number(line.deductions)))}
+${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
+<tr class="net"><td style="padding:8px 0">Net pay</td><td style="padding:8px 0;text-align:right">${formatMoney(Number(line.netSalary))}</td></tr>
+</table>
+<hr/>
+<p style="color:#666;font-size:12px">Status: ${run.status}${run.paidAt ? ` · Paid ${new Date(run.paidAt).toLocaleDateString('en-IN')}` : ''}</p>
+</body></html>`;
+    printHtmlDocument(html);
+  };
+
   const fieldCls = 'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm';
 
   return (
@@ -218,11 +265,13 @@ export default function PayrollPage() {
                   <th className="px-3 py-2 text-left">NAME</th>
                   <th className="px-3 py-2 text-left">ROLE</th>
                   <th className="px-3 py-2 text-right">MONTHLY SALARY</th>
+                  <th className="px-3 py-2 text-right">ADVANCE DUE</th>
+                  <th className="px-3 py-2 text-right">ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
                 {!(employees ?? []).length && (
-                  <tr><td colSpan={4} className="text-center py-10 text-muted-foreground">No staff in this shop yet</td></tr>
+                  <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">No staff in this shop yet</td></tr>
                 )}
                 {(employees ?? []).map((e) => (
                   <tr key={e.id} className="border-b last:border-0">
@@ -230,6 +279,13 @@ export default function PayrollPage() {
                     <td className="px-3 py-2 font-medium">{e.firstName} {e.lastName}</td>
                     <td className="px-3 py-2 text-muted-foreground">{e.designation ?? e.department ?? '—'}</td>
                     <td className="px-3 py-2 text-right font-semibold">{formatMoney(e.baseSalary)}</td>
+                    <td className={cn('px-3 py-2 text-right', Number(e.advanceBalance ?? 0) > 0 ? 'text-amber-600 font-medium' : 'text-muted-foreground')}>
+                      {formatMoney(Number(e.advanceBalance ?? 0))}
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <Button size="sm" variant="outline" className="h-7 mr-1" onClick={() => { setAdvanceFor(e); setAdvanceAmount(''); }}>Advance</Button>
+                      <Button size="sm" variant="ghost" className="h-7" onClick={() => setHistoryFor(e)}>History</Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -278,6 +334,7 @@ export default function PayrollPage() {
                       <th className="py-1 text-right">Deductions</th>
                       <th className="py-1 text-right">Advance</th>
                       <th className="py-1 text-right">Net</th>
+                      <th className="py-1 text-right"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -304,6 +361,9 @@ export default function PayrollPage() {
                           )}
                         </td>
                         <td className="py-1.5 text-right font-medium">{formatMoney(l.netSalary)}</td>
+                        <td className="py-1.5 text-right">
+                          <Button size="sm" variant="ghost" className="h-7" onClick={() => printPayslip(p, l)}>Payslip</Button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -361,6 +421,65 @@ export default function PayrollPage() {
               Confirm Payment
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Give salary advance */}
+      <Dialog open={!!advanceFor} onOpenChange={(o) => !o && setAdvanceFor(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Salary advance{advanceFor ? ` — ${advanceFor.firstName} ${advanceFor.lastName}` : ''}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            {advanceFor && Number(advanceFor.advanceBalance ?? 0) > 0 && (
+              <p className="text-sm text-muted-foreground">Current outstanding advance: <span className="font-medium text-amber-600">{formatMoney(Number(advanceFor.advanceBalance ?? 0))}</span></p>
+            )}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Advance amount</label>
+              <Input type="number" min="0" step="0.01" autoFocus value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} placeholder="0.00" />
+            </div>
+            <p className="text-[11px] text-muted-foreground">This is automatically deducted from the employee&apos;s upcoming payroll run(s) until cleared.</p>
+            <Button
+              className="w-full"
+              disabled={recordAdvance.isPending || !(Number(advanceAmount) > 0)}
+              onClick={() => advanceFor && recordAdvance.mutate({ employeeId: advanceFor.id, amount: Number(advanceAmount) })}
+            >
+              Record advance
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Per-employee salary history */}
+      <Dialog open={!!historyFor} onOpenChange={(o) => !o && setHistoryFor(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Salary history{historyFor ? ` — ${historyFor.firstName} ${historyFor.lastName}` : ''}</DialogTitle></DialogHeader>
+          {historyFor && (() => {
+            const hist = employeeHistory(historyFor.id);
+            if (!hist.length) return <p className="text-sm text-muted-foreground py-4">No payroll runs yet for this employee.</p>;
+            return (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-muted-foreground border-b">
+                    <th className="py-1 text-left">Period</th>
+                    <th className="py-1 text-left">Status</th>
+                    <th className="py-1 text-right">Advance</th>
+                    <th className="py-1 text-right">Net</th>
+                    <th className="py-1 text-right"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hist.map(({ run, line }) => (
+                    <tr key={run.id} className="border-b last:border-0">
+                      <td className="py-1.5">{run.period}</td>
+                      <td className="py-1.5 capitalize text-muted-foreground">{run.status.toLowerCase()}</td>
+                      <td className="py-1.5 text-right">{formatMoney(line.advance)}</td>
+                      <td className="py-1.5 text-right font-medium">{formatMoney(line.netSalary)}</td>
+                      <td className="py-1.5 text-right"><Button size="sm" variant="ghost" className="h-7" onClick={() => printPayslip(run, line)}>Payslip</Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

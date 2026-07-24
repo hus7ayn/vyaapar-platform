@@ -155,21 +155,43 @@ export class PayrollService {
       const existing = await this.prisma.payroll.findFirst({ where: { businessId, period, branchId: bId } });
       if (existing) { skipped++; continue; }
 
+      // Auto-recover any outstanding salary advance in this run (capped at base pay).
       const lines = emps.map((e) => {
         const base = Number(e.baseSalary);
-        return { employeeId: e.id, baseSalary: base, overtime: 0, bonus: 0, deductions: 0, advance: 0, netSalary: base };
+        const advance = Math.min(Number(e.advanceBalance ?? 0), base);
+        return { employeeId: e.id, baseSalary: base, overtime: 0, bonus: 0, deductions: 0, advance, netSalary: calcNet(base, 0, 0, 0, advance) };
       });
       const totalAmount = lines.reduce((s, l) => s + l.netSalary, 0);
 
-      const payroll = await this.prisma.payroll.create({
-        data: { businessId, branchId: bId, period, status: 'DRAFT', totalAmount, lines: { create: lines } },
-        include: { lines: { include: { employee: true } }, branch: true },
+      const payroll = await this.prisma.$transaction(async (tx) => {
+        const p = await tx.payroll.create({
+          data: { businessId, branchId: bId, period, status: 'DRAFT', totalAmount, lines: { create: lines } },
+          include: { lines: { include: { employee: true } }, branch: true },
+        });
+        // Draw down each employee's advance balance by the amount recovered here.
+        for (const l of lines) {
+          if (l.advance > 0) {
+            await tx.employee.update({ where: { id: l.employeeId }, data: { advanceBalance: { decrement: l.advance } } });
+          }
+        }
+        return p;
       });
       created.push(payroll);
     }
 
     if (!created.length) throw new BadRequestException(`Payroll for ${period} already exists for all shops`);
     return { created: created.length, skipped, payrolls: created };
+  }
+
+  /** Give an employee a salary advance — tracked as a balance auto-deducted from future payroll runs. */
+  async recordAdvance(businessId: string, employeeId: string, amount: number) {
+    if (!amount || amount <= 0) throw new BadRequestException('Advance amount must be positive');
+    const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, businessId } });
+    if (!emp) throw new NotFoundException('Employee not found');
+    return this.prisma.employee.update({
+      where: { id: employeeId },
+      data: { advanceBalance: { increment: amount } },
+    });
   }
 
   async updateLine(

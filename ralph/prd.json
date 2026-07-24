@@ -131,7 +131,7 @@
       "id": "R25",
       "title": "Payroll: advance ledger auto-deduction + payslip + per-employee history",
       "priority": 25,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/api/src/payroll/payroll.service.ts", "apps/api/src/payroll/payroll.controller.ts", "apps/web/src/app/(app)/payroll/page.tsx"],
       "accept": "A salary advance can be recorded against an employee as a tracked balance that AUTO-deducts from future payroll runs until cleared; each payroll line can generate/print a payslip; and a per-employee salary history is viewable."
     }
