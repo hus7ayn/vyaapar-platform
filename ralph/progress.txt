@@ -66,6 +66,15 @@
   reorder (up/down) + show/hide per section, PATCH /settings/firm; rendered on the settings page. Receipt stays
   single-column flow (no free x/y, by design). api+web typecheck green.
 
+- R31 (room availability picker) PASS: the room dropdown existed but listed ALL rooms (occupied/reserved
+  included) and ignored the reservation dates -> rejected on submit. Backend getRooms now takes opts
+  {status?, from?, to?}: status filters (AVAILABLE), and from+to excludes rooms with a CONFIRMED/CHECKED_IN
+  reservation overlapping [from,to) (same rule as checkOverlappingReservation, one query -> busy roomId set).
+  Controller getRooms exposes status/from/to query params. check-in/page.tsx: for CHECKIN fetch status=AVAILABLE;
+  for RESERVATION with both dates fetch from/to; queryKey includes bookingType + dates so it re-filters on change;
+  added an effect to clear a picked room that becomes unbookable. api+web typecheck green. ALL 6 BATCH-3 STORIES
+  (R26-R31) PASS.
+
 ## Batch 2 (2026-07-24) — reported issues R11-R25. Validate switched to api+web typecheck
 ## (next lint prompts interactively + had 2 pre-existing errors in housekeeping). Added
 ## apps/web typecheck script + .eslintrc.json (next/core-web-vitals). Product decisions from

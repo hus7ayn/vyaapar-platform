@@ -15,12 +15,34 @@ export class HotelService {
     private txnCore: TxnCoreService,
   ) {}
 
-  getRooms(businessId: string, branchId?: string) {
-    return this.prisma.room.findMany({
-      where: { businessId, ...(branchId && { branchId }) },
+  async getRooms(
+    businessId: string,
+    branchId?: string,
+    opts?: { status?: string; from?: string; to?: string },
+  ) {
+    const rooms = await this.prisma.room.findMany({
+      where: { businessId, ...(branchId && { branchId }), ...(opts?.status && { status: opts.status }) },
       include: { category: true, branch: true },
       orderBy: { roomNumber: 'asc' },
     });
+    // For future reservations, drop rooms with a CONFIRMED/CHECKED_IN reservation
+    // overlapping the requested dates (same rule as checkOverlappingReservation).
+    if (opts?.from && opts?.to) {
+      const start = new Date(opts.from);
+      const end = new Date(opts.to);
+      const overlapping = await this.prisma.reservation.findMany({
+        where: {
+          businessId,
+          status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+          checkIn: { lt: end },
+          checkOut: { gt: start },
+        },
+        select: { roomId: true },
+      });
+      const busy = new Set(overlapping.map((r) => r.roomId));
+      return rooms.filter((r) => !busy.has(r.id));
+    }
+    return rooms;
   }
 
   createRoom(

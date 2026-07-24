@@ -38,13 +38,21 @@ function CheckInForm() {
     documentUrl: '',
   });
 
+  // Only offer BOOKABLE rooms: immediate check-in -> AVAILABLE now; future
+  // reservation -> rooms free for the chosen date range (no overlapping booking).
+  const rangeReady = bookingType === 'RESERVATION' && !!form.checkIn && !!form.checkOut;
   const { data: rooms } = useQuery({
-    queryKey: ['rooms-available', branchId],
-    queryFn: () =>
-      api<Array<{ id: string; roomNumber: string; status: string; category: { basePrice: number } }>>(
-        `/hotel/rooms${branchId ? `?branchId=${branchId}` : ''}`,
+    queryKey: ['rooms-available', branchId, bookingType, rangeReady ? form.checkIn : '', rangeReady ? form.checkOut : ''],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (branchId) qs.set('branchId', branchId);
+      if (bookingType === 'CHECKIN') qs.set('status', 'AVAILABLE');
+      else if (rangeReady) { qs.set('from', form.checkIn); qs.set('to', form.checkOut); }
+      return api<Array<{ id: string; roomNumber: string; status: string; category: { basePrice: number } }>>(
+        `/hotel/rooms?${qs.toString()}`,
         { token },
-      ),
+      );
+    },
   });
 
   useEffect(() => {
@@ -55,6 +63,13 @@ function CheckInForm() {
       }
     }
   }, [preSelectedRoomId, rooms]);
+
+  // If the currently-picked room is no longer bookable (filtered out), clear it.
+  useEffect(() => {
+    if (form.roomId && rooms && !rooms.some((r) => r.id === form.roomId)) {
+      setForm((f) => ({ ...f, roomId: '' }));
+    }
+  }, [rooms, form.roomId]);
 
   const uploadDocument = async () => {
     if (!file) return;

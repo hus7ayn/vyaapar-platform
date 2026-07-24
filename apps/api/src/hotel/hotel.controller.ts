@@ -35,8 +35,11 @@ export class HotelController {
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('branchId') branchId: string,
     @Query('branchId') queryBranchId?: string,
+    @Query('status') status?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
-    return this.hotel.getRooms(businessId, queryBranchId || branchId);
+    return this.hotel.getRooms(businessId, queryBranchId || branchId, { status, from, to });
   }
 
   @Post('rooms')

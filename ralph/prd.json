@@ -180,7 +180,7 @@
       "id": "R31",
       "title": "Availability-aware room-number picker at check-in + reservation",
       "priority": 31,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/api/src/hotel/hotel.service.ts", "apps/api/src/hotel/hotel.controller.ts", "apps/web/src/app/(app)/hotel/check-in/page.tsx"],
       "accept": "The room dropdown on the check-in/reservation form offers only BOOKABLE rooms: for immediate check-in, rooms with status AVAILABLE; for a future reservation, rooms with no overlapping CONFIRMED/CHECKED_IN reservation for the chosen check-in/check-out dates (re-filtering when the dates change). Backend getRooms supports availability filtering (reusing checkOverlappingReservation), so the user never picks a room that gets rejected on submit."
     }
