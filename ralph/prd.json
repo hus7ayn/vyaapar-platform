@@ -67,7 +67,7 @@
       "id": "R17",
       "title": "Import: CSV support, real result feedback, downloadable template",
       "priority": 17,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/utilities/page.tsx", "apps/api/src/items/items.service.ts", "apps/api/src/parties/parties.service.ts"],
       "accept": "The Utilities import accepts CSV (and still JSON) for items and parties, shows the backend result (created / skipped / per-row errors) instead of an always-success toast, and offers a 'Download template' with the expected columns. A duplicate SKU during import is reported as a row error, not a silent skip/500."
     },
