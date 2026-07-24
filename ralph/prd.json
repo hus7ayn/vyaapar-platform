@@ -140,7 +140,7 @@
       "id": "R26",
       "title": "Create Hotel AND Shop entities, kept separate",
       "priority": 26,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/shops/page.tsx", "apps/api/src/branches/branches.service.ts", "apps/api/src/branches/branches.controller.ts", "apps/api/src/branches/shop-setup.util.ts"],
       "accept": "The entities page lets the user create BOTH a Shop and a Hotel (explicit type choice / separate 'Add Shop' + 'Add Hotel' actions) and lists Shops and Hotels in separate sections. Backend validates Branch.type in {SHOP,HOTEL}. A newly created HOTEL is bootstrapped (cash account, default room categories, hotel expense categories, txn sequences) so it's usable immediately — today only SHOP branches get bootstrapped. Hotels remain reachable via Hotel PMS, shops via the shop switcher."
     },
