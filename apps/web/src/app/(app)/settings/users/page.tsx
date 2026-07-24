@@ -33,6 +33,24 @@ interface BranchRow {
 const ASSIGNABLE_ROLES = Object.entries(ROLE_LABELS).filter(
   ([key]) => key !== SystemRole.SUPER_ADMIN && !(ROLE_PERMISSIONS[key] ?? []).includes(Permission.BUSINESS_MANAGE),
 );
+const ASSIGNABLE_KEYS = new Set(ASSIGNABLE_ROLES.map(([key]) => key));
+
+// The three access tiers the product exposes (Super Admin sits above these and
+// is provisioned at tenant setup). The 9 granular roles map onto them.
+const ROLE_TIERS: { label: string; roles: SystemRole[] }[] = [
+  { label: 'Manager — full access to the assigned shop', roles: [SystemRole.BRANCH_MANAGER, SystemRole.ACCOUNTANT] },
+  { label: 'Biller / Cashier — POS billing only', roles: [SystemRole.BILLER] },
+  { label: 'Hotel staff', roles: [SystemRole.RECEPTIONIST, SystemRole.HOUSEKEEPING, SystemRole.MAINTENANCE_STAFF] },
+];
+
+const ROLE_DESC: Partial<Record<SystemRole, string>> = {
+  [SystemRole.BRANCH_MANAGER]: 'Shop Admin — every feature (sales, purchases, inventory, reports) for the assigned shop only.',
+  [SystemRole.ACCOUNTANT]: 'Accounts & reports for the assigned shop.',
+  [SystemRole.BILLER]: 'POS billing + today’s sales only — no profit/loss, reports or back-office.',
+  [SystemRole.RECEPTIONIST]: 'Hotel front desk — check-in/out, guests, folio.',
+  [SystemRole.HOUSEKEEPING]: 'Housekeeping tasks only.',
+  [SystemRole.MAINTENANCE_STAFF]: 'Maintenance tasks only.',
+};
 
 export default function UsersPage() {
   const token = useAuthStore((s) => s.accessToken)!;
@@ -45,7 +63,7 @@ export default function UsersPage() {
     password: '',
     firstName: '',
     lastName: '',
-    role: 'RECEPTIONIST',
+    role: SystemRole.BILLER as string,
     branchId: user?.branchId ?? '',
   });
 
@@ -64,7 +82,7 @@ export default function UsersPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] });
       toast.success('User created');
-      setForm({ email: '', password: '', firstName: '', lastName: '', role: 'RECEPTIONIST', branchId: user?.branchId ?? '' });
+      setForm({ email: '', password: '', firstName: '', lastName: '', role: SystemRole.BILLER as string, branchId: user?.branchId ?? '' });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -85,6 +103,13 @@ export default function UsersPage() {
     <div className="p-6 space-y-6 max-w-4xl">
       <h1 className="text-2xl font-bold">Staff management</h1>
 
+      <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+        <p className="font-semibold text-foreground">Access tiers</p>
+        <p><span className="font-medium text-foreground">Super Admin</span> — everything, all shops &amp; hotels (set up at onboarding).</p>
+        <p><span className="font-medium text-foreground">Manager</span> — every feature, but only for the shop assigned below.</p>
+        <p><span className="font-medium text-foreground">Biller</span> — POS billing + today’s sales only.</p>
+      </div>
+
       <Card className="p-4 space-y-3">
         <h2 className="font-semibold flex items-center gap-2">
           <Plus className="h-4 w-4" /> Add staff
@@ -94,15 +119,28 @@ export default function UsersPage() {
           <Input placeholder="Last name" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
           <Input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <PasswordInput placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-          <select
-            className="h-10 rounded-lg border px-3"
-            value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
-          >
-            {ASSIGNABLE_ROLES.map(([key, label]) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
-          </select>
+          <div className="space-y-1">
+            <select
+              className="h-10 w-full rounded-lg border px-3"
+              value={form.role}
+              onChange={(e) => setForm({ ...form, role: e.target.value })}
+            >
+              {ROLE_TIERS.map((tier) => {
+                const roles = tier.roles.filter((r) => ASSIGNABLE_KEYS.has(r));
+                if (!roles.length) return null;
+                return (
+                  <optgroup key={tier.label} label={tier.label}>
+                    {roles.map((r) => (
+                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </select>
+            {ROLE_DESC[form.role as SystemRole] && (
+              <p className="text-xs text-muted-foreground">{ROLE_DESC[form.role as SystemRole]}</p>
+            )}
+          </div>
           {canSwitchBranches ? (
             <select
               className="h-10 rounded-lg border px-3"

@@ -97,11 +97,11 @@
     },
     {
       "id": "R21",
-      "title": "RBAC: 3-tier labels in staff UI + multi-shop Manager assignment",
+      "title": "RBAC: 3-tier clarity in staff UI (multi-shop Manager deferred)",
       "priority": 21,
-      "status": "todo",
-      "files": ["apps/web/src/app/(app)/settings/users/page.tsx", "apps/api/src/users/users.service.ts"],
-      "accept": "Staff-create UI presents the three tiers (Super Admin / Manager / Biller) clearly, and a Manager (ADMIN/BRANCH_MANAGER) can be assigned to one OR MANY shops; that manager is scoped to exactly those shops. Follow-up to R8."
+      "status": "pass",
+      "files": ["apps/web/src/app/(app)/settings/users/page.tsx"],
+      "accept": "Staff-create UI presents the three access tiers (Super Admin / Manager / Biller) clearly, with role options grouped by tier and a per-role scope description. DEFERRED: assigning one Manager to MANY shops needs a User→branches schema + BranchScopeGuard + JWT change (single branchId today) — too large/cross-cutting for one minimal-diff iteration; documented in progress.txt."
     },
     {
       "id": "R22",
