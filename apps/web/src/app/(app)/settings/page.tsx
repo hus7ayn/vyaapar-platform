@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
 import { CloudInsightsSettings } from '@/components/settings/cloud-insights-settings';
 import { LabelDesignerCard } from '@/components/settings/label-designer-card';
+import { ThermalFormatCard } from '@/components/settings/thermal-format-card';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -189,6 +190,8 @@ export default function SettingsPage() {
           })}
         </div>
       </Card>
+
+      <ThermalFormatCard />
 
       <LabelDesignerCard />
 

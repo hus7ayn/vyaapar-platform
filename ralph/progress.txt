@@ -57,6 +57,15 @@
   W/H/barcode-height. Persists to localStorage (per device). Callers (items page, tag-print-picker) unchanged.
   web typecheck green.
 
+- R30 (thermal format designer) PASS: added FirmSettings.receiptLayout Json? (prisma generate run; db push adds
+  the column on deploy). generateThermal refactored — builds a blocks map (shopName/gstin/branch/header/meta/items/
+  totals/payments/footer) and renders them per the configured ORDER + show flags (falls back to default order all-
+  shown; appends any known section missing from a saved layout so nothing vanishes); base font size from
+  receiptLayout.fontPx drives body/biz-name/muted/total sizes. settings.service.updateFirmSettings allowlist +
+  controller body type accept receiptLayout. New components/settings/thermal-format-card.tsx: font-size input +
+  reorder (up/down) + show/hide per section, PATCH /settings/firm; rendered on the settings page. Receipt stays
+  single-column flow (no free x/y, by design). api+web typecheck green.
+
 ## Batch 2 (2026-07-24) — reported issues R11-R25. Validate switched to api+web typecheck
 ## (next lint prompts interactively + had 2 pre-existing errors in housekeeping). Added
 ## apps/web typecheck script + .eslintrc.json (next/core-web-vitals). Product decisions from

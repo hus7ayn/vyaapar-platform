@@ -58,6 +58,42 @@ export class ReceiptsService {
       .map((p) => `<tr><td>${esc(p.paymentType)}</td><td class="right">${money(p.amount)}</td></tr>`)
       .join('');
 
+    // Format designer: ordered, show/hideable sections + font size (FirmSettings.receiptLayout).
+    const layout = (settings?.receiptLayout as { fontPx?: number; sections?: { id: string; show: boolean }[] } | null) ?? null;
+    const fontPx = layout?.fontPx && layout.fontPx > 0 ? layout.fontPx : 12;
+
+    const blocks: Record<string, string> = {
+      shopName: `<div class="center biz-name">${esc(txn.business.name)}</div>`,
+      gstin: txn.business.gstNumber ? `<div class="center muted">GSTIN: ${esc(txn.business.gstNumber)}</div>` : '',
+      branch: txn.branch ? `<div class="center muted">${esc(txn.branch.name)}</div>` : '',
+      header: settings?.receiptHeader ? `<div class="center muted">${esc(settings.receiptHeader)}</div>` : '',
+      meta: `<div class="center" style="font-weight:700">${esc(label.toUpperCase())}</div>
+  <table>
+    <tr><td>No: ${esc(txn.txnNumber)}</td><td class="right">${txn.date.toLocaleString('en-IN')}</td></tr>
+    ${txn.partyName ? `<tr><td colspan="2">Party: ${esc(txn.partyName)}</td></tr>` : ''}
+  </table>`,
+      items: `<table>${itemRows}</table>`,
+      totals: `<table>${totalsRows}<tr class="total-row"><td>TOTAL</td><td class="right">Rs. ${money(txn.total)}</td></tr></table>`,
+      payments: `<table>${paymentRows}${Number(txn.balance) > 0 ? `<tr><td>BALANCE DUE</td><td class="right">${money(txn.balance)}</td></tr>` : ''}</table>`,
+      footer: `<div class="center thank-you">${settings?.receiptFooter ? esc(settings.receiptFooter) : 'Thank you!'}</div>
+  <div class="center muted">Powered by ${esc(txn.business.name)}</div>`,
+    };
+
+    const DEFAULT_ORDER = ['shopName', 'gstin', 'branch', 'header', 'meta', 'items', 'totals', 'payments', 'footer'];
+    let order: string[];
+    if (Array.isArray(layout?.sections)) {
+      const known = new Set(DEFAULT_ORDER);
+      const listed = layout!.sections.filter((s) => known.has(s.id));
+      const shownIds = listed.filter((s) => s.show).map((s) => s.id);
+      const listedIds = new Set(listed.map((s) => s.id));
+      // Append any known section the saved layout doesn't mention (default shown) so nothing silently vanishes.
+      order = [...shownIds, ...DEFAULT_ORDER.filter((id) => !listedIds.has(id))];
+    } else {
+      order = DEFAULT_ORDER;
+    }
+
+    const bodyHtml = order.map((id) => blocks[id]).filter(Boolean).join('\n  <div class="divider"></div>\n  ');
+
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -72,20 +108,19 @@ export class ReceiptsService {
     margin: 0 auto;
     padding: 4mm 4mm 8mm;
     color: #000;
-    font-size: 12px;
+    font-size: ${fontPx}px;
     line-height: 1.45;
   }
   .center { text-align: center; }
   .right { text-align: right; }
-  .biz-name { font-size: 16px; font-weight: 700; }
-  .muted { color: #333; font-size: 11px; }
+  .biz-name { font-size: ${fontPx + 4}px; font-weight: 700; }
+  .muted { color: #333; font-size: ${Math.max(9, fontPx - 1)}px; }
   .divider { border-top: 1px dashed #000; margin: 6px 0; }
-  .divider.solid { border-top: 1px solid #000; }
   table { width: 100%; border-collapse: collapse; }
   td { padding: 1px 0; vertical-align: top; }
   .item-name { font-weight: 600; padding-top: 4px; }
   .item-detail td { color: #333; }
-  .total-row td { font-weight: 700; font-size: 14px; padding-top: 4px; }
+  .total-row td { font-weight: 700; font-size: ${fontPx + 2}px; padding-top: 4px; }
   .thank-you { margin-top: 10px; font-weight: 600; }
   @media print {
     body { width: auto; }
@@ -93,30 +128,7 @@ export class ReceiptsService {
 </style>
 </head>
 <body>
-  <div class="center biz-name">${esc(txn.business.name)}</div>
-  ${txn.business.gstNumber ? `<div class="center muted">GSTIN: ${esc(txn.business.gstNumber)}</div>` : ''}
-  ${txn.branch ? `<div class="center muted">${esc(txn.branch.name)}</div>` : ''}
-  ${settings?.receiptHeader ? `<div class="center muted">${esc(settings.receiptHeader)}</div>` : ''}
-  <div class="divider"></div>
-  <div class="center" style="font-weight:700">${esc(label.toUpperCase())}</div>
-  <table>
-    <tr><td>No: ${esc(txn.txnNumber)}</td><td class="right">${txn.date.toLocaleString('en-IN')}</td></tr>
-    ${txn.partyName ? `<tr><td colspan="2">Party: ${esc(txn.partyName)}</td></tr>` : ''}
-  </table>
-  <div class="divider"></div>
-  <table>${itemRows}</table>
-  <div class="divider"></div>
-  <table>
-    ${totalsRows}
-    <tr class="total-row"><td>TOTAL</td><td class="right">Rs. ${money(txn.total)}</td></tr>
-  </table>
-  <div class="divider solid"></div>
-  <table>
-    ${paymentRows}
-    ${Number(txn.balance) > 0 ? `<tr><td>BALANCE DUE</td><td class="right">${money(txn.balance)}</td></tr>` : ''}
-  </table>
-  <div class="center thank-you">${settings?.receiptFooter ? esc(settings.receiptFooter) : 'Thank you!'}</div>
-  <div class="center muted">Powered by ${esc(txn.business.name)}</div>
+  ${bodyHtml}
 </body>
 </html>`;
   }

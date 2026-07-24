@@ -37,6 +37,7 @@ export class SettingsService {
     hsnEnabled?: boolean;
     roundOffEnabled?: boolean;
     additionalChargesConfig?: { name: string; enabled: boolean }[];
+    receiptLayout?: { fontPx?: number; sections?: { id: string; show: boolean }[] };
   }) {
     await this.getFirmSettings(businessId);
     return this.prisma.firmSettings.update({
@@ -51,6 +52,7 @@ export class SettingsService {
         ...(body.hsnEnabled !== undefined && { hsnEnabled: body.hsnEnabled }),
         ...(body.roundOffEnabled !== undefined && { roundOffEnabled: body.roundOffEnabled }),
         ...(body.additionalChargesConfig !== undefined && { additionalChargesConfig: body.additionalChargesConfig }),
+        ...(body.receiptLayout !== undefined && { receiptLayout: body.receiptLayout }),
       },
     });
   }

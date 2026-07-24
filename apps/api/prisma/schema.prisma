@@ -696,6 +696,7 @@ model FirmSettings {
   printTheme  String  @default("REGULAR") @map("print_theme") // REGULAR | THERMAL
   receiptHeader String? @map("receipt_header") // extra line(s) under the shop name on thermal bills
   receiptFooter String? @map("receipt_footer") // custom footer/thank-you line on thermal bills
+  receiptLayout Json?   @map("receipt_layout") // { fontPx, sections:[{id,show}] } — thermal bill format designer
   termsAndConditions String? @map("terms_and_conditions")
   signatureUrl String? @map("signature_url")
   gstEnabled  Boolean @default(true) @map("gst_enabled")

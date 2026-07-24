@@ -172,7 +172,7 @@
       "id": "R30",
       "title": "Thermal receipt format designer (sections/order/show-hide)",
       "priority": 30,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/api/prisma/schema.prisma", "apps/api/src/receipts/receipts.service.ts", "apps/api/src/settings/settings.service.ts", "apps/web/src/app/(app)/settings/page.tsx"],
       "accept": "The user can customize the thermal bill format: reorder and show/hide sections (shop name, GSTIN, address, header text, item lines, totals breakdown, payments, footer) and set the base font size. generateThermal renders per this config instead of a fully hardcoded template. Config persists in FirmSettings (new receiptLayout JSON column, applied via db push on deploy). Free x/y is intentionally NOT used (single-column receipt)."
     },
