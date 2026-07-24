@@ -74,3 +74,61 @@ these map onto them):
 ## Execution order (ralph priority)
 R1 → R2 → R3 → R4 → R5 → R6 → R9 → R7 → R8 → R10, then typecheck/build/deploy.
 Quick correctness/visibility wins first; largest features (RBAC, thermal) last.
+
+---
+
+## Batch 2 — reported issues (2026-07-24)
+
+Second round of user-reported issues + feature requests. Product decisions the
+user made when asked: signup CTA → "Sign Up"; add-item required fields → Name,
+Category, Sale Price, Cost Price, Unit, Opening Stock, Barcode; add-party required
+→ Name + Phone + Type; notifications → low-stock alerts only.
+
+### R11 — Signup: "Sign Up" CTA + visible password rules + no email verification · S
+**Current:** button says "Start Free Trial" (`signup/page.tsx:93`); zod + backend `@IsStrongPassword` already reject weak passwords; there is no email-verification step anywhere (signup issues tokens immediately). **Fix:** rename CTA to "Sign Up"; show password-requirement hint so enforcement is visible; confirm no verification gate. **Accept:** button reads "Sign Up"; weak passwords blocked with a hint; signup → immediate access.
+
+### R12 — Friendly duplicate-SKU / unique errors (no 500) · S
+**Current:** item create has no P2002 handling (`items.service.ts:161-222`, unique `[businessId,branchId,sku]` at schema:328); duplicate SKU → HTTP 500 "Internal server error". No global exception filter. **Fix:** global Prisma exception filter mapping P2002→409 (name the field) and P2025→404. **Accept:** duplicate Item Code shows a clear message, not 500.
+
+### R13 — Housekeeping & Services keep Hotel PMS header · S
+**Current:** `/housekeeping` and `/services` are top-level `(app)` routes, siblings of `hotel/`, so `HotelLayout` (header + tabs) doesn't wrap them; the hotel tab bar links to absolute `/housekeeping` → header disappears. **Fix:** move under `hotel/` (or share the layout); align styling; fix 2 unescaped-quote lint errors. **Accept:** header/tabs persist on Housekeeping & Services.
+
+### R14 — Replace window.prompt add-category with proper UI · S/M
+**Current:** R5 added add-category via `window.prompt` (`items/page.tsx:326`, `txn-form.tsx:130`). **Fix:** inline field or dialog instead of the browser prompt. **Accept:** add-category uses in-app UI; new category auto-selected.
+
+### R15 — Add-item required fields + backend validation · M
+**Current:** only name required, client + backend (`items/page.tsx:655`, `items.service.ts:162`). **Fix:** require Name, Category, Sale Price, Cost Price, Unit, Opening Stock, Barcode on client and backend. **Accept:** incomplete item rejected with clear messages both sides.
+
+### R16 — Add-party required fields (Name + Phone + Type) · M
+**Current:** only name required (`parties/page.tsx:557`, `parties.service.ts:107`). **Fix:** require Name + Phone + explicit Type, client + backend. **Accept:** incomplete party rejected both sides.
+
+### R17 — Import: CSV + real result feedback + template · M
+**Current:** import is JSON-only (`utilities/page.tsx:65`) but export is XLSX → round-trip impossible; result always toasts success, hiding skipped/errors. **Fix:** accept CSV (+JSON), surface `{created,skipped,errors}`, add a downloadable template. **Accept:** CSV import works, real counts shown, dup-SKU reported per row.
+
+### R18 — Mobile shop/hotel switcher + menu · M
+**Current:** `ShopSwitcher` lives only in the `hidden lg:flex` sidebar (`sidebar.tsx:206`); mobile bottom nav has no switcher and no hotel entry; no hamburger/drawer. **Fix:** surface switcher + "More" nav (Hotel/Payroll/Staff/Settings) on mobile via top-bar control or sheet. **Accept:** mobile users can switch shop and reach the hotel.
+
+### R19 — Low-stock notifications (make the bell work) · M
+**Current:** full notification plumbing (bell, polling, Pusher, endpoints, model) but `emitNotification`/`notification.create` are never called → always empty. **Fix:** create a low-stock Notification when a txn drops an item to/below minStock (or 0). **Accept:** selling an item below min stock produces a bell alert.
+
+### R20 — Hotel item category management · M/L
+**Current:** item categories are retail-only (`/items` + New → `/categories`); hotel has only Room *types* and a hardcoded `SERVICE_TYPES` enum; folio charges are free-text. **Fix:** category create/manage + filter for hotel items (Food/Beverages/Snacks/Desserts/Room Service). **Accept:** hotel user can create & filter item categories.
+
+### R21 — RBAC 3-tier labels + multi-shop Manager · M
+**Current:** R8 added Biller lockdown + today's-sales; users have a single `branchId`; staff UI doesn't clearly present the 3 tiers or multi-shop managers. **Fix:** 3-tier staff UI + assign a Manager to one/many shops, scoped accordingly. **Accept:** staff form shows tiers; multi-shop manager scoping works.
+
+### R22 — Credit payment proper form · M
+**Current:** Collect Payment uses `window.prompt`, cash-only, FIFO auto-allocate (`parties/page.tsx:245`). **Fix:** in-app form — amount (partial ok), Cash/Bank mode, note, optional per-invoice allocation. **Accept:** form-based collect; partial + mode supported.
+
+### R23 — Return / Refund / Exchange (per-item + history) · L
+**Current:** whole-invoice full refund only (`sale.service.ts:112-141`); no per-item, no exchange, no return history screen. **Fix:** per-item/qty returns, Refund vs Exchange, auto inventory, Returns history. **Accept:** partial item returns + exchange + history all work.
+
+### R24 — Customizable label/barcode designer · L
+**Current:** `print-tags.ts` hardcodes 50×25mm, Name+price+barcode only, fixed fonts/sizes. **Fix:** field selection (Name/Category/Size/Colour/MRP/Barcode/SKU/Batch), size/margins/font/alignment/barcode-size, paper presets, persisted in settings. **Accept:** designed label reflected in print.
+
+### R25 — Payroll advance ledger + payslip + per-employee history · L
+**Current:** advance is a manual per-run netting; no tracked auto-deduction, no payslip, no per-employee history. **Fix:** persistent advance balance auto-deducted next run; payslip generate/print; per-employee salary history. **Accept:** advance auto-deducts; payslip prints; history visible.
+
+### Execution order (batch 2)
+R11 → R12 → R13 → R14 → R15 → R16 → R17 → R18 → R19 → R20 → R21 → R22 → R23 → R24 → R25.
+Small correctness/visibility fixes first; large features (returns/exchange, label designer, payroll advance) last.

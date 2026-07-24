@@ -2,87 +2,138 @@
   "project": "MSW Global",
   "repo": "/Users/hussain/nill3 copy 2",
   "branch": "vercel-ready",
-  "validate": "pnpm --filter @nexus/api typecheck && pnpm --filter @nexus/web lint",
+  "validate": "pnpm --filter @nexus/api typecheck && pnpm --filter @nexus/web typecheck",
   "stories": [
+    { "id": "R1", "title": "Rename app Vyaapar -> MSW Global", "priority": 1, "status": "pass", "files": ["packages/shared/src/constants.ts"], "accept": "Brand reads 'MSW Global' everywhere user-facing." },
+    { "id": "R2", "title": "Auto-refresh data lists (no manual reload)", "priority": 2, "status": "pass", "files": ["apps/web/src/hooks/use-pos-catalog.ts"], "accept": "Adding a product shows in POS without hard reload." },
+    { "id": "R3", "title": "Party supplier saved as customer", "priority": 3, "status": "pass", "files": ["apps/web/src/app/(app)/parties/page.tsx"], "accept": "Creating a party as Supplier persists partyType=SUPPLIER." },
+    { "id": "R4", "title": "Password strength on staff-create + eye everywhere", "priority": 4, "status": "pass", "files": ["apps/web/src/app/(app)/settings/users/page.tsx"], "accept": "Weak staff passwords rejected client-side." },
+    { "id": "R5", "title": "Add-category UI for items + expenses", "priority": 5, "status": "pass", "files": ["apps/api/src/categories/categories.service.ts"], "accept": "User can create a category from the form." },
+    { "id": "R6", "title": "Credit settle: collect payment (unpaid -> paid)", "priority": 6, "status": "pass", "files": ["apps/web/src/app/(app)/parties/page.tsx"], "accept": "One action records payment and flips toward PAID." },
+    { "id": "R9", "title": "Product return button in UI", "priority": 7, "status": "pass", "files": ["apps/web/src/components/pos/recent-orders-panel.tsx"], "accept": "Authorized user can issue a return; invoice REFUNDED." },
+    { "id": "R7", "title": "Payroll all staff/branches + advance/custom salary", "priority": 8, "status": "pass", "files": ["apps/api/src/payroll/payroll.service.ts"], "accept": "One Generate covers every active staff; advance/custom amount." },
+    { "id": "R8", "title": "RBAC Super Admin / Manager / Biller scoping + route guards", "priority": 9, "status": "pass", "files": ["apps/web/src/app/(app)/layout.tsx"], "accept": "Biller reaches only POS + today's sales; Manager scoped; Super Admin all." },
+    { "id": "R10", "title": "Barcode 2-up print + thermal bill customization", "priority": 10, "status": "pass", "files": ["apps/web/src/lib/print-tags.ts"], "accept": "Print 2 barcode slips; thermal header/footer customizable." },
+
     {
-      "id": "R1",
-      "title": "Rename app Vyaapar -> MSW Global",
-      "priority": 1,
-      "status": "pass",
-      "files": ["packages/shared/src/constants.ts", "apps/web/src/app/layout.tsx", "apps/web/src/components/layout/sidebar.tsx", "apps/web/src/components/layout/top-bar.tsx", "apps/web/src/components/platform/platform-sidebar.tsx", "apps/web/src/app/(app)/pos/page.tsx", "apps/api/src/main.ts"],
-      "accept": "No user-facing 'Vyaapar/Vyapar' remains; brand reads 'MSW Global' in tab, sidebar, login, POS header, platform portal."
+      "id": "R11",
+      "title": "Signup page: rename CTA to 'Sign Up', visible password rules, no email verification",
+      "priority": 11,
+      "status": "todo",
+      "files": ["apps/web/src/app/(auth)/signup/page.tsx"],
+      "accept": "Primary button reads 'Sign Up' (not 'Start Free Trial'). A visible password-requirements hint is shown and weak passwords are rejected before submit (already enforced by zod + backend @IsStrongPassword). Signup logs the user in immediately with no email-verification step (confirm none exists)."
     },
     {
-      "id": "R2",
-      "title": "Auto-refresh data lists (no manual reload)",
-      "priority": 2,
-      "status": "pass",
-      "files": ["apps/web/src/hooks/use-pos-catalog.ts", "apps/web/src/app/providers.tsx"],
-      "accept": "Adding a product and returning to POS or refocusing the tab shows it without a hard reload."
+      "id": "R12",
+      "title": "Friendly duplicate-SKU / unique-constraint errors (no 500)",
+      "priority": 12,
+      "status": "todo",
+      "files": ["apps/api/src/common/filters/prisma-exception.filter.ts", "apps/api/src/app.module.ts", "apps/api/src/items/items.service.ts"],
+      "accept": "Creating an item with an existing Item Code/SKU (unique [businessId,branchId,sku]) returns a clear 409 message like 'An item with this Item Code already exists' instead of HTTP 500 'Internal server error'. Implemented via a global Prisma exception filter that maps P2002/P2025 to friendly 4xx and names the field where possible."
     },
     {
-      "id": "R3",
-      "title": "Party supplier saved as customer",
-      "priority": 3,
-      "status": "pass",
-      "files": ["apps/api/src/parties/parties.service.ts", "apps/api/src/parties/parties.controller.ts", "apps/web/src/app/(app)/parties/page.tsx"],
-      "accept": "Creating a party as Supplier persists partyType=SUPPLIER and shows under Suppliers."
+      "id": "R13",
+      "title": "Housekeeping & Services keep the Hotel PMS header/tab bar",
+      "priority": 13,
+      "status": "todo",
+      "files": ["apps/web/src/app/(app)/hotel/layout.tsx", "apps/web/src/app/(app)/housekeeping/page.tsx", "apps/web/src/app/(app)/services/page.tsx"],
+      "accept": "Clicking Housekeeping (and Services) from the Hotel PMS tab bar keeps the Hotel PMS header + tabs visible (route lives under /hotel/* or shares HotelLayout). Page styling is consistent with the rest of the hotel chrome. The 2 react/no-unescaped-entities lint errors on the housekeeping page are fixed."
     },
     {
-      "id": "R4",
-      "title": "Password strength on staff-create + eye everywhere",
-      "priority": 4,
-      "status": "pass",
-      "files": ["apps/web/src/app/(app)/settings/users/page.tsx"],
-      "accept": "Weak staff passwords rejected client-side with a clear message; every password field has a working eye toggle."
+      "id": "R14",
+      "title": "Replace window.prompt add-category with proper in-app UI",
+      "priority": 14,
+      "status": "todo",
+      "files": ["apps/web/src/app/(app)/items/page.tsx", "apps/web/src/components/vyapar/txn-form.tsx"],
+      "accept": "Adding an item category and an expense category uses an in-app input (inline field or dialog), NOT window.prompt/alert. New category is created via POST /categories and auto-selected immediately."
     },
     {
-      "id": "R5",
-      "title": "Add-category UI for items + expenses",
-      "priority": 5,
-      "status": "pass",
-      "files": ["apps/api/src/categories/categories.service.ts", "apps/web/src/app/(app)/items/page.tsx", "apps/web/src/components/vyapar/txn-form.tsx"],
-      "accept": "User can create a new item category and expense category from their forms and select it immediately; backend auto-slugs and handles duplicates."
+      "id": "R15",
+      "title": "Add-item required fields + backend validation",
+      "priority": 15,
+      "status": "todo",
+      "files": ["apps/web/src/app/(app)/items/page.tsx", "apps/api/src/items/items.service.ts"],
+      "accept": "Creating an item requires (client + backend): Name, Category, Sale Price, Cost/Purchase Price, Unit, Opening Stock quantity ('no. of products'), and Barcode. Each missing field shows a clear message; the backend rejects incomplete payloads with a specific message. SKU/Item Code stays optional (auto-generated)."
     },
     {
-      "id": "R6",
-      "title": "Credit settle: collect payment (unpaid -> paid)",
-      "priority": 6,
-      "status": "pass",
-      "files": ["apps/web/src/app/(app)/parties/page.tsx", "apps/api/src/sale/sale.service.ts", "apps/api/src/sale/sale.controller.ts"],
-      "accept": "From a credit customer's page, one action records payment and the balance/invoice flips toward PAID."
+      "id": "R16",
+      "title": "Add-party required fields (Name + Phone + Type)",
+      "priority": 16,
+      "status": "todo",
+      "files": ["apps/web/src/app/(app)/parties/page.tsx", "apps/api/src/parties/parties.service.ts"],
+      "accept": "Creating a party requires (client + backend): Name, Phone, and an explicit Party Type (Customer/Supplier/Both, no silent default). Missing fields show a clear message; backend rejects incomplete payloads."
     },
     {
-      "id": "R9",
-      "title": "Product return button in UI",
-      "priority": 7,
-      "status": "pass",
-      "files": ["apps/web/src/components/pos/receipt-actions.tsx", "apps/web/src/app/(app)/pos/page.tsx"],
-      "accept": "From a completed sale an authorized user can issue a return; invoice shows REFUNDED and balances update."
+      "id": "R17",
+      "title": "Import: CSV support, real result feedback, downloadable template",
+      "priority": 17,
+      "status": "todo",
+      "files": ["apps/web/src/app/(app)/utilities/page.tsx", "apps/api/src/items/items.service.ts", "apps/api/src/parties/parties.service.ts"],
+      "accept": "The Utilities import accepts CSV (and still JSON) for items and parties, shows the backend result (created / skipped / per-row errors) instead of an always-success toast, and offers a 'Download template' with the expected columns. A duplicate SKU during import is reported as a row error, not a silent skip/500."
     },
     {
-      "id": "R7",
-      "title": "Payroll all staff/branches + advance/custom salary",
-      "priority": 8,
-      "status": "pass",
-      "files": ["apps/api/src/payroll/payroll.service.ts", "apps/web/src/app/(app)/payroll/page.tsx"],
-      "accept": "One Generate run covers every active staff member across entities; user can pay an advance or set a custom amount."
+      "id": "R18",
+      "title": "Mobile shop/hotel switcher + mobile menu",
+      "priority": 18,
+      "status": "todo",
+      "files": ["apps/web/src/components/layout/top-bar.tsx", "apps/web/src/components/layout/mobile-nav.tsx", "apps/web/src/components/layout/shop-switcher.tsx"],
+      "accept": "On a narrow (mobile) screen a user can switch between shops and reach the Hotel PMS. The shop/entity switcher (currently only in the hidden-lg sidebar) is surfaced on mobile via the top bar or a menu/sheet, along with access to the 'More' nav (Hotel, Payroll, Staff, Settings)."
     },
     {
-      "id": "R8",
-      "title": "RBAC Super Admin / Manager / Biller scoping + route guards",
-      "priority": 9,
-      "status": "pass",
-      "files": ["apps/web/src/app/(app)/layout.tsx", "apps/web/src/hooks/use-permissions.ts", "apps/web/src/app/(app)/settings/users/page.tsx", "apps/web/src/app/(app)/pos/page.tsx"],
-      "accept": "Biller reaches only POS + today's sales (no P&L), redirected elsewhere; Manager sees all features for assigned shop(s) only; Super Admin sees everything."
+      "id": "R19",
+      "title": "Low-stock notifications (make the bell functional)",
+      "priority": 19,
+      "status": "todo",
+      "files": ["apps/api/src/notifications/notifications.service.ts", "apps/api/src/txns/txn-core.service.ts", "apps/api/src/events/events.gateway.ts"],
+      "accept": "When a stock-affecting transaction drops an item to at/below its minStock (or to 0), a Notification row is created (and emitted via events.gateway emitNotification) so the top-bar bell shows a low-stock alert. No other notification types needed."
     },
     {
-      "id": "R10",
-      "title": "Barcode 2-up print + thermal bill customization",
-      "priority": 10,
-      "status": "pass",
-      "files": ["apps/web/src/app/(app)/items/page.tsx", "apps/web/src/lib/print-tags.ts", "apps/web/src/app/(app)/settings/page.tsx", "apps/api/src/receipts/receipts.service.ts"],
-      "accept": "User can print 2 barcode slips from the items page; Settings lets them customize the thermal bill and the printed receipt reflects it."
+      "id": "R20",
+      "title": "Hotel module: item category management (Food/Beverages/etc.)",
+      "priority": 20,
+      "status": "todo",
+      "files": ["apps/web/src/app/(app)/hotel/layout.tsx", "apps/api/src/hotel/hotel.service.ts", "apps/web/src/app/(app)/services/page.tsx"],
+      "accept": "A hotel user has a place to create and manage item categories for hotel items (Food, Beverages, Snacks, Desserts, Room Service) and can filter items/services by category. Reuses the retail Category backend (branch-scoped) or a hotel-scoped equivalent."
+    },
+    {
+      "id": "R21",
+      "title": "RBAC: 3-tier labels in staff UI + multi-shop Manager assignment",
+      "priority": 21,
+      "status": "todo",
+      "files": ["apps/web/src/app/(app)/settings/users/page.tsx", "apps/api/src/users/users.service.ts"],
+      "accept": "Staff-create UI presents the three tiers (Super Admin / Manager / Biller) clearly, and a Manager (ADMIN/BRANCH_MANAGER) can be assigned to one OR MANY shops; that manager is scoped to exactly those shops. Follow-up to R8."
+    },
+    {
+      "id": "R22",
+      "title": "Credit payment proper form (mode, amount, allocation)",
+      "priority": 22,
+      "status": "todo",
+      "files": ["apps/web/src/app/(app)/parties/page.tsx"],
+      "accept": "The Collect Payment action uses an in-app form (not window.prompt): amount (defaults to full balance, partial allowed), payment mode (Cash/Bank), optional note, and optional per-invoice allocation. Ledger/invoice status updates as before."
+    },
+    {
+      "id": "R23",
+      "title": "Return / Refund / Exchange: per-item + history",
+      "priority": 23,
+      "status": "todo",
+      "files": ["apps/api/src/sale/sale.service.ts", "apps/api/src/sale/sale.controller.ts", "apps/web/src/components/pos/recent-orders-panel.tsx", "apps/web/src/components/vyapar/txn-list-page.tsx"],
+      "accept": "From a completed sale, an authorized user can return SPECIFIC items/quantities (not just the whole invoice), choose Refund (money back) or Exchange (return + new items), inventory auto-updates, and there is a Returns history view listing credit notes/returns."
+    },
+    {
+      "id": "R24",
+      "title": "Customizable label/barcode designer",
+      "priority": 24,
+      "status": "todo",
+      "files": ["apps/web/src/lib/print-tags.ts", "apps/web/src/app/(app)/settings/page.tsx", "apps/web/src/app/(app)/items/page.tsx", "apps/api/src/settings/settings.service.ts"],
+      "accept": "A label designer lets the user choose which fields print (Item Name, Category, Size, Colour, MRP, Barcode, SKU/Item Code, Batch), and set label width/height, margins, font size, alignment and barcode size, with thermal paper presets. Settings persist and the printed tag reflects them."
+    },
+    {
+      "id": "R25",
+      "title": "Payroll: advance ledger auto-deduction + payslip + per-employee history",
+      "priority": 25,
+      "status": "todo",
+      "files": ["apps/api/src/payroll/payroll.service.ts", "apps/api/src/payroll/payroll.controller.ts", "apps/web/src/app/(app)/payroll/page.tsx"],
+      "accept": "A salary advance can be recorded against an employee as a tracked balance that AUTO-deducts from future payroll runs until cleared; each payroll line can generate/print a payslip; and a per-employee salary history is viewable."
     }
   ]
 }
