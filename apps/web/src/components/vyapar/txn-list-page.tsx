@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { VyaparPageHeader } from '@/components/vyapar/page-header';
 import { VyaparStatCard } from '@/components/vyapar/stat-card';
 import { PrintButton } from '@/components/vyapar/txn-form';
+import { ReturnDialog } from '@/components/pos/return-dialog';
 import { cn } from '@/lib/utils';
 import { formatDate, formatMoney, TXN_META, TXN_STATUS_LABELS, Txn, TxnType } from '@/lib/txn-meta';
 
@@ -32,6 +33,7 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [viewTxn, setViewTxn] = useState<Txn | null>(null);
+  const [returnForId, setReturnForId] = useState<string | null>(null);
 
   const qs = new URLSearchParams();
   if (search) qs.set('search', search);
@@ -142,14 +144,8 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
                       )}
                       {txnType === 'SALE_INVOICE' && t.status !== 'REFUNDED' && (
                         <Button
-                          variant="ghost" size="sm" className="gap-1 text-amber-600" title="Return / refund (creates a credit note)"
-                          onClick={() => {
-                            if (confirm(`Return / refund ${t.txnNumber} in full? A credit note will be created.`)) {
-                              api(`/sale/invoices/${t.id}/refund`, { method: 'POST', token, body: JSON.stringify({}) })
-                                .then(() => { toast.success('Returned / refunded'); queryClient.invalidateQueries(); })
-                                .catch((e) => toast.error(e.message));
-                            }
-                          }}
+                          variant="ghost" size="sm" className="gap-1 text-amber-600" title="Return specific items (creates a credit note)"
+                          onClick={() => setReturnForId(t.id)}
                         >
                           <RefreshCcw className="h-4 w-4" /> Return
                         </Button>
@@ -170,6 +166,15 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
       </div>
 
       <TxnViewDialog txn={viewTxn} onClose={() => setViewTxn(null)} />
+
+      {returnForId && (
+        <ReturnDialog
+          invoiceId={returnForId}
+          token={token}
+          onClose={() => setReturnForId(null)}
+          onDone={() => queryClient.invalidateQueries()}
+        />
+      )}
     </div>
   );
 }

@@ -32,6 +32,14 @@
   if none, txn sequences) — previously only SHOP got defaults. Branch.type stays a String (no enum/migration).
   api+web typecheck green.
 
+- R27 (return by bill number + specific items) PASS: extracted the POS per-item return picker into a shared
+  components/pos/return-dialog.tsx (ReturnDialog: fetch /txns/:id lines, checkboxes default-all, Refund/Exchange,
+  posts /sale/invoices/:id/refund with lineIds — omit when all selected = full). recent-orders-panel.tsx now uses
+  it. txn-list-page.tsx (Sale Invoices list, which already searches by bill/invoice number) Return button now opens
+  ReturnDialog instead of the old confirm()->full-refund({}). So: Sale > Sale Invoices > search bill number >
+  Return > tick specific items > Refund/Exchange. Backend unchanged (R23 partial refund reused). Note: one-return-
+  per-invoice guard still applies. web typecheck green.
+
 ## Batch 2 (2026-07-24) — reported issues R11-R25. Validate switched to api+web typecheck
 ## (next lint prompts interactively + had 2 pre-existing errors in housekeeping). Added
 ## apps/web typecheck script + .eslintrc.json (next/core-web-vitals). Product decisions from

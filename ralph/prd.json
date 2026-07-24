@@ -148,7 +148,7 @@
       "id": "R27",
       "title": "Return by bill number + select specific items (outside POS)",
       "priority": 27,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/components/vyapar/txn-list-page.tsx", "apps/web/src/components/pos/return-dialog.tsx", "apps/web/src/components/pos/recent-orders-panel.tsx"],
       "accept": "From the Sale Invoices list (which already searches by bill/invoice number), the Return action opens an item picker to return SPECIFIC products (checkboxes) with Refund/Exchange — not a whole-invoice-only refund. Reuses the existing backend partial refund (lineIds) and the POS item-picker (extracted into a shared ReturnDialog also used by the POS Recent Bills panel)."
     },
