@@ -134,6 +134,55 @@
       "status": "pass",
       "files": ["apps/api/src/payroll/payroll.service.ts", "apps/api/src/payroll/payroll.controller.ts", "apps/web/src/app/(app)/payroll/page.tsx"],
       "accept": "A salary advance can be recorded against an employee as a tracked balance that AUTO-deducts from future payroll runs until cleared; each payroll line can generate/print a payslip; and a per-employee salary history is viewable."
+    },
+
+    {
+      "id": "R26",
+      "title": "Create Hotel AND Shop entities, kept separate",
+      "priority": 26,
+      "status": "todo",
+      "files": ["apps/web/src/app/(app)/shops/page.tsx", "apps/api/src/branches/branches.service.ts", "apps/api/src/branches/branches.controller.ts", "apps/api/src/branches/shop-setup.util.ts"],
+      "accept": "The entities page lets the user create BOTH a Shop and a Hotel (explicit type choice / separate 'Add Shop' + 'Add Hotel' actions) and lists Shops and Hotels in separate sections. Backend validates Branch.type in {SHOP,HOTEL}. A newly created HOTEL is bootstrapped (cash account, default room categories, hotel expense categories, txn sequences) so it's usable immediately — today only SHOP branches get bootstrapped. Hotels remain reachable via Hotel PMS, shops via the shop switcher."
+    },
+    {
+      "id": "R27",
+      "title": "Return by bill number + select specific items (outside POS)",
+      "priority": 27,
+      "status": "todo",
+      "files": ["apps/web/src/components/vyapar/txn-list-page.tsx", "apps/web/src/components/pos/return-dialog.tsx", "apps/web/src/components/pos/recent-orders-panel.tsx"],
+      "accept": "From the Sale Invoices list (which already searches by bill/invoice number), the Return action opens an item picker to return SPECIFIC products (checkboxes) with Refund/Exchange — not a whole-invoice-only refund. Reuses the existing backend partial refund (lineIds) and the POS item-picker (extracted into a shared ReturnDialog also used by the POS Recent Bills panel)."
+    },
+    {
+      "id": "R28",
+      "title": "Payroll by start/end date range + print payslips for everyone",
+      "priority": 28,
+      "status": "todo",
+      "files": ["apps/api/src/payroll/payroll.service.ts", "apps/api/src/payroll/payroll.controller.ts", "apps/web/src/app/(app)/payroll/page.tsx"],
+      "accept": "Payroll generation accepts a START date + END date range (period stored as a 'YYYY-MM-DD..YYYY-MM-DD' string — no migration; the field is free-form). One action prints a payslip for EVERY employee in a run (bulk 'Print all payslips'), reusing the existing per-line payslip layout (base/OT/bonus/deductions/advance/net) with page breaks."
+    },
+    {
+      "id": "R29",
+      "title": "Barcode label positional (drag) designer",
+      "priority": 29,
+      "status": "todo",
+      "files": ["apps/web/src/lib/label-config.ts", "apps/web/src/lib/print-tags.ts", "apps/web/src/components/settings/label-designer-card.tsx"],
+      "accept": "The label designer lets the user MOVE fields (Item Name, MRP, Sale Price, SKU, Category, Barcode image, Barcode number, Size, Colour) to any position on the label via drag on a scaled preview, with per-field font size, alignment and show/hide. print-tags renders with absolute x/y positioning. Config persists (localStorage) and is backward-compatible with the existing toggle-based config."
+    },
+    {
+      "id": "R30",
+      "title": "Thermal receipt format designer (sections/order/show-hide)",
+      "priority": 30,
+      "status": "todo",
+      "files": ["apps/api/prisma/schema.prisma", "apps/api/src/receipts/receipts.service.ts", "apps/api/src/settings/settings.service.ts", "apps/web/src/app/(app)/settings/page.tsx"],
+      "accept": "The user can customize the thermal bill format: reorder and show/hide sections (shop name, GSTIN, address, header text, item lines, totals breakdown, payments, footer) and set the base font size. generateThermal renders per this config instead of a fully hardcoded template. Config persists in FirmSettings (new receiptLayout JSON column, applied via db push on deploy). Free x/y is intentionally NOT used (single-column receipt)."
+    },
+    {
+      "id": "R31",
+      "title": "Availability-aware room-number picker at check-in + reservation",
+      "priority": 31,
+      "status": "todo",
+      "files": ["apps/api/src/hotel/hotel.service.ts", "apps/api/src/hotel/hotel.controller.ts", "apps/web/src/app/(app)/hotel/check-in/page.tsx"],
+      "accept": "The room dropdown on the check-in/reservation form offers only BOOKABLE rooms: for immediate check-in, rooms with status AVAILABLE; for a future reservation, rooms with no overlapping CONFIRMED/CHECKED_IN reservation for the chosen check-in/check-out dates (re-filtering when the dates change). Backend getRooms supports availability filtering (reusing checkOverlappingReservation), so the user never picks a room that gets rejected on submit."
     }
   ]
 }

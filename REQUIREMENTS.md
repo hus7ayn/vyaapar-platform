@@ -132,3 +132,30 @@ Category, Sale Price, Cost Price, Unit, Opening Stock, Barcode; add-party requir
 ### Execution order (batch 2)
 R11 → R12 → R13 → R14 → R15 → R16 → R17 → R18 → R19 → R20 → R21 → R22 → R23 → R24 → R25.
 Small correctness/visibility fixes first; large features (returns/exchange, label designer, payroll advance) last.
+
+---
+
+## Batch 3 — reported issues (2026-07-25)
+
+Investigated deeply before coding. Findings summarized per item.
+
+### R26 — Create Hotel AND Shop entities, kept separate · M
+**Current:** `Branch.type` is a free string (default SHOP; no enum). Shops page (`shops/page.tsx:54`) hardcodes `type:'SHOP'`; hotel page (`hotel/page.tsx:163`) hardcodes `type:'HOTEL'` — both creation flows exist but in separate places. Signup (`auth.service.ts:43-48`) always makes one SHOP. `branches.service.create:34` bootstraps defaults only for SHOP; a HOTEL gets just a warehouse. **Fix:** entities page offers Add Shop + Add Hotel (separate sections), validate type∈{SHOP,HOTEL}, add `bootstrapHotelDefaults`. **Accept:** can create both, kept separate, hotel usable immediately.
+
+### R27 — Return by bill number + specific items · M
+**Current:** backend partial refund (`refundInvoice` `lineIds`) and invoice search-by-`txnNumber` already work (R23). Per-item picker exists ONLY in POS Recent Bills (`recent-orders-panel.tsx`). The Sale Invoices list Return button (`txn-list-page.tsx:143-156`) still does whole-invoice refund (`body:{}`). **Fix:** extract the POS picker into a shared `ReturnDialog`; wire it to the Sale Invoices list (already has a bill-number search box). **Accept:** find bill by number → pick specific items → Refund/Exchange.
+
+### R28 — Payroll start/end date + payslips for all · M
+**Current:** `generatePayroll` takes `period` YYYY-MM (regex `payroll.service.ts:134`); `period` is a free-form String (no DB format; unique on businessId+branchId+period). Payslip is on-demand per line (`printPayslip` `page.tsx:193-215`); no bulk print. **Fix:** accept start+end date, store period as `start..end` string (no migration); add "Print all payslips" concatenating the existing layout with page breaks. **Accept:** date-range run + one-click payslips for everyone.
+
+### R29 — Barcode label positional (drag) designer · L
+**Current:** `LabelConfig` = per-field booleans + label-wide size/font/align; `print-tags.ts` renders a FIXED flex-column order (`FIELD_ORDER`), no x/y. localStorage only. **Fix:** per-field {show,xMm,yMm,fontPt,align,bold}; drag on a scaled preview; render absolute-positioned. Client-only, backward-compatible. **Accept:** move fields anywhere on the label.
+
+### R30 — Thermal receipt format designer · L
+**Current:** `generateThermal` (`receipts.service.ts:61-121`) is a hardcoded 80mm template; only `receiptHeader`/`receiptFooter` strings customizable (FirmSettings). **Fix:** `FirmSettings.receiptLayout Json?` (db push) holding ordered sections + show/hide + font size; refactor generateThermal to iterate it; settings UI. Flow-based (no free x/y — single-column receipt). **Accept:** reorder/show-hide receipt sections + font size, reflected in print.
+
+### R31 — Availability-aware room picker (check-in + reservation) · M
+**Current:** a room `<select>` exists (`check-in/page.tsx:179-202`) but `GET /hotel/rooms` (`hotel.service.ts:18-24`) returns ALL rooms (no status/date filter) — occupied/reserved rooms are selectable and rejected on submit; future reservations aren't filtered by dates. `checkOverlappingReservation` (`:137-162`) is the real guard. **Fix:** filter the dropdown — CHECKIN → AVAILABLE; RESERVATION → no overlap for chosen dates (backend getRooms availability params, re-filter on date change). **Accept:** picker only offers bookable rooms.
+
+### Execution order (batch 3)
+R26 → R27 → R28 → R29 → R30 → R31.
