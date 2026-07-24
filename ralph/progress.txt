@@ -40,6 +40,13 @@
   Return > tick specific items > Refund/Exchange. Backend unchanged (R23 partial refund reused). Note: one-return-
   per-invoice guard still applies. web typecheck green.
 
+- R28 (payroll date-range + bulk payslips) PASS: generatePayroll now takes startDate+endDate (YYYY-MM-DD,
+  start<=end), stores period as "start..end" (free-form String column — no migration); controller generate body
+  -> {startDate,endDate}. Web payroll page: month input replaced with From/To date inputs; generate posts the range.
+  Refactored printPayslip to share payslipBody(run,line)+PAYSLIP_STYLE; added printAllPayslips(run) -> one document
+  concatenating every employee's payslip with page-break-after, via printHtmlDocument; "Print all payslips" button
+  on each run card (reuses the base/OT/bonus/deductions/advance/net layout). api+web typecheck green.
+
 ## Batch 2 (2026-07-24) — reported issues R11-R25. Validate switched to api+web typecheck
 ## (next lint prompts interactively + had 2 pre-existing errors in housekeeping). Added
 ## apps/web typecheck script + .eslintrc.json (next/core-web-vitals). Product decisions from

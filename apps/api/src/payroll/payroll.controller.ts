@@ -76,10 +76,10 @@ export class PayrollController {
   @RequirePermissions(Permission.PAYROLL_MANAGE)
   generate(
     @CurrentUser('businessId') businessId: string,
-    @Body() body: { period: string },
+    @Body() body: { startDate: string; endDate: string },
   ) {
-    // Business-wide: generates a payroll run for every shop's active staff.
-    return this.payroll.generatePayroll(businessId, body.period);
+    // Business-wide: generates a payroll run (for the given date range) for every shop's active staff.
+    return this.payroll.generatePayroll(businessId, body.startDate, body.endDate);
   }
 
   @Patch(':payrollId/lines/:lineId')

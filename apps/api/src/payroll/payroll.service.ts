@@ -130,8 +130,16 @@ export class PayrollService {
     });
   }
 
-  async generatePayroll(businessId: string, period: string) {
-    if (!period?.match(/^\d{4}-\d{2}$/)) throw new BadRequestException('Period must be YYYY-MM');
+  async generatePayroll(businessId: string, startDate: string, endDate: string) {
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+    if (!startDate?.match(dateRe) || !endDate?.match(dateRe)) {
+      throw new BadRequestException('Start and end dates are required (YYYY-MM-DD)');
+    }
+    if (startDate > endDate) throw new BadRequestException('Start date must be on or before end date');
+    // The Payroll.period column is a free-form String; encode the range as
+    // "start..end" so each distinct range is its own run under the
+    // (businessId, branchId, period) unique key. No migration needed.
+    const period = `${startDate}..${endDate}`;
 
     // Cover EVERY active staff member across the whole business, not just one
     // branch. Group by branch so each shop still gets its own payroll run

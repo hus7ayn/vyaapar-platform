@@ -74,10 +74,11 @@ export default function PayrollPage() {
   const qc = useQueryClient();
 
   const [tab, setTab] = useState<'staff' | 'runs'>('staff');
-  const [period, setPeriod] = useState(() => {
+  const [startDate, setStartDate] = useState(() => {
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
   });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [empOpen, setEmpOpen] = useState(false);
   const [empForm, setEmpForm] = useState(EMPTY_EMP);
   const [payOpen, setPayOpen] = useState<string | null>(null);
@@ -131,7 +132,7 @@ export default function PayrollPage() {
   });
 
   const generate = useMutation({
-    mutationFn: () => api<{ created: number; skipped: number }>('/payroll/generate', { method: 'POST', token, body: JSON.stringify({ period }) }),
+    mutationFn: () => api<{ created: number; skipped: number }>('/payroll/generate', { method: 'POST', token, body: JSON.stringify({ startDate, endDate }) }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['payrolls'] });
       toast.success(`Payroll generated for ${res.created} shop(s) — all active staff`);
@@ -190,12 +191,12 @@ export default function PayrollPage() {
       .map((p) => ({ run: p, line: p.lines.find((l) => l.employee.id === empId) }))
       .filter((x): x is { run: PayrollRun; line: PayrollLine } => !!x.line);
 
-  const printPayslip = (run: PayrollRun, line: PayrollLine) => {
+  // One payslip's inner HTML (no <html>/<head>) so it can be printed alone or
+  // concatenated for a whole run.
+  const payslipBody = (run: PayrollRun, line: PayrollLine) => {
     const row = (k: string, v: string | number) =>
       `<tr><td style="padding:4px 0">${k}</td><td style="padding:4px 0;text-align:right">${typeof v === 'number' ? formatMoney(v) : v}</td></tr>`;
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Payslip</title>
-<style>body{font-family:Arial,sans-serif;max-width:420px;margin:24px auto;color:#111}h2{margin:0}hr{border:none;border-top:1px solid #ddd;margin:12px 0}table{width:100%;border-collapse:collapse;font-size:14px}.net{font-weight:700;font-size:16px;border-top:2px solid #111}</style>
-</head><body>
+    return `<section class="slip">
 <h2>Payslip</h2>
 <p style="color:#666;margin:4px 0">${run.branch?.name ?? 'Shop'} · Period ${run.period}</p>
 <hr/>
@@ -210,8 +211,19 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
 </table>
 <hr/>
 <p style="color:#666;font-size:12px">Status: ${run.status}${run.paidAt ? ` · Paid ${new Date(run.paidAt).toLocaleDateString('en-IN')}` : ''}</p>
-</body></html>`;
-    printHtmlDocument(html);
+</section>`;
+  };
+
+  const PAYSLIP_STYLE = `<style>body{font-family:Arial,sans-serif;color:#111}.slip{max-width:420px;margin:24px auto;page-break-after:always}h2{margin:0}hr{border:none;border-top:1px solid #ddd;margin:12px 0}table{width:100%;border-collapse:collapse;font-size:14px}.net{font-weight:700;font-size:16px;border-top:2px solid #111}</style>`;
+
+  const printPayslip = (run: PayrollRun, line: PayrollLine) => {
+    printHtmlDocument(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Payslip</title>${PAYSLIP_STYLE}</head><body>${payslipBody(run, line)}</body></html>`);
+  };
+
+  const printAllPayslips = (run: PayrollRun) => {
+    if (!run.lines.length) { toast.error('No employees in this run'); return; }
+    const body = run.lines.map((l) => payslipBody(run, l)).join('');
+    printHtmlDocument(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Payslips ${run.period}</title>${PAYSLIP_STYLE}</head><body>${body}</body></html>`);
   };
 
   const fieldCls = 'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm';
@@ -297,9 +309,12 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
       {tab === 'runs' && (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2 items-center">
-            <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="w-40" />
-            <Button onClick={() => generate.mutate()} disabled={generate.isPending}>
-              <Users className="h-4 w-4 mr-1" /> Generate for {period}
+            <label className="text-sm text-muted-foreground">From</label>
+            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
+            <label className="text-sm text-muted-foreground">to</label>
+            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
+            <Button onClick={() => generate.mutate()} disabled={generate.isPending || !startDate || !endDate}>
+              <Users className="h-4 w-4 mr-1" /> Generate payroll
             </Button>
           </div>
 
@@ -318,11 +333,16 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
                   </div>
                   <div className="text-right">
                     <p className="text-xl font-bold">{formatMoney(p.totalAmount)}</p>
-                    {p.status !== 'PAID' && (
-                      <Button size="sm" className="mt-2 bg-green-600 hover:bg-green-700" onClick={() => setPayOpen(p.id)}>
-                        <Banknote className="h-4 w-4 mr-1" /> Pay Salary
+                    <div className="mt-2 flex gap-2 justify-end">
+                      <Button size="sm" variant="outline" onClick={() => printAllPayslips(p)}>
+                        Print all payslips
                       </Button>
-                    )}
+                      {p.status !== 'PAID' && (
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => setPayOpen(p.id)}>
+                          <Banknote className="h-4 w-4 mr-1" /> Pay Salary
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <table className="w-full text-sm">
