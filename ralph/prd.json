@@ -19,7 +19,7 @@
       "id": "R11",
       "title": "Signup page: rename CTA to 'Sign Up', visible password rules, no email verification",
       "priority": 11,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(auth)/signup/page.tsx"],
       "accept": "Primary button reads 'Sign Up' (not 'Start Free Trial'). A visible password-requirements hint is shown and weak passwords are rejected before submit (already enforced by zod + backend @IsStrongPassword). Signup logs the user in immediately with no email-verification step (confirm none exists)."
     },

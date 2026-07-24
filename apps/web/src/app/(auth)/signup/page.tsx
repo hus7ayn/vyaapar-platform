@@ -61,7 +61,7 @@ export default function SignupPage() {
             M
           </div>
           <h1 className="text-2xl font-bold">Start with {APP_NAME}</h1>
-          <p className="text-sm text-muted-foreground">Create your business account — free to get started</p>
+          <p className="text-sm text-muted-foreground">Create your business account</p>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 bg-white rounded-xl border p-6 shadow-sm">
@@ -81,6 +81,9 @@ export default function SignupPage() {
                   {...register(field)}
                 />
               )}
+              {field === 'password' && !errors.password && (
+                <p className="text-xs text-muted-foreground">{PASSWORD_POLICY_MESSAGE}</p>
+              )}
               {errors[field] && <p className="text-xs text-destructive">{errors[field]?.message}</p>}
             </div>
           ))}
@@ -90,7 +93,7 @@ export default function SignupPage() {
             className="w-full h-11 bg-[hsl(348,85%,52%)] hover:bg-[hsl(348,85%,45%)] text-white font-semibold"
             disabled={loading}
           >
-            {loading ? 'Creating...' : 'Start Free Trial'}
+            {loading ? 'Creating...' : 'Sign Up'}
           </Button>
         </form>
 

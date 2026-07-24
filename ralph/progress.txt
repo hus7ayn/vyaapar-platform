@@ -20,6 +20,18 @@
 
 ## Iterations
 
+## Batch 2 (2026-07-24) — reported issues R11-R25. Validate switched to api+web typecheck
+## (next lint prompts interactively + had 2 pre-existing errors in housekeeping). Added
+## apps/web typecheck script + .eslintrc.json (next/core-web-vitals). Product decisions from
+## user: signup CTA "Sign Up"; item required = Name+Category+SalePrice+CostPrice+Unit+OpeningStock+Barcode;
+## party required = Name+Phone+Type; notifications = low-stock only.
+
+- R11 (signup) PASS: CTA "Start Free Trial" -> "Sign Up" (signup/page.tsx:93). Added always-visible
+  password-rule hint (PASSWORD_POLICY_MESSAGE, shown when no password error) under the password field so
+  the existing zod+backend @IsStrongPassword enforcement is visible. Dropped "— free to get started" from
+  subhead (trial framing). Confirmed: NO email verification anywhere (signup issues tokens immediately;
+  no emailVerified field/guard) — nothing to remove. api+web typecheck green.
+
 - R10 (barcode/thermal) PASS: barcode multi-print already existed on item detail (BarcodeTagPanel qty + Print Tags) — changed default qty 1->2 ("2 slips at once"). Thermal customization: added FirmSettings.receiptHeader/receiptFooter (schema; db push on deploy adds columns), settings.service accepts them, generateThermal loads firmSettings and injects header (under shop name) + footer (replaces "Thank you!"). Settings UI: new "Thermal Receipt" card with header/footer inputs. api + web typecheck green. ALL 10 STORIES PASS.
 
 - R8 (RBAC) PASS (core): added Biller lockdown in (app)/layout.tsx — role BILLER is redirected to /pos from any non-/pos route (client guard; backend PermissionsGuard already protects data/APIs). Added "Today's Sales" badge on POS header (GET /sale/invoices?from=today&to=today summary.totalAmount, 60s refresh) — the one figure a Biller may see, no P&L. Super-admin portal + manager/owner branch scoping already enforced server-side (BranchScopeGuard). FOLLOW-UP (not done): assigning a Manager to MULTIPLE shops (user has single branchId today) + 3-tier relabel in staff UI. web typecheck green.
