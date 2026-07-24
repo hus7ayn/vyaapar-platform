@@ -83,7 +83,7 @@
       "id": "R19",
       "title": "Low-stock notifications (make the bell functional)",
       "priority": 19,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/api/src/notifications/notifications.service.ts", "apps/api/src/txns/txn-core.service.ts", "apps/api/src/events/events.gateway.ts"],
       "accept": "When a stock-affecting transaction drops an item to at/below its minStock (or to 0), a Notification row is created (and emitted via events.gateway emitNotification) so the top-bar bell shows a low-stock alert. No other notification types needed."
     },

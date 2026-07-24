@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EventsGateway } from '../events/events.gateway';
 import { resolveBranchWarehouse } from '../inventory/warehouse.util';
 import {
   DEFAULT_PREFIXES,
@@ -69,7 +70,7 @@ export interface CreateTxnInput {
 
 @Injectable()
 export class TxnCoreService {
-  constructor(public prisma: PrismaService) {}
+  constructor(public prisma: PrismaService, private events: EventsGateway) {}
 
   // ─── Numbering ─────────────────────────────────────────────────────────────
 
@@ -183,6 +184,31 @@ export class TxnCoreService {
         where: { id: item.id },
         data: { currentStock: { increment: qty } },
       });
+
+      // Low-stock alert: only when this txn DECREASES stock and crosses the
+      // threshold downward (avoids re-alerting on every subsequent sale below it).
+      if (qty.isNegative()) {
+        const before = D(item.currentStock);
+        const after = before.add(qty);
+        const min = item.minStock != null ? D(item.minStock) : null;
+        const threshold = min && min.gt(0) ? min : D(0);
+        if (before.gt(threshold) && after.lte(threshold)) {
+          const outOfStock = after.lte(0);
+          const notif = await tx.notification.create({
+            data: {
+              businessId,
+              userId: null,
+              title: outOfStock ? 'Out of stock' : 'Low stock',
+              message: outOfStock
+                ? `${item.name} is out of stock`
+                : `${item.name} is low: ${after.toString()} left (min ${threshold.toString()})`,
+              type: 'LOW_STOCK',
+              metadata: { itemId: item.id, currentStock: after.toNumber(), minStock: threshold.toNumber() },
+            },
+          });
+          this.events.emitNotification(businessId, null, notif);
+        }
+      }
 
       if (branchId) {
         const warehouse = await resolveBranchWarehouse(tx, businessId, branchId);
