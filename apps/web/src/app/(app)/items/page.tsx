@@ -165,6 +165,9 @@ export default function ItemsPage() {
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjustForm, setAdjustForm] = useState<AdjustForm>(EMPTY_ADJUST);
 
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
+
   const listQs = new URLSearchParams();
   if (search) listQs.set('search', search);
   if (typeFilter !== 'ALL') listQs.set('type', typeFilter);
@@ -324,12 +327,14 @@ export default function ItemsPage() {
   const set = (patch: Partial<ItemForm>) => setForm((f) => ({ ...f, ...patch }));
 
   const addCategory = async () => {
-    const name = window.prompt('New category name');
-    if (!name?.trim()) return;
+    const name = newCategory.trim();
+    if (!name) return;
     try {
-      const cat = await api<Category>('/categories', { method: 'POST', token, body: JSON.stringify({ name: name.trim() }) });
+      const cat = await api<Category>('/categories', { method: 'POST', token, body: JSON.stringify({ name }) });
       await queryClient.invalidateQueries({ queryKey: ['categories'] });
       set({ categoryId: cat.id });
+      setNewCategory('');
+      setAddingCategory(false);
       toast.success('Category added');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to add category');
@@ -672,13 +677,31 @@ export default function ItemsPage() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground">Category</label>
-                  <div className="flex gap-2">
-                    <select className={fieldCls} value={form.categoryId} onChange={(e) => set({ categoryId: e.target.value })}>
-                      <option value="">No category</option>
-                      {(categories ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                    <button type="button" onClick={addCategory} title="Add category" className="shrink-0 rounded-lg border px-3 text-sm font-medium text-primary hover:bg-primary/5">+ New</button>
-                  </div>
+                  {addingCategory ? (
+                    <div className="flex gap-2">
+                      <input
+                        autoFocus
+                        className={fieldCls}
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); addCategory(); }
+                          if (e.key === 'Escape') { setAddingCategory(false); setNewCategory(''); }
+                        }}
+                        placeholder="New category name"
+                      />
+                      <button type="button" onClick={addCategory} className="shrink-0 rounded-lg border px-3 text-sm font-medium text-white bg-primary hover:bg-primary/90">Add</button>
+                      <button type="button" onClick={() => { setAddingCategory(false); setNewCategory(''); }} title="Cancel" className="shrink-0 rounded-lg border px-3 text-sm text-muted-foreground hover:bg-muted">✕</button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <select className={fieldCls} value={form.categoryId} onChange={(e) => set({ categoryId: e.target.value })}>
+                        <option value="">No category</option>
+                        {(categories ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                      <button type="button" onClick={() => setAddingCategory(true)} title="Add category" className="shrink-0 rounded-lg border px-3 text-sm font-medium text-primary hover:bg-primary/5">+ New</button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground">Item Code (SKU)</label>

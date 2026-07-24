@@ -43,7 +43,7 @@
       "id": "R14",
       "title": "Replace window.prompt add-category with proper in-app UI",
       "priority": 14,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/items/page.tsx", "apps/web/src/components/vyapar/txn-form.tsx"],
       "accept": "Adding an item category and an expense category uses an in-app input (inline field or dialog), NOT window.prompt/alert. New category is created via POST /categories and auto-selected immediately."
     },

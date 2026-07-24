@@ -99,6 +99,8 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
   const [creditSale, setCreditSale] = useState(false);
   const [description, setDescription] = useState('');
   const [expenseCategoryId, setExpenseCategoryId] = useState('');
+  const [addingExpenseCategory, setAddingExpenseCategory] = useState(false);
+  const [newExpenseCategory, setNewExpenseCategory] = useState('');
   const [activeItemRow, setActiveItemRow] = useState<number | null>(null);
   const [itemSearch, setItemSearch] = useState('');
   const [showPreview, setShowPreview] = useState(false);
@@ -128,12 +130,14 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
   });
 
   const addExpenseCategory = async () => {
-    const name = window.prompt('New expense category name');
-    if (!name?.trim()) return;
+    const name = newExpenseCategory.trim();
+    if (!name) return;
     try {
-      const cat = await api<{ id: string; name: string }>('/expenses/categories', { method: 'POST', token, body: JSON.stringify({ name: name.trim() }) });
+      const cat = await api<{ id: string; name: string }>('/expenses/categories', { method: 'POST', token, body: JSON.stringify({ name }) });
       await queryClient.invalidateQueries({ queryKey: ['expense-categories'] });
       setExpenseCategoryId(cat.id);
+      setNewExpenseCategory('');
+      setAddingExpenseCategory(false);
       toast.success('Category added');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to add category');
@@ -313,17 +317,35 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
         {isExpense && (
           <div>
             <label className="text-xs font-semibold text-muted-foreground">Expense Category</label>
-            <div className="flex gap-2">
-              <select
-                className="w-full h-10 rounded-md border px-3 text-sm bg-white"
-                value={expenseCategoryId}
-                onChange={(e) => setExpenseCategoryId(e.target.value)}
-              >
-                <option value="">Select category…</option>
-                {(expenseCategories ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <button type="button" onClick={addExpenseCategory} title="Add category" className="shrink-0 rounded-md border px-3 text-sm font-medium text-primary hover:bg-primary/5">+ New</button>
-            </div>
+            {addingExpenseCategory ? (
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  className="w-full h-10 rounded-md border px-3 text-sm bg-white"
+                  value={newExpenseCategory}
+                  onChange={(e) => setNewExpenseCategory(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); addExpenseCategory(); }
+                    if (e.key === 'Escape') { setAddingExpenseCategory(false); setNewExpenseCategory(''); }
+                  }}
+                  placeholder="New expense category name"
+                />
+                <button type="button" onClick={addExpenseCategory} className="shrink-0 rounded-md border px-3 text-sm font-medium text-white bg-primary hover:bg-primary/90">Add</button>
+                <button type="button" onClick={() => { setAddingExpenseCategory(false); setNewExpenseCategory(''); }} title="Cancel" className="shrink-0 rounded-md border px-3 text-sm text-muted-foreground hover:bg-muted">✕</button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <select
+                  className="w-full h-10 rounded-md border px-3 text-sm bg-white"
+                  value={expenseCategoryId}
+                  onChange={(e) => setExpenseCategoryId(e.target.value)}
+                >
+                  <option value="">Select category…</option>
+                  {(expenseCategories ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <button type="button" onClick={() => setAddingExpenseCategory(true)} title="Add category" className="shrink-0 rounded-md border px-3 text-sm font-medium text-primary hover:bg-primary/5">+ New</button>
+              </div>
+            )}
           </div>
         )}
         <div>
