@@ -549,6 +549,9 @@ export default function ItemsPage() {
               costPrice={Number(selected.costPrice) || Number(selected.purchasePrice)}
               name={selected.name}
               price={Number(selected.mrp) || Number(selected.salePrice)}
+              category={selected.category?.name ?? null}
+              sku={selected.sku}
+              mrp={selected.mrp != null ? Number(selected.mrp) : null}
               token={token}
               onGenerate={() => barcodeMutation.mutate()}
               onEdit={() => openEdit(selected)}
@@ -887,6 +890,9 @@ function BarcodeTagPanel({
   costPrice,
   name,
   price,
+  category,
+  sku,
+  mrp,
   token,
   onGenerate,
   onEdit,
@@ -897,6 +903,9 @@ function BarcodeTagPanel({
   costPrice: number;
   name: string;
   price: number;
+  category?: string | null;
+  sku?: string | null;
+  mrp?: number | null;
   token?: string;
   onGenerate: () => void;
   onEdit: () => void;
@@ -1003,7 +1012,7 @@ function BarcodeTagPanel({
             </div>
             <Button
               size="sm"
-              onClick={() => printBarcodeTags([{ dataUrl: image.dataUrl, barcode: barcode!, name, price, qty }])}
+              onClick={() => printBarcodeTags([{ dataUrl: image.dataUrl, barcode: barcode!, name, price, qty, category, sku, mrp }])}
             >
               <Barcode className="h-3.5 w-3.5 mr-1" /> Print Tags
             </Button>

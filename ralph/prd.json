@@ -123,7 +123,7 @@
       "id": "R24",
       "title": "Customizable label/barcode designer",
       "priority": 24,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/lib/print-tags.ts", "apps/web/src/app/(app)/settings/page.tsx", "apps/web/src/app/(app)/items/page.tsx", "apps/api/src/settings/settings.service.ts"],
       "accept": "A label designer lets the user choose which fields print (Item Name, Category, Size, Colour, MRP, Barcode, SKU/Item Code, Batch), and set label width/height, margins, font size, alignment and barcode size, with thermal paper presets. Settings persist and the printed tag reflects them."
     },

@@ -131,6 +131,15 @@
   list (/sale/credit-notes). LIMITATION (documented): one return per invoice (guard on txn.returns); partial-QUANTITY
   within a line and bill-discount proration on partials deferred. api+web typecheck green.
 
+- R24 (label designer) PASS: labels were hardcoded 50x25mm Name+price+barcode. New lib/label-config.ts
+  (LabelConfig: field toggles name/category/size/colour/sku/mrp/price/barcodeNumber, widthMm/heightMm/marginMm/
+  fontPt/barcodeHeightMm, align, paper presets) persisted in localStorage (msw-label-config) — no prisma migration.
+  print-tags.ts rewritten to render from the config (dynamic @page size, fields in order, alignment, barcode
+  height, optional barcode-number line); TagSpec extended with category/sku/mrp/size/colour. BarcodeTagPanel now
+  passes category/sku/mrp from the selected item. Settings: new LabelDesignerCard (field chips, paper preset +
+  W/H/margin/font/barcode-height/alignment, Save/Reset). Size/Colour render only if item has that data (base item
+  model lacks them). Persistence is per-device (localStorage); syncing via FirmSettings is a follow-up. web typecheck green.
+
 - R10 (barcode/thermal) PASS: barcode multi-print already existed on item detail (BarcodeTagPanel qty + Print Tags) — changed default qty 1->2 ("2 slips at once"). Thermal customization: added FirmSettings.receiptHeader/receiptFooter (schema; db push on deploy adds columns), settings.service accepts them, generateThermal loads firmSettings and injects header (under shop name) + footer (replaces "Thank you!"). Settings UI: new "Thermal Receipt" card with header/footer inputs. api + web typecheck green. ALL 10 STORIES PASS.
 
 - R8 (RBAC) PASS (core): added Biller lockdown in (app)/layout.tsx — role BILLER is redirected to /pos from any non-/pos route (client guard; backend PermissionsGuard already protects data/APIs). Added "Today's Sales" badge on POS header (GET /sale/invoices?from=today&to=today summary.totalAmount, 60s refresh) — the one figure a Biller may see, no P&L. Super-admin portal + manager/owner branch scoping already enforced server-side (BranchScopeGuard). FOLLOW-UP (not done): assigning a Manager to MULTIPLE shops (user has single branchId today) + 3-tier relabel in staff UI. web typecheck green.
