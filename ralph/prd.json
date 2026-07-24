@@ -75,7 +75,7 @@
       "id": "R18",
       "title": "Mobile shop/hotel switcher + mobile menu",
       "priority": 18,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/components/layout/top-bar.tsx", "apps/web/src/components/layout/mobile-nav.tsx", "apps/web/src/components/layout/shop-switcher.tsx"],
       "accept": "On a narrow (mobile) screen a user can switch between shops and reach the Hotel PMS. The shop/entity switcher (currently only in the hidden-lg sidebar) is surfaced on mobile via the top bar or a menu/sheet, along with access to the 'More' nav (Hotel, Payroll, Staff, Settings)."
     },

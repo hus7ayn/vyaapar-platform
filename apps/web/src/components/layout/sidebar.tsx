@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
@@ -24,8 +24,10 @@ import {
   MonitorSmartphone,
   Briefcase,
 } from 'lucide-react';
+import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
+import { useUiStore } from '@/stores/ui-store';
 import { APP_NAME, Permission } from '@nexus/shared';
 import { ShopSwitcher } from '@/components/layout/shop-switcher';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -116,6 +118,9 @@ export function Sidebar() {
   const searchParams = useSearchParams();
   const { user, logout } = useAuthStore();
   const { has } = usePermissions();
+  const { mobileNavOpen, setMobileNavOpen } = useUiStore();
+  // Close the mobile drawer whenever the route changes (i.e. a link was tapped).
+  useEffect(() => { setMobileNavOpen(false); }, [pathname, searchParams, setMobileNavOpen]);
   const visible = (item: { permission?: Permission | Permission[]; hideForRoles?: string[] }) =>
     (!item.permission || has(item.permission)) && !(user?.role && item.hideForRoles?.includes(user.role));
   const [expanded, setExpanded] = useState<string | null>(() => {
@@ -191,8 +196,8 @@ export function Sidebar() {
     );
   };
 
-  return (
-    <aside className="hidden lg:flex w-64 flex-col border-r bg-white h-screen sticky top-0 shadow-sm">
+  const body = (
+    <>
       <div className="p-4 border-b bg-[hsl(348,85%,52%)]">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-lg bg-white flex items-center justify-center text-[hsl(348,85%,52%)] font-extrabold text-lg shadow">M</div>
@@ -238,6 +243,33 @@ export function Sidebar() {
           Sign out
         </button>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop: static sidebar */}
+      <aside className="hidden lg:flex w-64 flex-col border-r bg-white h-screen sticky top-0 shadow-sm">
+        {body}
+      </aside>
+
+      {/* Mobile: slide-in drawer (shop switcher + full nav incl. Hotel PMS) */}
+      {mobileNavOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileNavOpen(false)} />
+          <aside className="relative w-72 max-w-[85%] flex flex-col bg-white h-full shadow-xl overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(false)}
+              aria-label="Close menu"
+              className="absolute top-3 right-3 z-10 rounded-md p-1 text-white/90 hover:bg-white/20"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            {body}
+          </aside>
+        </div>
+      )}
+    </>
   );
 }
