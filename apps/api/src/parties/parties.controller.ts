@@ -95,7 +95,7 @@ export class PartiesController {
     @CurrentUser('branchId') branchId: string | undefined,
     @Body() body: PartyInput,
   ) {
-    return this.parties.create(businessId, body, branchId);
+    return this.parties.create(businessId, body, branchId, { requireComplete: true });
   }
 
   @Patch(':id')

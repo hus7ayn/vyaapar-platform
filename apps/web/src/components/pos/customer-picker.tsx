@@ -156,12 +156,13 @@ export function CustomerPicker() {
             onSubmit={(e) => {
               e.preventDefault();
               if (!newName.trim()) return toast.error('Name required');
+              if (!newPhone.trim()) return toast.error('Phone number is required (use Walk-in customer for anonymous sales)');
               createPartyMutation.mutate();
             }}
             className="space-y-3"
           >
             <Input placeholder="Name *" value={newName} onChange={(e) => setNewName(e.target.value)} required />
-            <Input placeholder="Phone" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
+            <Input placeholder="Phone *" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} required />
             <Input placeholder="Email" type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
             <Input placeholder="GSTIN" value={newGstin} onChange={(e) => setNewGstin(e.target.value)} className="uppercase" />
             <Button type="submit" className="w-full" disabled={createPartyMutation.isPending}>Save & Select</Button>

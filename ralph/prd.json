@@ -59,7 +59,7 @@
       "id": "R16",
       "title": "Add-party required fields (Name + Phone + Type)",
       "priority": 16,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/parties/page.tsx", "apps/api/src/parties/parties.service.ts"],
       "accept": "Creating a party requires (client + backend): Name, Phone, and an explicit Party Type (Customer/Supplier/Both, no silent default). Missing fields show a clear message; backend rejects incomplete payloads."
     },

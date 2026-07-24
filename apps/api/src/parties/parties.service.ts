@@ -103,8 +103,15 @@ export class PartiesService {
     };
   }
 
-  async create(businessId: string, body: PartyInput, branchId?: string) {
+  async create(businessId: string, body: PartyInput, branchId?: string, opts?: { requireComplete?: boolean }) {
     if (!body.name?.trim()) throw new BadRequestException('Party name is required');
+    if (opts?.requireComplete) {
+      // Interactive "Add Party" requires name + phone + explicit type; the bulk
+      // import path calls create() without this flag so partial lists still load.
+      if (!body.phone?.trim()) throw new BadRequestException('Phone number is required');
+      if (!body.partyType || !['CUSTOMER', 'SUPPLIER', 'BOTH'].includes(body.partyType))
+        throw new BadRequestException('A valid party type (Customer/Supplier/Both) is required');
+    }
     const opening = new Prisma.Decimal(body.openingBalance ?? 0);
     const signedOpening = body.openingBalanceType === 'TO_PAY' ? opening.neg() : opening;
     const resolvedBranch =

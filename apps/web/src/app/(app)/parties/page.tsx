@@ -555,6 +555,8 @@ export default function PartiesPage() {
             onSubmit={(e) => {
               e.preventDefault();
               if (!form.name.trim()) { toast.error('Party name is required'); return; }
+              if (!form.phone.trim()) { toast.error('Phone number is required'); return; }
+              if (!form.partyType) { toast.error('Please select a party type'); return; }
               saveMutation.mutate();
             }}
           >
@@ -564,7 +566,7 @@ export default function PartiesPage() {
                 <Input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Sharma Traders" autoFocus />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Phone</label>
+                <label className="text-xs font-medium text-muted-foreground">Phone *</label>
                 <Input value={form.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="Mobile number" />
               </div>
               <div>
@@ -586,7 +588,7 @@ export default function PartiesPage() {
                 <Input value={form.state} onChange={(e) => set({ state: e.target.value })} placeholder="State" />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Party Type</label>
+                <label className="text-xs font-medium text-muted-foreground">Party Type *</label>
                 <select className={fieldCls} value={form.partyType} onChange={(e) => set({ partyType: e.target.value as PartyType })}>
                   <option value="CUSTOMER">Customer</option>
                   <option value="SUPPLIER">Supplier</option>
