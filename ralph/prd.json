@@ -35,7 +35,7 @@
       "id": "R13",
       "title": "Housekeeping & Services keep the Hotel PMS header/tab bar",
       "priority": 13,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/hotel/layout.tsx", "apps/web/src/app/(app)/housekeeping/page.tsx", "apps/web/src/app/(app)/services/page.tsx"],
       "accept": "Clicking Housekeeping (and Services) from the Hotel PMS tab bar keeps the Hotel PMS header + tabs visible (route lives under /hotel/* or shares HotelLayout). Page styling is consistent with the rest of the hotel chrome. The 2 react/no-unescaped-entities lint errors on the housekeeping page are fixed."
     },

@@ -152,7 +152,7 @@ export default function ServicesPage() {
   };
 
   return (
-    <div className="p-6 space-y-6 h-[calc(100vh-4rem)] flex flex-col">
+    <div className="p-6 space-y-6 h-full flex flex-col">
       {/* Header & Branch Switcher */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card p-4 rounded-xl border border-white/5">
         <div className="space-y-1">

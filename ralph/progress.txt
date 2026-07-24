@@ -39,6 +39,16 @@
   Nest default 500 "Internal server error"; now returns the friendly 409 the web client shows via toast.
   No per-service try/catch needed. api typecheck green.
 
+- R13 (housekeeping header) PASS: root cause = /housekeeping and /services were top-level (app) routes,
+  siblings of hotel/, so HotelLayout (header+tabs) never wrapped them; hotel tab linked to absolute
+  /housekeeping -> leaving the group unmounted the header. Fix: git mv both pages into (app)/hotel/
+  (hotel/housekeeping/page.tsx, hotel/services/page.tsx) so HotelLayout wraps them; updated hotel/layout.tsx
+  Housekeeping href -> /hotel/housekeeping and added a Services tab (ConciergeBell); simplified sidebar
+  Hotel-PMS match to p.startsWith('/hotel'). Backend API paths (/housekeeping, /services) unchanged (those
+  are API calls). Changed both page roots h-[calc(100vh-4rem)] -> h-full to fit inside the hotel content
+  area; fixed 2 react/no-unescaped-entities errors (task.notes quotes -> &ldquo;/&rdquo;). web typecheck +
+  lint clean.
+
 - R10 (barcode/thermal) PASS: barcode multi-print already existed on item detail (BarcodeTagPanel qty + Print Tags) — changed default qty 1->2 ("2 slips at once"). Thermal customization: added FirmSettings.receiptHeader/receiptFooter (schema; db push on deploy adds columns), settings.service accepts them, generateThermal loads firmSettings and injects header (under shop name) + footer (replaces "Thank you!"). Settings UI: new "Thermal Receipt" card with header/footer inputs. api + web typecheck green. ALL 10 STORIES PASS.
 
 - R8 (RBAC) PASS (core): added Biller lockdown in (app)/layout.tsx — role BILLER is redirected to /pos from any non-/pos route (client guard; backend PermissionsGuard already protects data/APIs). Added "Today's Sales" badge on POS header (GET /sale/invoices?from=today&to=today summary.totalAmount, 60s refresh) — the one figure a Biller may see, no P&L. Super-admin portal + manager/owner branch scoping already enforced server-side (BranchScopeGuard). FOLLOW-UP (not done): assigning a Manager to MULTIPLE shops (user has single branchId today) + 3-tier relabel in staff UI. web typecheck green.
