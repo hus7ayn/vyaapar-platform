@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { BusinessesModule } from './businesses/businesses.module';
@@ -37,6 +37,7 @@ import { RemindersModule } from './reminders/reminders.module';
 import { InsightsModule } from './insights/insights.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { BranchScopeGuard } from './common/guards/branch-scope.guard';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { BranchScopeGuard } from './common/guards/branch-scope.guard';
     InsightsModule,
   ],
   providers: [
+    { provide: APP_FILTER, useClass: PrismaExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: BranchScopeGuard },

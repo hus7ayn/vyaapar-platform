@@ -27,7 +27,7 @@
       "id": "R12",
       "title": "Friendly duplicate-SKU / unique-constraint errors (no 500)",
       "priority": 12,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/api/src/common/filters/prisma-exception.filter.ts", "apps/api/src/app.module.ts", "apps/api/src/items/items.service.ts"],
       "accept": "Creating an item with an existing Item Code/SKU (unique [businessId,branchId,sku]) returns a clear 409 message like 'An item with this Item Code already exists' instead of HTTP 500 'Internal server error'. Implemented via a global Prisma exception filter that maps P2002/P2025 to friendly 4xx and names the field where possible."
     },

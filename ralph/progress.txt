@@ -32,6 +32,13 @@
   subhead (trial framing). Confirmed: NO email verification anywhere (signup issues tokens immediately;
   no emailVerified field/guard) — nothing to remove. api+web typecheck green.
 
+- R12 (dup-SKU error) PASS: added global PrismaExceptionFilter (common/filters/prisma-exception.filter.ts),
+  registered via APP_FILTER in app.module.ts. Maps P2002 unique -> 409 with a field-aware message
+  (sku -> "An item with this Item Code (SKU) already exists"; barcode/phone/email/gstin/name variants),
+  P2025 -> 404, P2003 -> 409. Item create (unique [businessId,branchId,sku]) previously threw raw P2002 =>
+  Nest default 500 "Internal server error"; now returns the friendly 409 the web client shows via toast.
+  No per-service try/catch needed. api typecheck green.
+
 - R10 (barcode/thermal) PASS: barcode multi-print already existed on item detail (BarcodeTagPanel qty + Print Tags) — changed default qty 1->2 ("2 slips at once"). Thermal customization: added FirmSettings.receiptHeader/receiptFooter (schema; db push on deploy adds columns), settings.service accepts them, generateThermal loads firmSettings and injects header (under shop name) + footer (replaces "Thank you!"). Settings UI: new "Thermal Receipt" card with header/footer inputs. api + web typecheck green. ALL 10 STORIES PASS.
 
 - R8 (RBAC) PASS (core): added Biller lockdown in (app)/layout.tsx — role BILLER is redirected to /pos from any non-/pos route (client guard; backend PermissionsGuard already protects data/APIs). Added "Today's Sales" badge on POS header (GET /sale/invoices?from=today&to=today summary.totalAmount, 60s refresh) — the one figure a Biller may see, no P&L. Super-admin portal + manager/owner branch scoping already enforced server-side (BranchScopeGuard). FOLLOW-UP (not done): assigning a Manager to MULTIPLE shops (user has single branchId today) + 3-tier relabel in staff UI. web typecheck green.
