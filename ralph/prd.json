@@ -205,7 +205,7 @@
       "id": "R34",
       "title": "Separate payroll staff for shops vs hotel (entity selector)",
       "priority": 34,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/payroll/page.tsx", "apps/api/src/payroll/payroll.service.ts", "apps/api/src/payroll/payroll.controller.ts"],
       "accept": "The payroll page has an entity selector (each Shop and Hotel). The staff list, add-staff, and Generate are scoped to the SELECTED entity (explicit branchId), so a hotel's staff and a shop's staff are separate — a new hire lands on the selected entity (incl. hotel), and generating payroll processes only that entity's staff (not business-wide)."
     },

@@ -35,6 +35,15 @@
   (Cash/Bank/UPI/Card) + a bank-account select (non-cash, fed by /cash-bank/accounts, excludes CASH accounts),
   validation requiring a bank when non-cash; mutation sends method+bankAccountId. api+web typecheck green.
 
+- R34 (separate payroll staff) PASS: staff/hotel shared payroll because getEmployees was unscoped (all branches
+  when branchId undefined) + generatePayroll was business-wide + the page rode shop-only activeShopId. Added an
+  entity <select> (all branches via /branches, hotels tagged "(Hotel)") on the payroll page -> entityId state
+  (defaults to activeShopId if it's a listed branch else first). employees/payrolls/summary queries now pass
+  branchId:scope (x-branch-id header) and key on entityId; createEmp posts with branchId:scope so a hire lands on
+  the SELECTED entity (incl. hotel, fixing the old SHOP-only fallback); generate sends branchId. Backend
+  generatePayroll(+branchId) filters employees to that branch (one run) when provided, else business-wide.
+  api+web typecheck green.
+
 ## Batch 3 (2026-07-25) — reported issues R26-R31. Same validate (api+web typecheck). Deployed via Vercel CLI
 ## from repo ROOT per project (apps/web=vyaapar-web, apps/api=vyaapar-api; Root Directory set on each project, so
 ## deploying from the app dir fails with apps/web/apps/web). API build auto-runs prisma db push.

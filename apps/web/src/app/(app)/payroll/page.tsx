@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Banknote, Plus, Users, Wallet } from 'lucide-react';
@@ -88,21 +88,35 @@ export default function PayrollPage() {
   const [advanceAmount, setAdvanceAmount] = useState('');
   const [historyFor, setHistoryFor] = useState<Employee | null>(null);
 
+  // Scope payroll to ONE entity (shop or hotel) so their staff stay separate.
+  const [entityId, setEntityId] = useState<string>(activeShopId ?? '');
+  const { data: entities } = useQuery({
+    queryKey: ['branches', 'ALL'],
+    queryFn: () => api<Array<{ id: string; name: string; type: string }>>('/branches', { token }),
+    enabled: !!token,
+  });
+  useEffect(() => {
+    if (!entityId && (entities?.length ?? 0) > 0) {
+      setEntityId(activeShopId && entities!.some((e) => e.id === activeShopId) ? activeShopId : entities![0].id);
+    }
+  }, [entities, entityId, activeShopId]);
+  const scope = entityId || undefined;
+
   const { data: employees } = useQuery({
-    queryKey: ['employees', activeShopId],
-    queryFn: () => api<Employee[]>('/payroll/employees', { token }),
+    queryKey: ['employees', entityId],
+    queryFn: () => api<Employee[]>('/payroll/employees', { token, branchId: scope }),
     enabled: !!token,
   });
 
   const { data: payrolls } = useQuery({
-    queryKey: ['payrolls', activeShopId],
-    queryFn: () => api<PayrollRun[]>('/payroll', { token }),
+    queryKey: ['payrolls', entityId],
+    queryFn: () => api<PayrollRun[]>('/payroll', { token, branchId: scope }),
     enabled: !!token,
   });
 
   const { data: summary } = useQuery({
-    queryKey: ['payroll-summary', activeShopId],
-    queryFn: () => api<PayrollSummary>('/payroll/summary', { token }),
+    queryKey: ['payroll-summary', entityId],
+    queryFn: () => api<PayrollSummary>('/payroll/summary', { token, branchId: scope }),
     enabled: !!token,
   });
 
@@ -117,6 +131,7 @@ export default function PayrollPage() {
       api('/payroll/employees', {
         method: 'POST',
         token,
+        branchId: scope,
         body: JSON.stringify({
           ...empForm,
           baseSalary: Number(empForm.baseSalary),
@@ -132,7 +147,7 @@ export default function PayrollPage() {
   });
 
   const generate = useMutation({
-    mutationFn: () => api<{ created: number; skipped: number }>('/payroll/generate', { method: 'POST', token, body: JSON.stringify({ startDate, endDate }) }),
+    mutationFn: () => api<{ created: number; skipped: number }>('/payroll/generate', { method: 'POST', token, body: JSON.stringify({ startDate, endDate, branchId: scope }) }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['payrolls'] });
       toast.success(`Payroll generated for ${res.created} shop(s) — all active staff`);
@@ -236,10 +251,20 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
             <Wallet className="h-5 w-5 text-[hsl(348,85%,52%)]" /> Staff Payroll
           </h1>
           <p className="text-sm text-muted-foreground">
-            Salaries are per shop — paying deducts from cash/bank and net revenue
+            Staff, runs &amp; payslips are scoped to the selected entity below — shops and hotels stay separate
           </p>
         </div>
         <div className="flex gap-2 items-center">
+          <select
+            className="h-10 rounded-lg border px-3 text-sm bg-background"
+            value={entityId}
+            onChange={(e) => setEntityId(e.target.value)}
+            title="Payroll entity"
+          >
+            {(entities ?? []).map((en) => (
+              <option key={en.id} value={en.id}>{en.name}{en.type === 'HOTEL' ? ' (Hotel)' : ''}</option>
+            ))}
+          </select>
           <div className="text-right text-sm hidden sm:block">
             <p className="text-muted-foreground">Paid this month</p>
             <p className="font-bold text-red-600">{formatMoney(summary?.totalPaid ?? 0)}</p>
@@ -266,7 +291,7 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
       {tab === 'staff' && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <p className="text-sm text-muted-foreground">Staff linked to the active shop in the sidebar</p>
+            <p className="text-sm text-muted-foreground">Staff for the selected entity (shop or hotel)</p>
             <Button onClick={() => setEmpOpen(true)}><Plus className="h-4 w-4 mr-1" /> Add Staff</Button>
           </div>
           <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
@@ -283,7 +308,7 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
               </thead>
               <tbody>
                 {!(employees ?? []).length && (
-                  <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">No staff in this shop yet</td></tr>
+                  <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">No staff for this entity yet</td></tr>
                 )}
                 {(employees ?? []).map((e) => (
                   <tr key={e.id} className="border-b last:border-0">
@@ -409,7 +434,7 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
             <Input placeholder="Designation" value={empForm.designation} onChange={(e) => setEmpForm((f) => ({ ...f, designation: e.target.value }))} />
             <Input placeholder="Department" value={empForm.department} onChange={(e) => setEmpForm((f) => ({ ...f, department: e.target.value }))} />
             <Input type="number" placeholder="Monthly salary" value={empForm.baseSalary} onChange={(e) => setEmpForm((f) => ({ ...f, baseSalary: e.target.value }))} />
-            <Button className="w-full" disabled={createEmp.isPending} onClick={() => createEmp.mutate()}>Add to Active Shop</Button>
+            <Button className="w-full" disabled={createEmp.isPending} onClick={() => createEmp.mutate()}>Add to {entities?.find((e) => e.id === entityId)?.name ?? 'Selected Entity'}</Button>
           </div>
         </DialogContent>
       </Dialog>

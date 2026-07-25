@@ -130,7 +130,7 @@ export class PayrollService {
     });
   }
 
-  async generatePayroll(businessId: string, startDate: string, endDate: string) {
+  async generatePayroll(businessId: string, startDate: string, endDate: string, branchId?: string) {
     const dateRe = /^\d{4}-\d{2}-\d{2}$/;
     if (!startDate?.match(dateRe) || !endDate?.match(dateRe)) {
       throw new BadRequestException('Start and end dates are required (YYYY-MM-DD)');
@@ -144,10 +144,12 @@ export class PayrollService {
     // Cover EVERY active staff member across the whole business, not just one
     // branch. Group by branch so each shop still gets its own payroll run
     // (matches the per-branch Payroll model + per-shop salary expense at payout).
+    // Scope to a single entity (shop or hotel) when a branch is given, so a
+    // hotel's payroll doesn't sweep in shop staff (and vice-versa).
     const employees = await this.prisma.employee.findMany({
-      where: { businessId, isActive: true },
+      where: { businessId, isActive: true, ...(branchId && { branchId }) },
     });
-    if (!employees.length) throw new BadRequestException('No active staff to pay');
+    if (!employees.length) throw new BadRequestException('No active staff to pay for this entity');
 
     const byBranch = new Map<string | null, typeof employees>();
     for (const e of employees) {
