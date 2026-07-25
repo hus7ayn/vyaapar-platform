@@ -8,6 +8,7 @@ export interface PosProduct {
   id: string;
   name: string;
   sku: string;
+  size?: string;
   barcode?: string;
   retailPrice: number;
   taxRate: number;
@@ -24,6 +25,7 @@ interface PosCatalogResponse {
     id: string;
     name: string;
     sku: string;
+    size?: string | null;
     barcode?: string | null;
     salePrice: number | string;
     taxRate: number | string;
@@ -56,6 +58,7 @@ export function usePosCatalog(token: string, branchId?: string) {
           id: i.id,
           name: i.name,
           sku: i.sku,
+          size: i.size ?? undefined,
           barcode: i.barcode ?? undefined,
           retailPrice: resolveUnitPrice(salePrice, taxRate, taxInclusive),
           taxRate,
@@ -102,6 +105,7 @@ export function usePosCatalog(token: string, branchId?: string) {
         return (
           p.name.toLowerCase().includes(q) ||
           p.sku.toLowerCase().includes(q) ||
+          (p.size?.toLowerCase().includes(q) ?? false) ||
           (p.barcode?.toLowerCase().includes(q) ?? false) ||
           (p.hsnCode?.toLowerCase().includes(q) ?? false)
         );

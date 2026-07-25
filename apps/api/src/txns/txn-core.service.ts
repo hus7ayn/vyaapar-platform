@@ -118,7 +118,9 @@ export class TxnCoreService {
       taxTotal = taxTotal.add(tax);
       built.push({
         itemId: l.itemId,
-        name: l.name ?? item?.name ?? 'Item',
+        // Fold the item's size into the line name (e.g. "Shirt (M)") when the caller didn't
+        // pass an explicit name, so size prints on POS bills too. No line schema change.
+        name: l.name ?? (item?.size ? `${item.name} (${item.size})` : item?.name) ?? 'Item',
         hsnCode: l.hsnCode ?? item?.hsnCode ?? null,
         quantity: qty,
         unit: l.unit ?? item?.baseUnit ?? 'PCS',

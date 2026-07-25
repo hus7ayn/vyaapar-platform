@@ -26,6 +26,7 @@ interface Item {
   id: string;
   name: string;
   sku: string;
+  size?: string | null;
   hsnCode?: string | null;
   salePrice: string | number;
   purchasePrice: string | number;
@@ -157,7 +158,7 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
   const filteredItems = useMemo(() => {
     if (!itemSearch) return (items ?? []).slice(0, 8);
     const q = itemSearch.toLowerCase();
-    return (items ?? []).filter((i) => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q)).slice(0, 8);
+    return (items ?? []).filter((i) => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || (i.size ?? '').toLowerCase().includes(q)).slice(0, 8);
   }, [items, itemSearch]);
 
   const selectedParty = parties?.find((p) => p.id === partyId);
@@ -264,7 +265,8 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
     const price = meta.side === 'purchase' ? item.purchasePrice : item.salePrice;
     updateLine(lineKeyId, {
       itemId: item.id,
-      name: item.name,
+      // Fold size into the stored line name so it prints on the bill (no line schema change).
+      name: item.size ? `${item.name} (${item.size})` : item.name,
       hsnCode: item.hsnCode ?? undefined,
       unit: item.baseUnit,
       unitPrice: String(Number(price)),
@@ -407,11 +409,11 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
                               onMouseDown={() => pickItem(l.key, it)}
                             >
                               <div className="flex justify-between">
-                                <span className="font-medium">{it.name}</span>
+                                <span className="font-medium">{it.name}{it.size ? ` · ${it.size}` : ''}</span>
                                 <span>{formatMoney(meta.side === 'purchase' ? it.purchasePrice : it.salePrice)}</span>
                               </div>
                               <div className="text-xs text-muted-foreground flex justify-between">
-                                <span>{it.sku}</span>
+                                <span>{it.sku}{it.size ? ` · Size ${it.size}` : ''}</span>
                                 {it.itemType === 'PRODUCT' && <span>Stock: {Number(it.currentStock)}</span>}
                               </div>
                             </button>
