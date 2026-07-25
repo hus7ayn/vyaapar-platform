@@ -10,6 +10,7 @@ export interface ItemInput {
   itemType?: string;
   sku?: string;
   barcode?: string;
+  size?: string;
   hsnCode?: string;
   categoryId?: string;
   description?: string;
@@ -74,7 +75,7 @@ export class ItemsService {
     }));
   }
 
-  async list(businessId: string, q: { search?: string; categoryId?: string; type?: string; lowStock?: string; branchId?: string }) {
+  async list(businessId: string, q: { search?: string; categoryId?: string; type?: string; lowStock?: string; branchId?: string; size?: string }) {
     let items = await this.prisma.item.findMany({
       where: {
         businessId,
@@ -82,12 +83,14 @@ export class ItemsService {
         ...this.branchWhere(q.branchId),
         ...(q.categoryId && { categoryId: q.categoryId }),
         ...(q.type && { itemType: q.type }),
+        ...(q.size && { size: q.size }),
         ...(q.search && {
           OR: [
             { name: { contains: q.search, mode: 'insensitive' } },
             { sku: { contains: q.search, mode: 'insensitive' } },
             { barcode: { contains: q.search } },
             { hsnCode: { contains: q.search } },
+            { size: { contains: q.search, mode: 'insensitive' } },
           ],
         }),
       },
@@ -192,6 +195,7 @@ export class ItemsService {
           itemType: body.itemType ?? 'PRODUCT',
           sku,
           barcode: body.barcode,
+          size: body.size?.trim() || null,
           hsnCode: body.hsnCode,
           categoryId: body.categoryId,
           description: body.description,
@@ -245,6 +249,7 @@ export class ItemsService {
         ...(body.itemType !== undefined && { itemType: body.itemType }),
         ...(body.sku !== undefined && { sku: body.sku }),
         ...(body.barcode !== undefined && { barcode: body.barcode }),
+        ...(body.size !== undefined && { size: body.size?.trim() || null }),
         ...(body.hsnCode !== undefined && { hsnCode: body.hsnCode }),
         ...(body.categoryId !== undefined && { categoryId: body.categoryId }),
         ...(body.description !== undefined && { description: body.description }),
