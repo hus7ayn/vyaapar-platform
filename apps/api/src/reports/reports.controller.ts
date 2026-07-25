@@ -140,9 +140,16 @@ export class ReportsController {
   }
 
   // Hotel (PMS)
+  // Honor an explicit ?branchId (like every /hotel/* endpoint). The hotel dashboard passes
+  // the hotel branch here; without this it fell back to the resolved global active-shop
+  // branch and reported zero rooms/revenue for a shop that isn't the hotel.
   @Get('hotel')
-  hotel(@CurrentUser('businessId') b: string, @CurrentUser('branchId') branchId?: string) {
-    return this.reports.hotelReport(b, branchId);
+  hotel(
+    @CurrentUser('businessId') b: string,
+    @CurrentUser('branchId') branchId: string | undefined,
+    @Query('branchId') queryBranchId?: string,
+  ) {
+    return this.reports.hotelReport(b, queryBranchId || branchId);
   }
 
   // Orders
