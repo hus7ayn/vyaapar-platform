@@ -189,7 +189,7 @@
       "id": "R32",
       "title": "Room picker works on DIRECT /hotel/check-in (resolve hotel branch)",
       "priority": 32,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/hotel/check-in/page.tsx"],
       "accept": "Opening /hotel/check-in directly (e.g. via the Hotel PMS 'Check-in' tab, no ?branchId) resolves a HOTEL branch itself — fetch /branches?type=HOTEL, seed selectedBranchId from the query param else auto-select the first hotel (property selector when >1), and gate the rooms query on it — so the room dropdown populates instead of falling back to the user's shop branch (empty)."
     },

@@ -20,6 +20,14 @@
 
 ## Iterations
 
+## Batch 4 (2026-07-25, post-deploy) — reported issues R32-R37. Same validate + Vercel CLI deploy.
+
+- R32 (direct check-in rooms) PASS: check-in page read branchId only from ?branchId=; the Hotel PMS "Check-in" tab
+  links with none -> API fell back to the user's SHOP branch -> zero hotel rooms. Now the page resolves a HOTEL
+  branch itself: fetch /branches?type=HOTEL, branchId is state seeded from the query param, effect auto-selects the
+  first hotel when none; room query gated enabled:!!branchId; added a Property <select> when >1 hotel (clears the
+  picked room on switch). Mirrors dashboard/services/categories. web typecheck green.
+
 ## Batch 3 (2026-07-25) — reported issues R26-R31. Same validate (api+web typecheck). Deployed via Vercel CLI
 ## from repo ROOT per project (apps/web=vyaapar-web, apps/api=vyaapar-api; Root Directory set on each project, so
 ## deploying from the app dir fails with apps/web/apps/web). API build auto-runs prisma db push.

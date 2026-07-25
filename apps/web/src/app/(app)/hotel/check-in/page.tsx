@@ -18,7 +18,21 @@ function CheckInForm() {
   const searchParams = useSearchParams();
   const qc = useQueryClient();
   
-  const branchId = searchParams.get('branchId') || '';
+  const branchParam = searchParams.get('branchId') || '';
+  const [branchId, setBranchId] = useState(branchParam);
+
+  // Resolve a HOTEL branch even when opened directly (no ?branchId) — the Hotel
+  // PMS "Check-in" tab links here with no branchId, and the API would otherwise
+  // fall back to the user's SHOP branch and return zero hotel rooms.
+  const { data: hotelBranches } = useQuery({
+    queryKey: ['branches', 'HOTEL'],
+    queryFn: () => api<Array<{ id: string; name: string }>>('/branches?type=HOTEL', { token }),
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (!branchId && hotelBranches && hotelBranches.length > 0) setBranchId(hotelBranches[0].id);
+  }, [hotelBranches, branchId]);
+
   const preSelectedRoomId = searchParams.get('roomId') || '';
   const preCheckIn = searchParams.get('checkIn') || new Date().toISOString().slice(0, 10);
   const preCheckOut = searchParams.get('checkOut') || '';
@@ -53,6 +67,7 @@ function CheckInForm() {
         { token },
       );
     },
+    enabled: !!branchId,
   });
 
   useEffect(() => {
@@ -192,6 +207,18 @@ function CheckInForm() {
       </Card>
 
       <form onSubmit={submit} className="space-y-4">
+        {(hotelBranches?.length ?? 0) > 1 && (
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground mb-1 block">Property</label>
+            <select
+              className="h-10 w-full rounded-lg border px-3 bg-background text-sm"
+              value={branchId}
+              onChange={(e) => { setBranchId(e.target.value); setForm((f) => ({ ...f, roomId: '' })); }}
+            >
+              {hotelBranches?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <label className="text-xs font-semibold text-muted-foreground mb-1 block">Room Selection</label>
           <select
