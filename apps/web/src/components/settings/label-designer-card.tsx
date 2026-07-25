@@ -149,15 +149,15 @@ export function LabelDesignerCard() {
       <h2 className="font-semibold flex items-center gap-2"><Barcode className="h-5 w-5 text-[hsl(348,85%,52%)]" /> Barcode Label Designer</h2>
       <p className="text-sm text-muted-foreground">Drag any element to move it; drag the red corner handle to resize (font / barcode size). Add your own text, toggle fields, and set alignment. Saved on this device.</p>
 
-      <div className="flex flex-col xl:flex-row gap-6">
-        {/* Preview canvas */}
-        <div className="shrink-0">
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        {/* Preview canvas — grows to fill, but can shrink so the controls keep their width */}
+        <div className="lg:flex-1 min-w-0 w-full">
           <div className="flex items-center gap-2 mb-2">
             <ZoomIn className="h-4 w-4 text-muted-foreground" />
             <input type="range" min={5} max={26} step={1} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="w-40" />
             <span className="text-xs text-muted-foreground">Zoom {Math.round(zoom * 10) / 10}×</span>
           </div>
-          <div className="overflow-auto border rounded-lg bg-slate-50 p-4" style={{ maxWidth: 720, maxHeight: 520 }}>
+          <div className="overflow-auto border rounded-lg bg-slate-50 p-4 w-full" style={{ maxHeight: 520 }}>
             <div
               className="relative bg-white shadow-sm mx-auto"
               style={{ width: config.widthMm * scale, height: config.heightMm * scale, outline: '2px dashed rgba(0,0,0,0.25)' }}
@@ -217,8 +217,8 @@ export function LabelDesignerCard() {
           <p className="text-[11px] text-muted-foreground text-center mt-1">{config.widthMm} × {config.heightMm} mm · live preview</p>
         </div>
 
-        {/* Controls */}
-        <div className="flex-1 space-y-4 min-w-0">
+        {/* Controls — fixed comfortable width on desktop so buttons never get crushed */}
+        <div className="w-full lg:w-[360px] xl:w-[400px] shrink-0 space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold text-muted-foreground uppercase">Elements</p>
             <Button size="sm" variant="outline" onClick={addCustom}><Plus className="h-4 w-4 mr-1" /> Add text</Button>

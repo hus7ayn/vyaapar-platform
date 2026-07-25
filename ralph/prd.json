@@ -647,6 +647,26 @@
         "apps/web/src/components/settings/thermal-format-card.tsx"
       ],
       "accept": "The thermal bill editor becomes a larger visual designer: drag to reorder sections, per-section font size + alignment + show/hide, and add/remove custom text lines (header/footer notes). receiptLayout (Json) extended with per-section font/align + custom lines; receipts.service.generateThermal renders them; back-compat with the old {fontPx, sections} shape."
+    },
+    {
+      "id": "R59",
+      "title": "Hotel checkout dialog: fixed header/scroll body/sticky footer so checkout button is always visible",
+      "priority": 59,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/hotel/page.tsx"
+      ],
+      "accept": "The checkout/folio dialog no longer overflows the viewport: DialogContent is a flex column capped at 90vh; the folio/guest/payment content scrolls in the middle; the Print Bill + Settle/Complete Checkout actions live in a fixed footer that stays visible without scrolling."
+    },
+    {
+      "id": "R60",
+      "title": "Barcode label designer: desktop two-column layout so right-side controls/buttons aren't crushed",
+      "priority": 60,
+      "status": "pass",
+      "files": [
+        "apps/web/src/components/settings/label-designer-card.tsx"
+      ],
+      "accept": "On desktop the designer goes side-by-side at lg (not xl); the preview column flexes/shrinks while the controls column keeps a fixed comfortable width (360-400px), so the action/button groups stay aligned horizontally with proper spacing instead of stacking cramped."
     }
   ]
 }

@@ -1094,8 +1094,8 @@ export default function HotelPage() {
           setCheckoutReservation(null);
         }
       }}>
-        <DialogContent className="sm:max-w-xl w-full">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-xl w-full max-h-[90vh] !flex flex-col !p-0 !gap-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-3 border-b shrink-0">
             <DialogTitle>
               {checkoutReservation?.status === 'CHECKED_OUT' ? 'Booking Invoice' : 'Guest Check-Out & Folio Bill'}
             </DialogTitle>
@@ -1104,7 +1104,8 @@ export default function HotelPage() {
           {checkoutReservation && (() => {
             const summary = getReservationSummary(checkoutReservation);
             return (
-              <div className="space-y-4 py-2">
+              <>
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 py-3 space-y-4">
                 {/* Guest & Reservation Header */}
                 <div className="bg-muted/50 p-3 rounded-lg border border-white/5 grid grid-cols-2 gap-2 text-xs">
                   <div>
@@ -1334,8 +1335,9 @@ export default function HotelPage() {
                   </div>
                 </div>
 
-                {/* Bottom Actions */}
-                <div className="flex gap-2 pt-3 border-t border-white/5">
+                </div>
+                {/* Bottom Actions — fixed footer, always visible without scrolling */}
+                <div className="flex gap-2 px-6 py-3 border-t bg-card shrink-0">
                   <Button 
                     type="button" 
                     variant="outline" 
@@ -1494,7 +1496,7 @@ export default function HotelPage() {
                     );
                   })()}
                 </div>
-              </div>
+              </>
             );
           })()}
         </DialogContent>
