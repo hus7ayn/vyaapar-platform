@@ -132,8 +132,12 @@ export class HotelController {
 
   @Post('check-out/:id')
   @RequirePermissions(Permission.HOTEL_CHECKOUT)
-  checkOut(@CurrentUser('businessId') businessId: string, @Param('id') id: string) {
-    return this.hotel.checkOut(businessId, id);
+  checkOut(
+    @CurrentUser('businessId') businessId: string,
+    @Param('id') id: string,
+    @Body() body?: { method?: string; amount?: number; bankAccountId?: string; reference?: string },
+  ) {
+    return this.hotel.checkOut(businessId, id, body);
   }
 
   @Get('calendar')

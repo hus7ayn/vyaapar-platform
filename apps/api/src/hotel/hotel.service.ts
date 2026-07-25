@@ -281,12 +281,29 @@ export class HotelService {
     return reservation;
   }
 
-  async checkOut(businessId: string, reservationId: string) {
+  async checkOut(
+    businessId: string,
+    reservationId: string,
+    settle?: { method?: string; amount?: number; bankAccountId?: string; reference?: string },
+  ) {
     const reservation = await this.prisma.reservation.findFirst({
       where: { id: reservationId, businessId, status: 'CHECKED_IN' },
       include: { room: true },
     });
     if (!reservation) throw new NotFoundException('Reservation not found');
+
+    // Optional settlement of the outstanding balance with a chosen payment method at checkout.
+    const settleAmount = settle?.amount && settle.amount > 0 ? Number(settle.amount) : 0;
+    const settleMethod = settle?.method || 'CASH';
+    if (settleAmount > 0 && settleMethod !== 'CASH' && !settle?.bankAccountId) {
+      throw new BadRequestException('Select a bank account for non-cash payment');
+    }
+    const settleData = {
+      method: settleMethod,
+      amount: settleAmount,
+      bankAccountId: settle?.bankAccountId,
+      reference: settle?.reference,
+    };
 
     const updated = await this.prisma.$transaction(async (tx) => {
       // 1. Find all service requests for this reservation
@@ -333,6 +350,12 @@ export class HotelService {
         0,
       );
       const pending = Number(reservation.totalAmount) + extraTotal - Number(reservation.paidAmount);
+      void pending;
+
+      // Record the settlement (FolioPayment + paidAmount) inside the checkout transaction.
+      if (settleAmount > 0) {
+        await this.settleFolioPayment(tx, businessId, reservationId, settleData);
+      }
 
       const res = await tx.reservation.update({
         where: { id: reservationId },
@@ -347,6 +370,13 @@ export class HotelService {
 
       return res;
     });
+    void updated;
+
+    // Post the settlement into the shared accounting engine so it hits cash/bank balances,
+    // exactly like a folio payment does (done after commit, mirroring addFolioPayment).
+    if (settleAmount > 0) {
+      await this.postFolioPaymentTxn(businessId, reservation, settleData);
+    }
 
     const finalRes = await this.getReservationWithDetails(businessId, reservationId);
     this.events.emitRoomUpdate(businessId, finalRes);
@@ -695,29 +725,45 @@ export class HotelService {
     });
   }
 
-  async addFolioPayment(businessId: string, reservationId: string, data: { method: string; amount: number; reference?: string; bankAccountId?: string }) {
-    const reservation = await this.prisma.reservation.findFirst({ where: { id: reservationId, businessId } });
-    if (!reservation) throw new NotFoundException('Reservation not found');
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.folioPayment.create({
-        data: { businessId, reservationId, method: data.method, bankAccountId: data.bankAccountId ?? null, amount: data.amount, reference: data.reference },
-      });
-      await tx.reservation.update({
-        where: { id: reservationId },
-        data: { paidAmount: { increment: data.amount } },
-      });
+  // Record a folio payment (FolioPayment row + reservation.paidAmount) inside a transaction.
+  // Shared by addFolioPayment and checkOut so both settle balances the same way.
+  private async settleFolioPayment(
+    tx: Tx,
+    businessId: string,
+    reservationId: string,
+    data: { method: string; amount: number; reference?: string; bankAccountId?: string },
+  ) {
+    await tx.folioPayment.create({
+      data: { businessId, reservationId, method: data.method, bankAccountId: data.bankAccountId ?? null, amount: data.amount, reference: data.reference },
     });
+    await tx.reservation.update({
+      where: { id: reservationId },
+      data: { paidAmount: { increment: data.amount } },
+    });
+  }
 
-    // Post the payment into the shared accounting engine so it hits cash/bank balances
-    // and shows up in cash-bank summaries and reports, same as shop payments.
-    await this.txnCore.createTxn(businessId, null, {
+  // Post the folio payment into the shared accounting engine so it hits cash/bank balances
+  // and shows up in cash-bank summaries and reports, same as shop payments.
+  private postFolioPaymentTxn(
+    businessId: string,
+    reservation: { branchId: string | null; bookingRef: string },
+    data: { method: string; amount: number; reference?: string; bankAccountId?: string },
+  ) {
+    return this.txnCore.createTxn(businessId, null, {
       txnType: 'PAYMENT_IN',
       branchId: reservation.branchId ?? undefined,
       total: data.amount,
       payments: [{ paymentType: data.method, bankAccountId: data.bankAccountId, amount: data.amount, referenceNo: data.reference }],
       description: `Folio payment for booking ${reservation.bookingRef}`,
     });
+  }
+
+  async addFolioPayment(businessId: string, reservationId: string, data: { method: string; amount: number; reference?: string; bankAccountId?: string }) {
+    const reservation = await this.prisma.reservation.findFirst({ where: { id: reservationId, businessId } });
+    if (!reservation) throw new NotFoundException('Reservation not found');
+
+    await this.prisma.$transaction((tx) => this.settleFolioPayment(tx, businessId, reservationId, data));
+    await this.postFolioPaymentTxn(businessId, reservation, data);
 
     return this.getReservationWithDetails(businessId, reservationId);
   }
