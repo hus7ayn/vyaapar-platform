@@ -43,7 +43,8 @@ export function ReturnDialog({
 
   const { data: catalog } = useQuery({
     queryKey: ['exchange-catalog'],
-    queryFn: () => api<{ items: CatalogItem[] }>('/items', { token }),
+    // GET /items returns a bare Item[] (not { items: [] }); read the array directly.
+    queryFn: () => api<CatalogItem[]>('/items', { token }),
     enabled: !!token && step === 'replace',
   });
 
@@ -51,7 +52,7 @@ export function ReturnDialog({
   const selectedIds = lines.filter((l) => l.id && selected[l.id]).map((l) => l.id as string);
   const returnedTotal = lines.filter((l) => l.id && selected[l.id]).reduce((s, l) => s + Number(l.total ?? 0), 0);
 
-  const catalogItems = catalog?.items ?? [];
+  const catalogItems = catalog ?? [];
   const replacementRows = Object.entries(replacements).filter(([, q]) => q > 0);
   const newTotal = replacementRows.reduce((sum, [itemId, qty]) => {
     const it = catalogItems.find((c) => c.id === itemId);

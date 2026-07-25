@@ -232,6 +232,55 @@
       "status": "pass",
       "files": ["apps/api/src/reports/reports.service.ts"],
       "accept": "The Profit & Loss report includes hotel revenue — room revenue + folio/service charges for reservations CHECKED_OUT in the period (reservation.totalAmount + extraCharges) — as a revenue block folded into gross sale / net profit. Today P&L aggregates only SALE_INVOICE so all hotel/service income is invisible; adding it is double-count-safe because P&L currently contains zero hotel data."
+    },
+
+    {
+      "id": "R38",
+      "title": "Fix exchange replacement picker (catalog /items response shape)",
+      "priority": 38,
+      "status": "pass",
+      "files": ["apps/web/src/components/pos/return-dialog.tsx"],
+      "accept": "In the Return/Exchange dialog, the 'Choose replacements' step lists selectable catalog items so the user can actually pick the exchanged item. Root cause: return-dialog.tsx fetches GET /items as `{ items: CatalogItem[] }` but that endpoint (items.service.ts list()) returns a BARE array Item[] — so `catalog?.items` is undefined and the picker is permanently empty ('won't let choosing the exchanged item'). Fix the fetch to read the array directly. Do NOT change the API shape (items/page.tsx and txn-form.tsx correctly consume the bare array)."
+    },
+    {
+      "id": "R39",
+      "title": "Allow multiple partial returns per invoice (per-line remaining qty)",
+      "priority": 39,
+      "status": "todo",
+      "files": ["apps/api/src/sale/sale.service.ts"],
+      "accept": "refundInvoice no longer rejects every return after the first (current guard `if (txn.returns.length) throw 'already been returned'`). Instead it computes already-returned quantity per line from existing CREDIT_NOTE returns (returnAgainstTxnId) and rejects only a line that has nothing left to return; and the invoice is marked REFUNDED once cumulative returns exhaust all lines (not only on the single full-return path). A user can return one item now and another item later. Over-returning a fully-returned line is rejected."
+    },
+    {
+      "id": "R40",
+      "title": "Hotel: settle outstanding balance at check-out (backend)",
+      "priority": 40,
+      "status": "todo",
+      "files": ["apps/api/src/hotel/hotel.service.ts", "apps/api/src/hotel/hotel.controller.ts"],
+      "accept": "POST /hotel/check-out/:id accepts an optional settlement body { method, amount, bankAccountId?, reference? }. When amount>0, checkOut records a FolioPayment, increments reservation.paidAmount, and posts exactly one PAYMENT_IN txn (paymentType=method, bankAccountId for non-cash) so cash/bank balances move — reusing the same accounting path as addFolioPayment (factor a shared private helper). No body / amount=0 behaves exactly as today (backward compatible). CHECKED_OUT / room CLEANING / housekeeping-task transitions unchanged. No SALE txn is created (no double count)."
+    },
+    {
+      "id": "R41",
+      "title": "Hotel: payment method + bank picker on Complete Checkout (frontend)",
+      "priority": 41,
+      "status": "todo",
+      "files": ["apps/web/src/app/(app)/hotel/page.tsx"],
+      "accept": "The checkout dialog's Complete Checkout action shows a payment-method selector (Cash/Bank/UPI/Card) and, for non-cash, a bank-account dropdown (reusing bankAccounts query + newPaymentMethod/newPaymentBankId state), pre-filled to settle summary.pendingDues. checkoutMutation POSTs { method, amount, bankAccountId } when pendingDues>0 so the final balance is settled with the chosen method at checkout. Non-cash without a bank account is blocked client-side. Zero-dues checkout works with no method selection."
+    },
+    {
+      "id": "R42",
+      "title": "Hotel dashboard/report: billed revenue + profit + services (not folio-payments-only)",
+      "priority": 42,
+      "status": "todo",
+      "files": ["apps/api/src/reports/reports.service.ts", "apps/api/src/services/services.service.ts"],
+      "accept": "hotelReport() bases totalRevenue/today/month/year on BILLED reservation revenue (totalAmount + extraCharges for CHECKED_OUT, bucketed by checkedOutAt) — matching the R37 P&L — instead of folio-payments-only, so a hotel that checks guests in/out but never records a folio payment still shows non-zero revenue/profit on /hotel/dashboard and /reports/hotel. Keep folio-payment collections exposed as a distinct `collected` metric. Include a serviceRevenue figure (COMPLETED serviceRequest amounts in period, informational — not double-added since checked-out service money is already in extraCharges). Also broaden services.create() reservation linking to include CONFIRMED (not only CHECKED_IN) so in-stay/upcoming services aren't orphaned. Shop home dashboard stays shop-only (shop/hotel kept separate)."
+    },
+    {
+      "id": "R43",
+      "title": "Reconcile balance sheet after hotel revenue enters net profit (R37 side-effect)",
+      "priority": 43,
+      "status": "todo",
+      "files": ["apps/api/src/reports/reports.service.ts"],
+      "accept": "balanceSheet() balances (assets == liabilities + equity within rounding) even though equity's retained earnings now include hotel revenue (R37). Add a hotel dues receivable asset = sum over CHECKED_OUT reservations of max(0, totalAmount + extraCharges - paidAmount), so accrued-but-uncollected hotel revenue is represented on the asset side matching the retained-earnings it produced. Collected hotel revenue is already reflected in cash/bank via PAYMENT_IN txns."
     }
   ]
 }

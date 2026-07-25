@@ -125,14 +125,38 @@ export class SaleService {
   ) {
     const txn = await this.core.getTxn(businessId, id);
     if (txn.txnType !== 'SALE_INVOICE') throw new BadRequestException('Not a sale invoice');
-    if (txn.returns.length) throw new BadRequestException('This invoice has already been returned');
+
+    // How much of each original line was already returned by prior credit notes, so a
+    // line can be returned across multiple sessions and is never over-returned.
+    const priorReturns = await this.core.prisma.txn.findMany({
+      where: { businessId, txnType: 'CREDIT_NOTE', returnAgainstTxnId: txn.id, deletedAt: null },
+      include: { lines: true },
+    });
+    const sig = (l: { itemId: string | null; name: string; unitPrice: Prisma.Decimal | number }) =>
+      `${l.itemId ?? l.name}|${Number(l.unitPrice)}`;
+    const returnedBySig: Record<string, number> = {};
+    for (const cn of priorReturns)
+      for (const l of cn.lines) returnedBySig[sig(l)] = (returnedBySig[sig(l)] ?? 0) + Number(l.quantity);
+    const returnedQtyByLine: Record<string, number> = {};
+    for (const l of txn.lines) {
+      const avail = returnedBySig[sig(l)] ?? 0;
+      const take = Math.min(avail, Number(l.quantity));
+      returnedQtyByLine[l.id] = take;
+      returnedBySig[sig(l)] = avail - take;
+    }
+    const fullyReturned = (l: { id: string; quantity: Prisma.Decimal | number }) =>
+      (returnedQtyByLine[l.id] ?? 0) >= Number(l.quantity) - 1e-6;
 
     const partial = !!body?.lineIds?.length;
-    const selected = partial ? txn.lines.filter((l) => body!.lineIds!.includes(l.id)) : txn.lines;
-    if (!selected.length) throw new BadRequestException('Select at least one item to return');
+    const requested = partial ? txn.lines.filter((l) => body!.lineIds!.includes(l.id)) : txn.lines;
+    const selected = requested.filter((l) => !fullyReturned(l));
+    if (!selected.length) throw new BadRequestException('The selected item(s) have already been returned');
 
     const cashRefund = body?.cashRefund !== false && body?.mode !== 'EXCHANGE';
     const label = body?.mode === 'EXCHANGE' ? 'Exchange' : 'Return';
+    // Reproduce bill-level discount/charges only for a pristine full return; otherwise refund
+    // the exact sum of the selected line totals (roundOff off so payment == total exactly).
+    const pristineFull = !partial && priorReturns.length === 0 && selected.length === txn.lines.length;
 
     const lines = selected.map((l) => ({
       itemId: l.itemId ?? undefined,
@@ -145,7 +169,7 @@ export class SaleService {
     }));
 
     let creditNote;
-    if (partial) {
+    if (!pristineFull) {
       // Sum of stored (2dp) line totals; roundOff off so createTxn's total matches exactly.
       const refundTotal = selected.reduce((s, l) => s + Number(l.total), 0);
       creditNote = await this.core.createTxn(businessId, userId, {
@@ -175,8 +199,9 @@ export class SaleService {
       });
     }
 
-    // Mark the invoice REFUNDED only when the whole invoice was returned.
-    if (!partial) {
+    // Mark REFUNDED once every line has been fully returned (this credit note included).
+    const remaining = txn.lines.filter((l) => !fullyReturned(l) && !selected.some((s) => s.id === l.id));
+    if (remaining.length === 0) {
       await this.core.prisma.txn.update({ where: { id }, data: { status: 'REFUNDED' } });
     }
     return creditNote;
