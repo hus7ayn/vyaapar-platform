@@ -11,13 +11,14 @@ import { formatCurrency } from '@/lib/utils';
 import { Txn } from '@/lib/txn-meta';
 
 interface CatalogItem { id: string; name: string; salePrice: number | string; taxRate: number | string }
+// getTxn attaches returnedQty per line so we can cap each picker at (purchased − already returned).
+type ReturnLine = NonNullable<Txn['lines']>[number] & { returnedQty?: number | string };
 
 /**
- * Return / Exchange for a sale invoice. Items start UNSELECTED — tick the ones
- * to return (so "return this item" is explicit and partial refunds actually work).
- * Refund pays cash back for the ticked items. Exchange returns the ticked items
- * AND lets the user pick replacement item(s), ringing up a new sale (backend
- * exchangeInvoice), so the customer only settles the difference.
+ * Return / Exchange for a sale invoice, at QUANTITY granularity. Each line shows a quantity
+ * input capped at the units still returnable (purchased − already returned). Refund pays cash
+ * back for the chosen quantities; Exchange returns them and rings up replacement item(s) so the
+ * customer settles only the difference. Inventory + refund follow the returned quantity only.
  */
 export function ReturnDialog({
   invoiceId,
@@ -30,7 +31,7 @@ export function ReturnDialog({
   onClose: () => void;
   onDone?: (mode: 'REFUND' | 'EXCHANGE') => void;
 }) {
-  const [selected, setSelected] = useState<Record<string, boolean>>({}); // default: nothing selected
+  const [returnQty, setReturnQty] = useState<Record<string, number>>({}); // lineId -> qty to return
   const [step, setStep] = useState<'items' | 'replace'>('items');
   const [search, setSearch] = useState('');
   const [replacements, setReplacements] = useState<Record<string, number>>({}); // itemId -> qty
@@ -48,9 +49,20 @@ export function ReturnDialog({
     enabled: !!token && step === 'replace',
   });
 
-  const lines = invoice?.lines ?? [];
-  const selectedIds = lines.filter((l) => l.id && selected[l.id]).map((l) => l.id as string);
-  const returnedTotal = lines.filter((l) => l.id && selected[l.id]).reduce((s, l) => s + Number(l.total ?? 0), 0);
+  const lines = (invoice?.lines ?? []) as ReturnLine[];
+  const purchasedOf = (l: ReturnLine) => Number(l.quantity) || 0;
+  const remainingOf = (l: ReturnLine) => Math.max(0, purchasedOf(l) - Number(l.returnedQty ?? 0));
+  const qtyOf = (l: ReturnLine) => (l.id ? returnQty[l.id] ?? 0 : 0);
+
+  const rows = lines
+    .filter((l) => l.id && qtyOf(l) > 0)
+    .map((l) => ({ lineId: l.id as string, quantity: qtyOf(l) }));
+  // Per-unit share of the stored line total (already includes that line's discount + tax) — this
+  // exactly matches the backend's per-quantity refund math for both flat and % discounts.
+  const returnedTotal = lines.reduce((s, l) => {
+    const purchased = purchasedOf(l) || 1;
+    return s + (Number(l.total ?? 0) * qtyOf(l)) / purchased;
+  }, 0);
 
   const catalogItems = catalog ?? [];
   const replacementRows = Object.entries(replacements).filter(([, q]) => q > 0);
@@ -61,13 +73,19 @@ export function ReturnDialog({
   }, 0);
   const diff = newTotal - returnedTotal;
 
+  const setQty = (l: ReturnLine, value: number) => {
+    if (!l.id) return;
+    const capped = Math.max(0, Math.min(remainingOf(l), Math.floor(value)));
+    setReturnQty((s) => ({ ...s, [l.id as string]: capped }));
+  };
+
   const refund = useMutation({
-    mutationFn: () => {
-      const allSelected = selectedIds.length === lines.length;
-      const body: { mode: 'REFUND'; lineIds?: string[] } = { mode: 'REFUND' };
-      if (!allSelected) body.lineIds = selectedIds; // omit only when literally everything is selected
-      return api(`/sale/invoices/${invoiceId}/refund`, { method: 'POST', token, body: JSON.stringify(body) });
-    },
+    mutationFn: () =>
+      api(`/sale/invoices/${invoiceId}/refund`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ mode: 'REFUND', returns: rows }),
+      }),
     onSuccess: () => { toast.success('Return processed — credit note created, cash refunded'); onDone?.('REFUND'); onClose(); },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Return failed'),
   });
@@ -77,13 +95,14 @@ export function ReturnDialog({
       api(`/sale/invoices/${invoiceId}/exchange`, {
         method: 'POST',
         token,
-        body: JSON.stringify({ lineIds: selectedIds, replacements: replacementRows.map(([itemId, quantity]) => ({ itemId, quantity })) }),
+        body: JSON.stringify({ returns: rows, replacements: replacementRows.map(([itemId, quantity]) => ({ itemId, quantity })) }),
       }),
     onSuccess: () => { toast.success('Exchange complete — items swapped'); onDone?.('EXCHANGE'); onClose(); },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Exchange failed'),
   });
 
   const busy = refund.isPending || exchange.isPending;
+  const totalUnits = rows.reduce((s, r) => s + r.quantity, 0);
   const filtered = search ? catalogItems.filter((c) => c.name.toLowerCase().includes(search.toLowerCase())) : catalogItems.slice(0, 30);
 
   return (
@@ -102,29 +121,61 @@ export function ReturnDialog({
           <>
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {!invoice && <p className="text-center text-muted-foreground">Loading…</p>}
-              <p className="text-xs text-muted-foreground">Tick the item(s) to return.</p>
-              {lines.map((l) => (
-                <label key={l.id} className="flex items-center gap-3 p-2 rounded-lg border cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!!(l.id && selected[l.id])}
-                    onChange={(e) => l.id && setSelected((s) => ({ ...s, [l.id as string]: e.target.checked }))}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{l.name}</p>
-                    <p className="text-xs text-muted-foreground">{Number(l.quantity)} {l.unit} × {formatCurrency(Number(l.unitPrice))}</p>
+              <p className="text-xs text-muted-foreground">Set how many units of each item to return.</p>
+              {lines.map((l) => {
+                const remaining = remainingOf(l);
+                const purchased = purchasedOf(l);
+                const alreadyReturned = Number(l.returnedQty ?? 0);
+                return (
+                  <div key={l.id} className={`flex items-center gap-3 p-2 rounded-lg border ${remaining === 0 ? 'opacity-50' : ''}`}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{l.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {purchased} {l.unit} × {formatCurrency(Number(l.unitPrice))}
+                        {alreadyReturned > 0 ? ` · ${alreadyReturned} returned` : ''}
+                        {remaining === 0 ? ' · fully returned' : ` · ${remaining} returnable`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        className="h-7 w-7 rounded border text-sm disabled:opacity-40"
+                        disabled={remaining === 0 || qtyOf(l) <= 0}
+                        onClick={() => setQty(l, qtyOf(l) - 1)}
+                      >−</button>
+                      <input
+                        type="number"
+                        min={0}
+                        max={remaining}
+                        className="w-14 h-7 rounded border px-2 text-right text-sm"
+                        value={qtyOf(l)}
+                        disabled={remaining === 0}
+                        onChange={(e) => setQty(l, Number(e.target.value))}
+                      />
+                      <button
+                        type="button"
+                        className="h-7 w-7 rounded border text-sm disabled:opacity-40"
+                        disabled={remaining === 0 || qtyOf(l) >= remaining}
+                        onClick={() => setQty(l, qtyOf(l) + 1)}
+                      >+</button>
+                      <button
+                        type="button"
+                        className="h-7 px-2 rounded border text-[11px] disabled:opacity-40"
+                        disabled={remaining === 0}
+                        onClick={() => setQty(l, remaining)}
+                      >All</button>
+                    </div>
                   </div>
-                  <span className="text-sm font-semibold">{formatCurrency(Number(l.total ?? 0))}</span>
-                </label>
-              ))}
+                );
+              })}
             </div>
             <div className="p-4 border-t space-y-2">
-              <p className="text-xs text-muted-foreground">{selectedIds.length} item(s) selected · returning {formatCurrency(returnedTotal)}. Inventory is restored automatically.</p>
+              <p className="text-xs text-muted-foreground">{totalUnits} unit(s) selected · returning {formatCurrency(returnedTotal)}. Inventory is restored automatically.</p>
               <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" disabled={!selectedIds.length || busy} onClick={() => setStep('replace')}>
+                <Button variant="outline" className="flex-1" disabled={!rows.length || busy} onClick={() => setStep('replace')}>
                   Exchange →
                 </Button>
-                <Button className="flex-1" disabled={!selectedIds.length || busy} onClick={() => refund.mutate()}>
+                <Button className="flex-1" disabled={!rows.length || busy} onClick={() => refund.mutate()}>
                   Refund (cash)
                 </Button>
               </div>
@@ -178,7 +229,7 @@ export function ReturnDialog({
               <p className="text-sm font-semibold">
                 {diff >= 0 ? `Customer pays ${formatCurrency(diff)}` : `Refund customer ${formatCurrency(-diff)}`}
               </p>
-              <Button className="w-full" disabled={!replacementRows.length || busy} onClick={() => exchange.mutate()}>
+              <Button className="w-full" disabled={!replacementRows.length || !rows.length || busy} onClick={() => exchange.mutate()}>
                 Complete exchange
               </Button>
             </div>
