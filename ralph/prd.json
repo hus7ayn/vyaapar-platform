@@ -639,7 +639,7 @@
       "id": "R58",
       "title": "Bill/thermal designer: larger visual canvas, drag-reorder, per-section font/align/show, add/remove custom lines",
       "priority": 58,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/api/prisma/schema.prisma",
         "apps/api/src/settings/settings.service.ts",

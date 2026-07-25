@@ -58,8 +58,10 @@ export class ReceiptsService {
       .map((p) => `<tr><td>${esc(p.paymentType)}</td><td class="right">${money(p.amount)}</td></tr>`)
       .join('');
 
-    // Format designer: ordered, show/hideable sections + font size (FirmSettings.receiptLayout).
-    const layout = (settings?.receiptLayout as { fontPx?: number; sections?: { id: string; show: boolean }[] } | null) ?? null;
+    // Format designer: an ordered list of blocks (known sections + user text lines), each
+    // show/hideable with its own font size + alignment (FirmSettings.receiptLayout).
+    type LayoutItem = { id: string; show?: boolean; kind?: string; text?: string; fontPx?: number; align?: string; bold?: boolean };
+    const layout = (settings?.receiptLayout as { fontPx?: number; sections?: LayoutItem[] } | null) ?? null;
     const fontPx = layout?.fontPx && layout.fontPx > 0 ? layout.fontPx : 12;
 
     const blocks: Record<string, string> = {
@@ -80,19 +82,38 @@ export class ReceiptsService {
     };
 
     const DEFAULT_ORDER = ['shopName', 'gstin', 'branch', 'header', 'meta', 'items', 'totals', 'payments', 'footer'];
-    let order: string[];
-    if (Array.isArray(layout?.sections)) {
-      const known = new Set(DEFAULT_ORDER);
-      const listed = layout!.sections.filter((s) => known.has(s.id));
-      const shownIds = listed.filter((s) => s.show).map((s) => s.id);
-      const listedIds = new Set(listed.map((s) => s.id));
+    // Per-block wrapper honoring the block's own font size / alignment / bold.
+    const wrap = (html: string, it: LayoutItem) => {
+      if (!html) return '';
+      const styles: string[] = [];
+      if (it.fontPx && it.fontPx > 0) styles.push(`font-size:${it.fontPx}px`);
+      if (it.align) styles.push(`text-align:${it.align}`);
+      if (it.bold) styles.push('font-weight:700');
+      return styles.length ? `<div style="${styles.join(';')}">${html}</div>` : html;
+    };
+
+    let items: LayoutItem[];
+    if (Array.isArray(layout?.sections) && layout!.sections.length) {
+      const arr = layout!.sections;
+      const listedKnown = new Set(arr.filter((s) => DEFAULT_ORDER.includes(s.id)).map((s) => s.id));
       // Append any known section the saved layout doesn't mention (default shown) so nothing silently vanishes.
-      order = [...shownIds, ...DEFAULT_ORDER.filter((id) => !listedIds.has(id))];
+      const missing = DEFAULT_ORDER.filter((id) => !listedKnown.has(id)).map((id) => ({ id, show: true }));
+      items = [...arr, ...missing];
     } else {
-      order = DEFAULT_ORDER;
+      items = DEFAULT_ORDER.map((id) => ({ id, show: true }));
     }
 
-    const bodyHtml = order.map((id) => blocks[id]).filter(Boolean).join('\n  <div class="divider"></div>\n  ');
+    const bodyHtml = items
+      .filter((it) => it.show !== false)
+      .map((it) => {
+        if (it.kind === 'text') {
+          const t = (it.text ?? '').trim();
+          return t ? wrap(`<div class="center">${esc(t)}</div>`, it) : '';
+        }
+        return wrap(blocks[it.id] ?? '', it);
+      })
+      .filter(Boolean)
+      .join('\n  <div class="divider"></div>\n  ');
 
     return `<!DOCTYPE html>
 <html>
