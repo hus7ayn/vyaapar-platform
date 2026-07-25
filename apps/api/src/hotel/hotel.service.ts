@@ -6,6 +6,7 @@ import { EventsGateway } from '../events/events.gateway';
 import { TxnCoreService } from '../txns/txn-core.service';
 
 type Tx = Prisma.TransactionClient;
+type FolioPaymentEntry = { method: string; amount: number; bankAccountId?: string; reference?: string };
 
 @Injectable()
 export class HotelService {
@@ -142,7 +143,7 @@ export class HotelService {
   async getReservationWithDetails(businessId: string, id: string) {
     const reservation = await this.prisma.reservation.findFirst({
       where: { id, businessId },
-      include: { room: true, guest: true, folioCharges: true },
+      include: { room: true, guest: true, folioCharges: true, folioPayments: { orderBy: { createdAt: 'asc' } } },
     });
     if (!reservation) return null;
 
@@ -284,7 +285,13 @@ export class HotelService {
   async checkOut(
     businessId: string,
     reservationId: string,
-    settle?: { method?: string; amount?: number; bankAccountId?: string; reference?: string },
+    settle?: {
+      method?: string;
+      amount?: number;
+      bankAccountId?: string;
+      reference?: string;
+      payments?: FolioPaymentEntry[];
+    },
   ) {
     const reservation = await this.prisma.reservation.findFirst({
       where: { id: reservationId, businessId, status: 'CHECKED_IN' },
@@ -292,18 +299,22 @@ export class HotelService {
     });
     if (!reservation) throw new NotFoundException('Reservation not found');
 
-    // Optional settlement of the outstanding balance with a chosen payment method at checkout.
-    const settleAmount = settle?.amount && settle.amount > 0 ? Number(settle.amount) : 0;
-    const settleMethod = settle?.method || 'CASH';
-    if (settleAmount > 0 && settleMethod !== 'CASH' && !settle?.bankAccountId) {
-      throw new BadRequestException('Select a bank account for non-cash payment');
+    // Optional settlement of the outstanding balance at checkout — one method, or a split
+    // across several (Cash/Card/UPI/Bank Transfer). Normalize both shapes into entries.
+    const entries: FolioPaymentEntry[] = (
+      settle?.payments?.length
+        ? settle.payments
+        : settle?.amount && settle.amount > 0
+          ? [{ method: settle.method || 'CASH', amount: settle.amount, bankAccountId: settle.bankAccountId, reference: settle.reference }]
+          : []
+    )
+      .map((e) => ({ method: e.method || 'CASH', amount: Number(e.amount), bankAccountId: e.bankAccountId, reference: e.reference }))
+      .filter((e) => e.amount > 0);
+    for (const e of entries) {
+      if (e.method !== 'CASH' && !e.bankAccountId) {
+        throw new BadRequestException('Select a bank account for non-cash payment');
+      }
     }
-    const settleData = {
-      method: settleMethod,
-      amount: settleAmount,
-      bankAccountId: settle?.bankAccountId,
-      reference: settle?.reference,
-    };
 
     const updated = await this.prisma.$transaction(async (tx) => {
       // 1. Find all service requests for this reservation
@@ -352,9 +363,9 @@ export class HotelService {
       const pending = Number(reservation.totalAmount) + extraTotal - Number(reservation.paidAmount);
       void pending;
 
-      // Record the settlement (FolioPayment + paidAmount) inside the checkout transaction.
-      if (settleAmount > 0) {
-        await this.settleFolioPayment(tx, businessId, reservationId, settleData);
+      // Record each settlement entry (FolioPayment row + paidAmount) inside the transaction.
+      for (const e of entries) {
+        await this.settleFolioPayment(tx, businessId, reservationId, e);
       }
 
       const res = await tx.reservation.update({
@@ -372,10 +383,10 @@ export class HotelService {
     });
     void updated;
 
-    // Post the settlement into the shared accounting engine so it hits cash/bank balances,
-    // exactly like a folio payment does (done after commit, mirroring addFolioPayment).
-    if (settleAmount > 0) {
-      await this.postFolioPaymentTxn(businessId, reservation, settleData);
+    // Post the settlement as ONE PAYMENT_IN with a line per method so cash/bank balances move
+    // and each method surfaces separately in cash-flow (done after commit, like addFolioPayment).
+    if (entries.length) {
+      await this.postFolioPaymentsTxn(businessId, reservation, entries);
     }
 
     const finalRes = await this.getReservationWithDetails(businessId, reservationId);
@@ -742,18 +753,18 @@ export class HotelService {
     });
   }
 
-  // Post the folio payment into the shared accounting engine so it hits cash/bank balances
-  // and shows up in cash-bank summaries and reports, same as shop payments.
-  private postFolioPaymentTxn(
+  // Post the folio payment(s) into the shared accounting engine as ONE PAYMENT_IN with a line
+  // per method, so cash/bank balances move and each method surfaces separately in cash-flow.
+  private postFolioPaymentsTxn(
     businessId: string,
     reservation: { branchId: string | null; bookingRef: string },
-    data: { method: string; amount: number; reference?: string; bankAccountId?: string },
+    entries: FolioPaymentEntry[],
   ) {
     return this.txnCore.createTxn(businessId, null, {
       txnType: 'PAYMENT_IN',
       branchId: reservation.branchId ?? undefined,
-      total: data.amount,
-      payments: [{ paymentType: data.method, bankAccountId: data.bankAccountId, amount: data.amount, referenceNo: data.reference }],
+      total: entries.reduce((s, e) => s + Number(e.amount), 0),
+      payments: entries.map((e) => ({ paymentType: e.method, bankAccountId: e.bankAccountId, amount: Number(e.amount), referenceNo: e.reference })),
       description: `Folio payment for booking ${reservation.bookingRef}`,
     });
   }
@@ -763,7 +774,7 @@ export class HotelService {
     if (!reservation) throw new NotFoundException('Reservation not found');
 
     await this.prisma.$transaction((tx) => this.settleFolioPayment(tx, businessId, reservationId, data));
-    await this.postFolioPaymentTxn(businessId, reservation, data);
+    await this.postFolioPaymentsTxn(businessId, reservation, [data]);
 
     return this.getReservationWithDetails(businessId, reservationId);
   }

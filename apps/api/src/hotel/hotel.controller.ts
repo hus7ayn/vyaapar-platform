@@ -135,7 +135,13 @@ export class HotelController {
   checkOut(
     @CurrentUser('businessId') businessId: string,
     @Param('id') id: string,
-    @Body() body?: { method?: string; amount?: number; bankAccountId?: string; reference?: string },
+    @Body() body?: {
+      method?: string;
+      amount?: number;
+      bankAccountId?: string;
+      reference?: string;
+      payments?: { method: string; amount: number; bankAccountId?: string; reference?: string }[];
+    },
   ) {
     return this.hotel.checkOut(businessId, id, body);
   }
