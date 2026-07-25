@@ -62,7 +62,13 @@ export class SaleController {
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('sub') userId: string,
     @Param('id') id: string,
-    @Body() body?: { payments?: TxnPaymentInput[]; lineIds?: string[]; cashRefund?: boolean; mode?: 'REFUND' | 'EXCHANGE' },
+    @Body() body?: {
+      payments?: TxnPaymentInput[];
+      lineIds?: string[];
+      returns?: { lineId: string; quantity: number }[];
+      cashRefund?: boolean;
+      mode?: 'REFUND' | 'EXCHANGE';
+    },
   ) {
     return this.sale.refundInvoice(businessId, userId, id, body);
   }
@@ -73,7 +79,11 @@ export class SaleController {
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('sub') userId: string,
     @Param('id') id: string,
-    @Body() body: { lineIds?: string[]; replacements: { itemId: string; quantity: number }[] },
+    @Body() body: {
+      lineIds?: string[];
+      returns?: { lineId: string; quantity: number }[];
+      replacements: { itemId: string; quantity: number }[];
+    },
   ) {
     return this.sale.exchangeInvoice(businessId, userId, id, body);
   }

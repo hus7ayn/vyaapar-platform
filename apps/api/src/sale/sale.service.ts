@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { CreateTxnInput, TxnCoreService, TxnPaymentInput } from '../txns/txn-core.service';
+import { CreateTxnInput, TxnCoreService, TxnLineInput, TxnPaymentInput } from '../txns/txn-core.service';
 import { EventsGateway } from '../events/events.gateway';
 
 type SaleBody = Omit<CreateTxnInput, 'txnType'>;
@@ -110,98 +110,133 @@ export class SaleService {
   }
 
   /**
-   * Return an invoice as a credit note. Full return (no lineIds) reproduces the
-   * whole invoice incl. bill discount/charges and refunds its exact total.
-   * Partial return (lineIds) returns those whole lines only, refunding the sum
-   * of their stored line totals (roundOff disabled so payment == total exactly).
-   * mode EXCHANGE / cashRefund:false records the return as store credit (no cash
-   * out) so a replacement sale can be rung up; REFUND (default) pays cash back.
+   * Return an invoice as a credit note, at QUANTITY granularity. `returns:[{lineId,quantity}]`
+   * returns exactly those units; `lineIds` returns each named line's remaining quantity; no
+   * selector = full return (reproduces bill discount/charges, refunds the exact total). Each
+   * credit-note line links back to its source invoice line (sourceLineId) so cumulative
+   * returned quantity is exact and a line can never be over-returned. mode EXCHANGE /
+   * cashRefund:false records store credit (no cash out); REFUND (default) pays cash back.
    */
   async refundInvoice(
     businessId: string,
     userId: string,
     id: string,
-    body?: { payments?: TxnPaymentInput[]; lineIds?: string[]; cashRefund?: boolean; mode?: 'REFUND' | 'EXCHANGE' },
+    body?: {
+      payments?: TxnPaymentInput[];
+      lineIds?: string[];
+      returns?: { lineId: string; quantity: number }[];
+      cashRefund?: boolean;
+      mode?: 'REFUND' | 'EXCHANGE';
+    },
   ) {
     const txn = await this.core.getTxn(businessId, id);
     if (txn.txnType !== 'SALE_INVOICE') throw new BadRequestException('Not a sale invoice');
 
-    // How much of each original line was already returned by prior credit notes, so a
-    // line can be returned across multiple sessions and is never over-returned.
+    // Exact already-returned quantity per original line: prefer the sourceLineId link on
+    // prior credit-note lines; fall back to signature matching for legacy rows (null link).
     const priorReturns = await this.core.prisma.txn.findMany({
       where: { businessId, txnType: 'CREDIT_NOTE', returnAgainstTxnId: txn.id, deletedAt: null },
       include: { lines: true },
     });
     const sig = (l: { itemId: string | null; name: string; unitPrice: Prisma.Decimal | number }) =>
       `${l.itemId ?? l.name}|${Number(l.unitPrice)}`;
-    const returnedBySig: Record<string, number> = {};
+    const alreadyReturned: Record<string, number> = {};
+    const legacyBySig: Record<string, number> = {};
     for (const cn of priorReturns)
-      for (const l of cn.lines) returnedBySig[sig(l)] = (returnedBySig[sig(l)] ?? 0) + Number(l.quantity);
-    const returnedQtyByLine: Record<string, number> = {};
+      for (const l of cn.lines) {
+        if (l.sourceLineId) alreadyReturned[l.sourceLineId] = (alreadyReturned[l.sourceLineId] ?? 0) + Number(l.quantity);
+        else legacyBySig[sig(l)] = (legacyBySig[sig(l)] ?? 0) + Number(l.quantity);
+      }
     for (const l of txn.lines) {
-      const avail = returnedBySig[sig(l)] ?? 0;
-      const take = Math.min(avail, Number(l.quantity));
-      returnedQtyByLine[l.id] = take;
-      returnedBySig[sig(l)] = avail - take;
+      const already = alreadyReturned[l.id] ?? 0;
+      const cap = Number(l.quantity) - already;
+      const take = Math.min(Math.max(0, legacyBySig[sig(l)] ?? 0), Math.max(0, cap));
+      alreadyReturned[l.id] = already + take;
+      if (legacyBySig[sig(l)] != null) legacyBySig[sig(l)] -= take;
     }
-    const fullyReturned = (l: { id: string; quantity: Prisma.Decimal | number }) =>
-      (returnedQtyByLine[l.id] ?? 0) >= Number(l.quantity) - 1e-6;
+    const remainingOf = (l: { id: string; quantity: Prisma.Decimal | number }) =>
+      Number(l.quantity) - (alreadyReturned[l.id] ?? 0);
 
-    const partial = !!body?.lineIds?.length;
-    const requested = partial ? txn.lines.filter((l) => body!.lineIds!.includes(l.id)) : txn.lines;
-    const selected = requested.filter((l) => !fullyReturned(l));
-    if (!selected.length) throw new BadRequestException('The selected item(s) have already been returned');
-
+    const lineById = new Map(txn.lines.map((l) => [l.id, l]));
     const cashRefund = body?.cashRefund !== false && body?.mode !== 'EXCHANGE';
     const label = body?.mode === 'EXCHANGE' ? 'Exchange' : 'Return';
-    // Reproduce bill-level discount/charges only for a pristine full return; otherwise refund
-    // the exact sum of the selected line totals (roundOff off so payment == total exactly).
-    const pristineFull = !partial && priorReturns.length === 0 && selected.length === txn.lines.length;
 
-    const lines = selected.map((l) => ({
-      itemId: l.itemId ?? undefined,
-      name: l.name,
-      quantity: Number(l.quantity),
-      unit: l.unit,
-      unitPrice: Number(l.unitPrice),
-      discountAmount: Number(l.discountAmount),
-      taxRate: Number(l.taxRate),
-    }));
+    // Resolve the requested (lineId, quantity) returns.
+    const reqs: { lineId: string; quantity: number }[] = body?.returns?.length
+      ? body.returns
+      : (body?.lineIds?.length ? txn.lines.filter((l) => body!.lineIds!.includes(l.id)) : txn.lines).map((l) => ({
+          lineId: l.id,
+          quantity: remainingOf(l),
+        }));
 
-    let creditNote;
-    if (!pristineFull) {
-      // Sum of stored (2dp) line totals; roundOff off so createTxn's total matches exactly.
-      const refundTotal = selected.reduce((s, l) => s + Number(l.total), 0);
-      creditNote = await this.core.createTxn(businessId, userId, {
-        txnType: 'CREDIT_NOTE',
-        branchId: txn.branchId ?? undefined,
-        partyId: txn.partyId ?? undefined,
-        partyName: txn.partyName ?? undefined,
-        returnAgainstTxnId: txn.id,
-        lines,
-        roundOffEnabled: false,
-        payments: cashRefund ? [{ paymentType: 'CASH', amount: refundTotal }] : [],
-        description: `${label} against ${txn.txnNumber}`,
+    // A pristine full return (no explicit selector, nothing returned yet) reproduces
+    // bill-level discount/charges and refunds the exact invoice total.
+    const noExplicit = !body?.returns?.length && !body?.lineIds?.length;
+    const pristineFull = noExplicit && priorReturns.length === 0;
+
+    // Build credit-note lines at the RETURNED quantity, linked via sourceLineId, with per-line
+    // discount prorated so a partial-quantity return refunds the correct amount.
+    const built: TxnLineInput[] = [];
+    let refundTotal = 0;
+    const newlyReturned: Record<string, number> = {};
+    for (const r of reqs) {
+      const orig = lineById.get(r.lineId);
+      if (!orig) throw new BadRequestException('Item line not found on this invoice');
+      const origQty = Number(orig.quantity);
+      const qty = Number(r.quantity);
+      if (qty <= 0) continue;
+      const remaining = remainingOf(orig) - (newlyReturned[orig.id] ?? 0);
+      if (qty > remaining + 1e-6)
+        throw new BadRequestException(`Cannot return ${qty} of ${orig.name}; only ${Math.max(0, remaining)} remain`);
+      const unitPrice = Number(orig.unitPrice);
+      const taxRate = Number(orig.taxRate);
+      const hasPct = orig.discountPercent != null;
+      const gross = unitPrice * qty;
+      const discount = hasPct ? (gross * Number(orig.discountPercent)) / 100 : Number(orig.discountAmount) * (qty / origQty);
+      const taxable = gross - discount;
+      refundTotal += taxable + (taxable * taxRate) / 100;
+      built.push({
+        itemId: orig.itemId ?? undefined,
+        name: orig.name,
+        quantity: qty,
+        unit: orig.unit,
+        unitPrice,
+        taxRate,
+        ...(hasPct ? { discountPercent: Number(orig.discountPercent) } : { discountAmount: discount }),
+        sourceLineId: orig.id,
       });
-    } else {
-      creditNote = await this.core.createTxn(businessId, userId, {
-        txnType: 'CREDIT_NOTE',
-        branchId: txn.branchId ?? undefined,
-        partyId: txn.partyId ?? undefined,
-        partyName: txn.partyName ?? undefined,
-        returnAgainstTxnId: txn.id,
-        lines,
-        discountPercent: txn.discountPercent != null ? Number(txn.discountPercent) : undefined,
-        discountAmount: txn.discountPercent == null ? Number(txn.discountAmount) : undefined,
-        additionalCharges: (txn.additionalCharges as { name: string; amount: number }[] | null) ?? undefined,
-        payments: body?.payments ?? (cashRefund ? [{ paymentType: 'CASH', amount: Number(txn.total) }] : []),
-        description: `${label} against ${txn.txnNumber}`,
-      });
+      newlyReturned[orig.id] = (newlyReturned[orig.id] ?? 0) + qty;
     }
+    if (!built.length) throw new BadRequestException('Select at least one item and quantity to return');
+    // Floor so the CASH refund never exceeds createTxn's recomputed total.
+    refundTotal = Math.floor(refundTotal * 100) / 100;
 
-    // Mark REFUNDED once every line has been fully returned (this credit note included).
-    const remaining = txn.lines.filter((l) => !fullyReturned(l) && !selected.some((s) => s.id === l.id));
-    if (remaining.length === 0) {
+    const creditNote = await this.core.createTxn(businessId, userId, {
+      txnType: 'CREDIT_NOTE',
+      branchId: txn.branchId ?? undefined,
+      partyId: txn.partyId ?? undefined,
+      partyName: txn.partyName ?? undefined,
+      returnAgainstTxnId: txn.id,
+      lines: built,
+      roundOffEnabled: false,
+      ...(pristineFull
+        ? {
+            discountPercent: txn.discountPercent != null ? Number(txn.discountPercent) : undefined,
+            discountAmount: txn.discountPercent == null ? Number(txn.discountAmount) : undefined,
+            additionalCharges: (txn.additionalCharges as { name: string; amount: number }[] | null) ?? undefined,
+            payments: body?.payments ?? (cashRefund ? [{ paymentType: 'CASH', amount: Number(txn.total) }] : []),
+          }
+        : {
+            payments: cashRefund ? [{ paymentType: 'CASH', amount: refundTotal }] : [],
+          }),
+      description: `${label} against ${txn.txnNumber}`,
+    });
+
+    // Mark REFUNDED once every line's cumulative returned qty reaches purchased qty.
+    const allReturned = txn.lines.every(
+      (l) => (alreadyReturned[l.id] ?? 0) + (newlyReturned[l.id] ?? 0) >= Number(l.quantity) - 1e-6,
+    );
+    if (allReturned) {
       await this.core.prisma.txn.update({ where: { id }, data: { status: 'REFUNDED' } });
     }
     return creditNote;
@@ -216,14 +251,22 @@ export class SaleService {
     businessId: string,
     userId: string,
     id: string,
-    body: { lineIds?: string[]; replacements: { itemId: string; quantity: number }[] },
+    body: {
+      lineIds?: string[];
+      returns?: { lineId: string; quantity: number }[];
+      replacements: { itemId: string; quantity: number }[];
+    },
   ) {
     if (!body.replacements?.length) throw new BadRequestException('Select at least one replacement item');
     const txn = await this.core.getTxn(businessId, id);
     if (txn.txnType !== 'SALE_INVOICE') throw new BadRequestException('Not a sale invoice');
 
-    // 1. Return the selected items for cash.
-    const creditNote = await this.refundInvoice(businessId, userId, id, { lineIds: body.lineIds, mode: 'REFUND' });
+    // 1. Return the selected quantities for cash.
+    const creditNote = await this.refundInvoice(businessId, userId, id, {
+      returns: body.returns,
+      lineIds: body.lineIds,
+      mode: 'REFUND',
+    });
 
     // 2. Ring up the replacement items as a new fully-paid sale.
     const items = await this.core.prisma.item.findMany({
