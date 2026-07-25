@@ -44,6 +44,15 @@
   generatePayroll(+branchId) filters employees to that branch (one run) when provided, else business-wide.
   api+web typecheck green.
 
+- R35 (partial refund + exchange) PASS: partial "didn't work" because return-dialog pre-checked ALL lines
+  (checked=return), so selecting one item -> allSelected -> full refund. Fixed: selection now starts EMPTY
+  (tick = return this item); only when literally all lines are ticked does it omit lineIds (full). Exchange now
+  has a real replacement picker: step 'items' -> "Exchange ->" -> step 'replace' (search /items catalog, add
+  qty, shows returning R / new N / difference "customer pays"/"refund") -> POST /sale/invoices/:id/exchange.
+  Backend exchangeInvoice: cash-refunds selected items (reuse refundInvoice partial) + creates a fully-paid
+  replacement SALE_INVOICE (unitPrice/taxRate from item, total computed backend-side, CASH payment floored to
+  <= total so no paidAmount>total throw). Both sides update inventory via the txn engine. api+web typecheck green.
+
 ## Batch 3 (2026-07-25) — reported issues R26-R31. Same validate (api+web typecheck). Deployed via Vercel CLI
 ## from repo ROOT per project (apps/web=vyaapar-web, apps/api=vyaapar-api; Root Directory set on each project, so
 ## deploying from the app dir fails with apps/web/apps/web). API build auto-runs prisma db push.

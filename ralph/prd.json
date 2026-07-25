@@ -213,7 +213,7 @@
       "id": "R35",
       "title": "Fix partial refund (selection UX) + Exchange with replacement-item picker",
       "priority": 35,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/components/pos/return-dialog.tsx", "apps/api/src/sale/sale.service.ts", "apps/api/src/sale/sale.controller.ts"],
       "accept": "Partial refund reliably works: the return dialog starts with NO items selected (checked = 'return this item'), so choosing specific items sends lineIds and refunds only those. Exchange lets the user CHOOSE replacement item(s): a replacement picker feeds a backend exchangeInvoice that cash-refunds the returned items AND creates a fully-paid replacement SALE_INVOICE (deterministic backend-computed totals). Inventory updates for both sides."
     },

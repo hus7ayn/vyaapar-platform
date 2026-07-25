@@ -67,6 +67,17 @@ export class SaleController {
     return this.sale.refundInvoice(businessId, userId, id, body);
   }
 
+  @Post('invoices/:id/exchange')
+  @RequirePermissions(Permission.POS_REFUND)
+  exchange(
+    @CurrentUser('businessId') businessId: string,
+    @CurrentUser('sub') userId: string,
+    @Param('id') id: string,
+    @Body() body: { lineIds?: string[]; replacements: { itemId: string; quantity: number }[] },
+  ) {
+    return this.sale.exchangeInvoice(businessId, userId, id, body);
+  }
+
   // Credit notes (sale returns)
   @Get('credit-notes')
   @RequirePermissions(Permission.POS_SELL)

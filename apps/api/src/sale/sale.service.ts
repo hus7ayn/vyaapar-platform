@@ -182,6 +182,54 @@ export class SaleService {
     return creditNote;
   }
 
+  /**
+   * Exchange: cash-refund the selected returned items, then ring up chosen
+   * replacement items as a new fully-paid sale. Net cash = new sale total minus
+   * refund. Totals are computed on the backend so the sale is deterministically paid.
+   */
+  async exchangeInvoice(
+    businessId: string,
+    userId: string,
+    id: string,
+    body: { lineIds?: string[]; replacements: { itemId: string; quantity: number }[] },
+  ) {
+    if (!body.replacements?.length) throw new BadRequestException('Select at least one replacement item');
+    const txn = await this.core.getTxn(businessId, id);
+    if (txn.txnType !== 'SALE_INVOICE') throw new BadRequestException('Not a sale invoice');
+
+    // 1. Return the selected items for cash.
+    const creditNote = await this.refundInvoice(businessId, userId, id, { lineIds: body.lineIds, mode: 'REFUND' });
+
+    // 2. Ring up the replacement items as a new fully-paid sale.
+    const items = await this.core.prisma.item.findMany({
+      where: { id: { in: body.replacements.map((r) => r.itemId) }, businessId },
+    });
+    const itemMap = new Map(items.map((i) => [i.id, i]));
+    let total = 0;
+    const lines = body.replacements.map((r) => {
+      const item = itemMap.get(r.itemId);
+      if (!item) throw new BadRequestException('Replacement item not found');
+      const unitPrice = Number(item.salePrice);
+      const taxRate = Number(item.taxRate);
+      const qty = Number(r.quantity) || 1;
+      total += unitPrice * qty * (1 + taxRate / 100);
+      return { itemId: item.id, name: item.name, quantity: qty, unit: item.baseUnit, unitPrice, taxRate };
+    });
+    // Floor so the CASH payment never exceeds createTxn's computed total (no paidAmount>total error).
+    const paid = Math.floor(total * 100) / 100;
+    const sale = await this.core.createTxn(businessId, userId, {
+      txnType: 'SALE_INVOICE',
+      branchId: txn.branchId ?? undefined,
+      partyId: txn.partyId ?? undefined,
+      partyName: txn.partyName ?? undefined,
+      lines,
+      roundOffEnabled: false,
+      payments: [{ paymentType: 'CASH', amount: paid }],
+      description: `Exchange for ${txn.txnNumber}`,
+    });
+    return { creditNote, sale };
+  }
+
   // ─── Credit Notes (Sale Return) ────────────────────────────────────────────
 
   createCreditNote(businessId: string, userId: string, body: SaleBody) {
