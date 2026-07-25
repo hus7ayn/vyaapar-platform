@@ -5,19 +5,35 @@
 
 export type LabelField = 'name' | 'category' | 'size' | 'colour' | 'sku' | 'mrp' | 'price' | 'barcode' | 'barcodeNumber';
 
+export type LabelAlign = 'left' | 'center' | 'right';
+
 export interface FieldSpec {
   show: boolean;
   xMm: number;   // left offset within the label
   yMm: number;   // top offset within the label
   fontPt: number;
   bold: boolean;
+  align?: LabelAlign;
+}
+
+// A user-added free-text element (add/remove your own labels, prices notes, shop name, etc.).
+export interface CustomElement {
+  id: string;
+  text: string;
+  xMm: number;
+  yMm: number;
+  fontPt: number;
+  bold: boolean;
+  align?: LabelAlign;
 }
 
 export interface LabelConfig {
   fields: Record<LabelField, FieldSpec>;
+  custom: CustomElement[];
   widthMm: number;
   heightMm: number;
   barcodeHeightMm: number; // rendered height of the barcode image
+  barcodeWidthMm?: number; // rendered width of the barcode image (0/undefined = auto)
 }
 
 export const LABEL_FIELDS: LabelField[] = ['name', 'category', 'size', 'colour', 'sku', 'mrp', 'price', 'barcode', 'barcodeNumber'];
@@ -58,9 +74,11 @@ export const DEFAULT_LABEL_CONFIG: LabelConfig = {
     barcode: F(true, 2, 10.5, 8, false),
     barcodeNumber: F(false, 2, 22, 6, false),
   },
+  custom: [],
   widthMm: 50,
   heightMm: 25,
   barcodeHeightMm: 11,
+  barcodeWidthMm: 0,
 };
 
 const STORAGE_KEY = 'msw-label-config';
@@ -82,12 +100,27 @@ export function loadLabelConfig(): LabelConfig {
     for (const f of LABEL_FIELDS) {
       fields[f] = normalizeField(DEFAULT_LABEL_CONFIG.fields[f], parsed.fields?.[f]);
     }
+    const custom = Array.isArray(parsed.custom)
+      ? (parsed.custom as unknown[])
+          .filter((c): c is Partial<CustomElement> => !!c && typeof c === 'object' && 'text' in (c as object))
+          .map((c, i): CustomElement => ({
+            id: typeof c.id === 'string' ? c.id : `c${i}`,
+            text: typeof c.text === 'string' ? c.text : '',
+            xMm: typeof c.xMm === 'number' ? c.xMm : 2,
+            yMm: typeof c.yMm === 'number' ? c.yMm : 2,
+            fontPt: typeof c.fontPt === 'number' ? c.fontPt : 8,
+            bold: !!c.bold,
+            align: c.align ?? 'left',
+          }))
+      : [];
     return {
       ...DEFAULT_LABEL_CONFIG,
       widthMm: typeof parsed.widthMm === 'number' ? parsed.widthMm : DEFAULT_LABEL_CONFIG.widthMm,
       heightMm: typeof parsed.heightMm === 'number' ? parsed.heightMm : DEFAULT_LABEL_CONFIG.heightMm,
       barcodeHeightMm: typeof parsed.barcodeHeightMm === 'number' ? parsed.barcodeHeightMm : DEFAULT_LABEL_CONFIG.barcodeHeightMm,
+      barcodeWidthMm: typeof parsed.barcodeWidthMm === 'number' ? parsed.barcodeWidthMm : DEFAULT_LABEL_CONFIG.barcodeWidthMm,
       fields,
+      custom,
     };
   } catch {
     return DEFAULT_LABEL_CONFIG;

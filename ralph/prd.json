@@ -622,6 +622,31 @@
         "apps/web/src/app/(app)/hotel/page.tsx"
       ],
       "accept": "Checkout dialog offers Single | Split mode. Split lets staff add/remove rows {method,amount,bankAccountId?}; per-row method select (Cash/Card/UPI/Bank Transfer) + conditional bank picker; live 'remaining = pendingDues - sum(rows)'; checkout enabled only when the rows sum to pendingDues. Submits settle { payments: rows }. Single-mode 'Bank' relabeled 'Bank Transfer' (maps to BANK). The Print Bill shows a 'Paid via: <method> <amount>' block from the reservation's folioPayments. Reports show each method as its own cash-flow line."
+    },
+    {
+      "id": "R57",
+      "title": "Barcode label designer: bigger workspace + zoom, resize handles, add/remove custom text, alignment",
+      "priority": 57,
+      "status": "pass",
+      "files": [
+        "apps/web/src/lib/label-config.ts",
+        "apps/web/src/components/settings/label-designer-card.tsx",
+        "apps/web/src/lib/print-tags.ts"
+      ],
+      "accept": "The label designer has a much larger, zoomable workspace; every element is drag-to-move AND has a drag resize handle (font size for text, height/width for the barcode); users can add and remove their own free-text elements and set per-element alignment. Config schema gains align + custom[] + barcodeWidthMm (localStorage, back-compat normalized). print-tags renders alignment, custom text, and barcode width."
+    },
+    {
+      "id": "R58",
+      "title": "Bill/thermal designer: larger visual canvas, drag-reorder, per-section font/align/show, add/remove custom lines",
+      "priority": 58,
+      "status": "todo",
+      "files": [
+        "apps/api/prisma/schema.prisma",
+        "apps/api/src/settings/settings.service.ts",
+        "apps/api/src/receipts/receipts.service.ts",
+        "apps/web/src/components/settings/thermal-format-card.tsx"
+      ],
+      "accept": "The thermal bill editor becomes a larger visual designer: drag to reorder sections, per-section font size + alignment + show/hide, and add/remove custom text lines (header/footer notes). receiptLayout (Json) extended with per-section font/align + custom lines; receipts.service.generateThermal renders them; back-compat with the old {fontPx, sections} shape."
     }
   ]
 }

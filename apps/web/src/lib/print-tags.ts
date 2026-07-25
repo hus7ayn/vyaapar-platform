@@ -48,16 +48,23 @@ export function printBarcodeTags(tags: TagSpec[], config: LabelConfig = loadLabe
           const val = labelFieldText(f, t);
           if (!val) return '';
           const s = config.fields[f];
-          return `<div class="fld" style="left:${s.xMm}mm;top:${s.yMm}mm;font-size:${s.fontPt}px;font-weight:${s.bold ? 700 : 400}">${escapeHtml(val)}</div>`;
+          return `<div class="fld" style="left:${s.xMm}mm;top:${s.yMm}mm;font-size:${s.fontPt}px;font-weight:${s.bold ? 700 : 400};text-align:${s.align ?? 'left'}">${escapeHtml(val)}</div>`;
         })
         .join('');
 
+      // User-added free-text elements.
+      const customEls = (config.custom ?? [])
+        .filter((el) => (el.text ?? '').trim())
+        .map((el) => `<div class="fld" style="left:${el.xMm}mm;top:${el.yMm}mm;font-size:${el.fontPt}px;font-weight:${el.bold ? 700 : 400};text-align:${el.align ?? 'left'}">${escapeHtml(el.text)}</div>`)
+        .join('');
+
       const bc = config.fields.barcode;
+      const bw = config.barcodeWidthMm && config.barcodeWidthMm > 0 ? `width:${config.barcodeWidthMm}mm;` : '';
       const barcodeEl = bc?.show
-        ? `<img src="${t.dataUrl}" alt="${escapeHtml(t.barcode)}" style="left:${bc.xMm}mm;top:${bc.yMm}mm;height:${config.barcodeHeightMm}mm" />`
+        ? `<img src="${t.dataUrl}" alt="${escapeHtml(t.barcode)}" style="left:${bc.xMm}mm;top:${bc.yMm}mm;height:${config.barcodeHeightMm}mm;${bw}" />`
         : '';
 
-      const tag = `<div class="tag">${textEls}${barcodeEl}</div>`;
+      const tag = `<div class="tag">${textEls}${customEls}${barcodeEl}</div>`;
       return tag.repeat(count);
     })
     .join('');
