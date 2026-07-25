@@ -22,6 +22,7 @@ interface Item {
   itemType: ItemType;
   sku: string;
   barcode?: string | null;
+  size?: string | null;
   hsnCode?: string | null;
   description?: string | null;
   salePrice: string | number;
@@ -101,6 +102,7 @@ interface ItemForm {
   categoryId: string;
   sku: string;
   barcode: string;
+  size: string;
   hsnCode: string;
   salePrice: string;
   purchasePrice: string;
@@ -121,6 +123,7 @@ const EMPTY_FORM: ItemForm = {
   categoryId: '',
   sku: '',
   barcode: '',
+  size: '',
   hsnCode: '',
   salePrice: '',
   purchasePrice: '',
@@ -155,6 +158,7 @@ export default function ItemsPage() {
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'PRODUCT' | 'SERVICE'>('ALL');
+  const [sizeFilter, setSizeFilter] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<'transactions' | 'adjustments'>('transactions');
 
@@ -171,9 +175,10 @@ export default function ItemsPage() {
   const listQs = new URLSearchParams();
   if (search) listQs.set('search', search);
   if (typeFilter !== 'ALL') listQs.set('type', typeFilter);
+  if (sizeFilter) listQs.set('size', sizeFilter);
 
   const { data: items, isLoading } = useQuery({
-    queryKey: ['items', search, typeFilter],
+    queryKey: ['items', search, typeFilter, sizeFilter],
     queryFn: () => api<Item[]>(`/items?${listQs.toString()}`, { token }),
     enabled: !!token,
   });
@@ -224,6 +229,7 @@ export default function ItemsPage() {
         categoryId: form.categoryId || undefined,
         sku: form.sku || undefined,
         barcode: editingItem ? (form.barcode.trim() || null) : (form.barcode || undefined),
+        size: form.size.trim() || (editingItem ? null : undefined),
         hsnCode: form.hsnCode || undefined,
         salePrice: num(form.salePrice),
         purchasePrice: num(form.purchasePrice),
@@ -307,6 +313,7 @@ export default function ItemsPage() {
       categoryId: i.category?.id ?? '',
       sku: i.sku ?? '',
       barcode: i.barcode ?? '',
+      size: i.size ?? '',
       hsnCode: i.hsnCode ?? '',
       salePrice: String(i.salePrice ?? ''),
       purchasePrice: String(i.purchasePrice ?? ''),
@@ -391,6 +398,17 @@ export default function ItemsPage() {
               </button>
             ))}
           </div>
+          <select
+            className="text-xs rounded-md border px-2 py-1.5 bg-white"
+            value={sizeFilter}
+            onChange={(e) => setSizeFilter(e.target.value)}
+            title="Filter by size"
+          >
+            <option value="">All sizes</option>
+            {['S', 'M', 'L', 'XL', 'XXL', '28', '30', '32', '34', '36', '38', '40'].map((s) => (
+              <option key={s} value={s}>Size {s}</option>
+            ))}
+          </select>
         </div>
         <div className="overflow-y-auto flex-1">
           {isLoading && <p className="text-center py-8 text-sm text-muted-foreground">Loading…</p>}
@@ -440,6 +458,7 @@ export default function ItemsPage() {
                   <tr className="text-xs text-muted-foreground border-b bg-slate-50">
                     <th className="px-3 py-2 text-left">NAME</th>
                     <th className="px-3 py-2 text-left">SKU</th>
+                    <th className="px-3 py-2 text-left">SIZE</th>
                     <th className="px-3 py-2 text-left">BARCODE</th>
                     <th className="px-3 py-2 text-right">SALE</th>
                     <th className="px-3 py-2 text-right">COST</th>
@@ -450,10 +469,10 @@ export default function ItemsPage() {
                 </thead>
                 <tbody>
                   {isLoading && (
-                    <tr><td colSpan={8} className="text-center py-10 text-muted-foreground">Loading…</td></tr>
+                    <tr><td colSpan={9} className="text-center py-10 text-muted-foreground">Loading…</td></tr>
                   )}
                   {!isLoading && list.length === 0 && (
-                    <tr><td colSpan={8} className="text-center py-10 text-muted-foreground">No items yet. Add your first item to get started.</td></tr>
+                    <tr><td colSpan={9} className="text-center py-10 text-muted-foreground">No items yet. Add your first item to get started.</td></tr>
                   )}
                   {list.map((i) => {
                     const cost = Number(i.costPrice) || Number(i.purchasePrice);
@@ -461,6 +480,7 @@ export default function ItemsPage() {
                     <tr key={i.id} className="border-b last:border-0 hover:bg-red-50/40 cursor-pointer" onClick={() => setSelectedId(i.id)}>
                       <td className="px-3 py-2 font-medium">{i.name}</td>
                       <td className="px-3 py-2">{i.sku || '—'}</td>
+                      <td className="px-3 py-2">{i.size || '—'}</td>
                       <td className="px-3 py-2 font-mono text-xs">{i.barcode ?? '—'}</td>
                       <td className="px-3 py-2 text-right">{formatMoney(i.salePrice)}</td>
                       <td className="px-3 py-2 text-right">{formatMoney(cost)}</td>
@@ -491,7 +511,7 @@ export default function ItemsPage() {
                     </span>
                   </div>
                   <div className="text-sm text-muted-foreground space-y-0.5">
-                    <p>SKU: {selected.sku || '—'}</p>
+                    <p>SKU: {selected.sku || '—'}{selected.size ? ` · Size: ${selected.size}` : ''}</p>
                     {selected.category && <p>Category: {selected.category.name}</p>}
                     <p>Unit: {selected.baseUnit}{selected.hsnCode ? ` · HSN: ${selected.hsnCode}` : ''}</p>
                     {selected.location && <p>Location: {selected.location}</p>}
@@ -595,10 +615,10 @@ export default function ItemsPage() {
                   </thead>
                   <tbody>
                     {txnsLoading && (
-                      <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">Loading…</td></tr>
+                      <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Loading…</td></tr>
                     )}
                     {!txnsLoading && !(itemTxns ?? []).length && (
-                      <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No transactions for this item yet</td></tr>
+                      <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">No transactions for this item yet</td></tr>
                     )}
                     {(itemTxns ?? []).map((l) => {
                       const meta = TXN_META[l.txn.txnType];
@@ -738,6 +758,15 @@ export default function ItemsPage() {
                 <div>
                   <label className="text-xs font-medium text-muted-foreground">HSN Code</label>
                   <Input value={form.hsnCode} onChange={(e) => set({ hsnCode: e.target.value })} placeholder="HSN/SAC" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Size</label>
+                  <Input value={form.size} onChange={(e) => set({ size: e.target.value })} placeholder="e.g. S, M, L, XL, 32" list="size-presets" />
+                  <datalist id="size-presets">
+                    {['S', 'M', 'L', 'XL', 'XXL', '28', '30', '32', '34', '36', '38', '40'].map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
             </div>
