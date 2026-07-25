@@ -217,7 +217,7 @@ export class HotelController {
   addFolioPayment(
     @CurrentUser('businessId') businessId: string,
     @Param('id') id: string,
-    @Body() body: { method: string; amount: number; reference?: string },
+    @Body() body: { method: string; amount: number; reference?: string; bankAccountId?: string },
   ) {
     return this.hotel.addFolioPayment(businessId, id, body);
   }

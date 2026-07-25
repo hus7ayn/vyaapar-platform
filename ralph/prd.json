@@ -197,7 +197,7 @@
       "id": "R33",
       "title": "Payment method + bank account at hotel check-out / guest payment",
       "priority": 33,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/web/src/app/(app)/hotel/page.tsx", "apps/api/src/hotel/hotel.service.ts", "apps/api/src/hotel/hotel.controller.ts", "apps/api/prisma/schema.prisma"],
       "accept": "The Record Guest Payment / checkout flow lets the user choose a payment method (Cash/Bank/UPI/Card) and a bank account for non-cash; addFolioPayment threads paymentType + bankAccountId into the txnCore PAYMENT_IN (so it lands in the right cash/bank account) instead of hardcoding CASH. FolioPayment stores the chosen bankAccountId."
     },

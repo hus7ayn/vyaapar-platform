@@ -28,6 +28,13 @@
   first hotel when none; room query gated enabled:!!branchId; added a Property <select> when >1 hotel (clears the
   picked room on switch). Mirrors dashboard/services/categories. web typecheck green.
 
+- R33 (checkout payment method) PASS: the Record Guest Payment form hardcoded method:CASH with no bank picker.
+  Added FolioPayment.bankAccountId (prisma generate; db push on deploy). addFolioPayment now accepts+stores
+  bankAccountId and passes {paymentType, bankAccountId} to the txnCore PAYMENT_IN (routes to the right cash/bank
+  account via resolveMoneyAccount). Controller body extended. Web hotel/page.tsx: added payment-method select
+  (Cash/Bank/UPI/Card) + a bank-account select (non-cash, fed by /cash-bank/accounts, excludes CASH accounts),
+  validation requiring a bank when non-cash; mutation sends method+bankAccountId. api+web typecheck green.
+
 ## Batch 3 (2026-07-25) — reported issues R26-R31. Same validate (api+web typecheck). Deployed via Vercel CLI
 ## from repo ROOT per project (apps/web=vyaapar-web, apps/api=vyaapar-api; Root Directory set on each project, so
 ## deploying from the app dir fails with apps/web/apps/web). API build auto-runs prisma db push.

@@ -948,6 +948,7 @@ model FolioPayment {
   businessId    String   @map("business_id")
   reservationId String   @map("reservation_id")
   method        String   @default("CASH")
+  bankAccountId String?  @map("bank_account_id")
   amount        Decimal  @db.Decimal(12, 2)
   reference     String?
   createdAt     DateTime @default(now()) @map("created_at")

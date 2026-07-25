@@ -670,13 +670,13 @@ export class HotelService {
     });
   }
 
-  async addFolioPayment(businessId: string, reservationId: string, data: { method: string; amount: number; reference?: string }) {
+  async addFolioPayment(businessId: string, reservationId: string, data: { method: string; amount: number; reference?: string; bankAccountId?: string }) {
     const reservation = await this.prisma.reservation.findFirst({ where: { id: reservationId, businessId } });
     if (!reservation) throw new NotFoundException('Reservation not found');
 
     await this.prisma.$transaction(async (tx) => {
       await tx.folioPayment.create({
-        data: { businessId, reservationId, method: data.method, amount: data.amount, reference: data.reference },
+        data: { businessId, reservationId, method: data.method, bankAccountId: data.bankAccountId ?? null, amount: data.amount, reference: data.reference },
       });
       await tx.reservation.update({
         where: { id: reservationId },
@@ -690,7 +690,7 @@ export class HotelService {
       txnType: 'PAYMENT_IN',
       branchId: reservation.branchId ?? undefined,
       total: data.amount,
-      payments: [{ paymentType: data.method, amount: data.amount, referenceNo: data.reference }],
+      payments: [{ paymentType: data.method, bankAccountId: data.bankAccountId, amount: data.amount, referenceNo: data.reference }],
       description: `Folio payment for booking ${reservation.bookingRef}`,
     });
 

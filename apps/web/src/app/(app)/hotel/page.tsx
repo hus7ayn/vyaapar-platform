@@ -107,6 +107,14 @@ export default function HotelPage() {
   const [checkoutDialogOpen, setCheckoutDialogOpen] = useState(false);
   const [newChargeForm, setNewChargeForm] = useState({ description: '', amount: '' });
   const [newPaymentAmount, setNewPaymentAmount] = useState('');
+  const [newPaymentMethod, setNewPaymentMethod] = useState('CASH');
+  const [newPaymentBankId, setNewPaymentBankId] = useState('');
+
+  const { data: bankAccounts } = useQuery({
+    queryKey: ['bank-accounts'],
+    queryFn: () => api<Array<{ id: string; name: string; accountType: string }>>('/cash-bank/accounts', { token }),
+    enabled: !!token,
+  });
 
   // Availability Finder State
   const [availCheckIn, setAvailCheckIn] = useState(new Date().toISOString().split('T')[0]);
@@ -279,11 +287,11 @@ export default function HotelPage() {
   });
 
   const updatePaymentMutation = useMutation({
-    mutationFn: async (data: { id: string; amount: number }) =>
+    mutationFn: async (data: { id: string; amount: number; method: string; bankAccountId?: string }) =>
       api<any>(`/hotel/reservations/${data.id}/payments`, {
         method: 'POST',
         token,
-        body: JSON.stringify({ method: 'CASH', amount: data.amount }),
+        body: JSON.stringify({ method: data.method, amount: data.amount, bankAccountId: data.bankAccountId }),
       }),
     onSuccess: (updatedRes, variables) => {
       queryClient.invalidateQueries({ queryKey: ['reservations', selectedBranchId] });
@@ -291,6 +299,8 @@ export default function HotelPage() {
       queryClient.invalidateQueries({ queryKey: ['hotel-profit', selectedBranchId] });
       toast.success('Payment recorded successfully');
       setNewPaymentAmount('');
+      setNewPaymentMethod('CASH');
+      setNewPaymentBankId('');
       if (checkoutReservation && checkoutReservation.id === variables.id && updatedRes) {
         setCheckoutReservation(updatedRes);
       }
@@ -1169,14 +1179,41 @@ export default function HotelPage() {
                       e.preventDefault();
                       const payVal = parseFloat(newPaymentAmount || '0');
                       if (payVal <= 0) return;
+                      if (newPaymentMethod !== 'CASH' && !newPaymentBankId) { toast.error('Select a bank account'); return; }
                       updatePaymentMutation.mutate({
                         id: checkoutReservation.id,
                         amount: payVal,
+                        method: newPaymentMethod,
+                        bankAccountId: newPaymentMethod !== 'CASH' ? newPaymentBankId : undefined,
                       });
                     }}
                     className="p-3 bg-muted/40 rounded-lg border border-white/5 space-y-2"
                   >
                     <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">Record Guest Payment</span>
+                    <div className="flex gap-2">
+                      <select
+                        className="rounded-lg border px-2 py-1.5 bg-background text-xs shrink-0"
+                        value={newPaymentMethod}
+                        onChange={(e) => setNewPaymentMethod(e.target.value)}
+                      >
+                        <option value="CASH">Cash</option>
+                        <option value="BANK">Bank</option>
+                        <option value="UPI">UPI</option>
+                        <option value="CARD">Card</option>
+                      </select>
+                      {newPaymentMethod !== 'CASH' && (
+                        <select
+                          className="rounded-lg border px-2 py-1.5 bg-background text-xs shrink-0 max-w-[40%]"
+                          value={newPaymentBankId}
+                          onChange={(e) => setNewPaymentBankId(e.target.value)}
+                        >
+                          <option value="">Bank account…</option>
+                          {(bankAccounts ?? []).filter((a) => a.accountType !== 'CASH').map((a) => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
                     <div className="flex gap-2">
                       <div className="relative flex-1">
                         <span className="absolute left-3 top-2 text-xs text-muted-foreground">₹</span>
