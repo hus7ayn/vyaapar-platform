@@ -26,6 +26,8 @@ interface DashboardData {
   monthInvoices: number;
   monthExpense: number;
   monthSalary?: number;
+  monthHotelRevenue?: number;
+  todayHotelRevenue?: number;
   netRevenue?: number;
   totalReceivable: number;
   totalPayable: number;
@@ -167,6 +169,9 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border shadow-sm p-4 space-y-2 text-sm">
             <p className="font-semibold">This Month</p>
             <div className="flex justify-between"><span className="text-muted-foreground">Sale</span><span className="font-semibold">{formatMoney(data?.monthSale ?? 0)}</span></div>
+            {(data?.monthHotelRevenue ?? 0) > 0 && (
+              <div className="flex justify-between"><span className="text-muted-foreground">Hotel Revenue</span><span className="font-semibold text-blue-700">{formatMoney(data!.monthHotelRevenue!)}</span></div>
+            )}
             <div className="flex justify-between"><span className="text-muted-foreground">Expenses</span><span className="font-semibold text-red-600">{formatMoney(data?.monthExpense ?? 0)}</span></div>
             {(data?.monthSalary ?? 0) > 0 && (
               <div className="flex justify-between"><span className="text-muted-foreground">Staff Salary (paid)</span><span className="font-semibold text-red-600">{formatMoney(data!.monthSalary!)}</span></div>

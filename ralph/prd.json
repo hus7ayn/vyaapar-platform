@@ -484,6 +484,144 @@
         "apps/api/src/reports/reports.service.ts"
       ],
       "accept": "balanceSheet() balances (assets == liabilities + equity within rounding) even though equity's retained earnings now include hotel revenue (R37). Add a hotel dues receivable asset = sum over CHECKED_OUT reservations of max(0, totalAmount + extraCharges - paidAmount), so accrued-but-uncollected hotel revenue is represented on the asset side matching the retained-earnings it produced. Collected hotel revenue is already reflected in cash/bank via PAYMENT_IN txns."
+    },
+    {
+      "id": "R44",
+      "title": "/reports/hotel (+pnl/balance-sheet/trial-balance) honor ?branchId query",
+      "priority": 44,
+      "status": "pass",
+      "files": [
+        "apps/api/src/reports/reports.controller.ts"
+      ],
+      "accept": "The hotel report endpoint reads branchId from @Query('branchId') falling back to @CurrentUser('branchId'), like every /hotel/* endpoint. ROOT CAUSE of 'hotel revenue shows zero everywhere': the hotel dashboard requests /reports/hotel?branchId=<hotel> but the controller only read the resolved x-branch-id header (global active SHOP), so hotelReport was scoped to a non-hotel branch => 0 rooms/reservations/revenue. Apply the same to pnl/trial-balance/balance-sheet controllers so hotel numbers scope correctly."
+    },
+    {
+      "id": "R45",
+      "title": "Hotel dashboard passes branchId to api() + real-time refetch; drop dead invalidations",
+      "priority": 45,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/hotel/dashboard/page.tsx",
+        "apps/web/src/app/(app)/hotel/page.tsx"
+      ],
+      "accept": "hotel/dashboard passes { branchId: selectedBranchId } as an api() option (so x-branch-id header targets the hotel branch; api.ts never derives it from the query string) for /reports/hotel, revenue-metrics and reservations; uses refetchOnMount:'always' and a modest refetchInterval so KPIs are near real-time. hotel/page.tsx removes the dead ['hotel-profit'] invalidations and also invalidates ['dashboard'] and ['report'] after checkout/payment/cancel so Home + reports refresh without a manual reload."
+    },
+    {
+      "id": "R46",
+      "title": "expenses.create injects resolved branchId so hotel expenses count in profit",
+      "priority": 46,
+      "status": "pass",
+      "files": [
+        "apps/api/src/expenses/expenses.service.ts",
+        "apps/api/src/expenses/expenses.controller.ts"
+      ],
+      "accept": "When an expense is created without an explicit branchId, the resolved branchId (CurrentUser branchId) is set so hotel-branch expenses aren't saved null. Today null-branch hotel expenses are excluded from hotelReport.expensesIn and branch-scoped P&L, understating hotel cost/profit. Existing explicit-branch callers unchanged."
+    },
+    {
+      "id": "R47",
+      "title": "Home dashboard includes a hotel revenue block",
+      "priority": 47,
+      "status": "pass",
+      "files": [
+        "apps/api/src/reports/reports.service.ts",
+        "apps/web/src/app/(app)/dashboard/page.tsx"
+      ],
+      "accept": "reports.dashboard() returns monthHotelRevenue/todayHotelRevenue (billed: CHECKED_OUT reservations' totalAmount+extraCharges bucketed by checkedOutAt, branch-scoped) and folds hotel revenue into netRevenue; the Home dashboard shows a Hotel Revenue figure. Double-count-safe: PAYMENT_IN folio txns are NOT counted as sales. Shop-only businesses see zero hotel (no behavior change)."
+    },
+    {
+      "id": "R48",
+      "title": "[schema] TxnLine.sourceLineId self-link + thread through txn-core",
+      "priority": 48,
+      "status": "todo",
+      "files": [
+        "apps/api/prisma/schema.prisma",
+        "apps/api/src/txns/txn-core.service.ts"
+      ],
+      "accept": "Add nullable TxnLine.sourceLineId (@map source_line_id) with self-relation (sourceLine/returnLines) + @@index; additive, db push safe, legacy rows null. TxnLineInput gains sourceLineId?; buildLines copies it into the created line; applyStock/computeTotals unchanged (they key off per-line quantity, so a reduced qty yields correct stock + totals). prisma generate succeeds; typecheck green."
+    },
+    {
+      "id": "R49",
+      "title": "[backend] refundInvoice partial-quantity + exact over-return cap; exchange forwards returns",
+      "priority": 49,
+      "status": "todo",
+      "files": [
+        "apps/api/src/sale/sale.service.ts",
+        "apps/api/src/sale/sale.controller.ts"
+      ],
+      "accept": "refundInvoice accepts returns:[{lineId,quantity}] (lineIds still accepted => full remaining qty). alreadyReturned per line computed EXACTLY by summing prior credit-note line quantities grouped by sourceLineId (signature fallback for legacy null rows). Reject quantity<=0 or quantity>(purchased-alreadyReturned) with a clear message. Credit-note lines built with the RETURNED quantity + sourceLineId; flat line discount prorated (discountAmount*qty/origQty) or discountPercent passed through; refund=floor2(sum recomputed returned-line totals) so it never exceeds createTxn total. Mark REFUNDED only when every line fully returned. exchangeInvoice forwards returns into refundInvoice. Stock restored for returned qty only (CREDIT_NOTE inverts). Two identical item+price lines capped independently."
+    },
+    {
+      "id": "R50",
+      "title": "[backend] getTxn exposes per-line purchased + already-returned qty",
+      "priority": 50,
+      "status": "todo",
+      "files": [
+        "apps/api/src/txns/txn-core.service.ts"
+      ],
+      "accept": "getTxn returns, per invoice line, the already-returned quantity (via returns.include lines.select sourceLineId/quantity, or a computed returnedQty map) so the return dialog can cap each picker at purchased-returned. Additive to the shared payload; no renamed fields; typecheck green."
+    },
+    {
+      "id": "R51",
+      "title": "[frontend] Per-line return quantity picker (return N of M)",
+      "priority": 51,
+      "status": "todo",
+      "files": [
+        "apps/web/src/components/pos/return-dialog.tsx"
+      ],
+      "accept": "Return dialog replaces the whole-line checkbox with a per-line quantity input (default 0) capped at remaining = purchased - alreadyReturned (from getTxn), plus a 'return all remaining' quick action. returnedTotal computed from unitPrice*qty*(1+tax/100) discount-prorated. Refund body { mode:'REFUND', returns:[{lineId,quantity}] } (rows with qty>0); exchange body { returns, replacements }. Submit disabled when nothing selected or any qty exceeds max. Buying 2 and returning 1 works end to end (stock +1, refund for 1)."
+    },
+    {
+      "id": "R52",
+      "title": "[schema] Item.size + persistence/search/filter in items service",
+      "priority": 52,
+      "status": "todo",
+      "files": [
+        "apps/api/prisma/schema.prisma",
+        "apps/api/src/items/items.service.ts"
+      ],
+      "accept": "Add nullable Item.size (@map size) + @@index([businessId,size]); additive, db push safe. ItemInput gains size?; create/update persist trimmed size (null when blank); list() adds size to the search OR-clause and an optional exact ?size= filter; posCatalog rows carry size automatically. prisma generate + typecheck green."
+    },
+    {
+      "id": "R53",
+      "title": "[frontend] Size in Add/Edit Item form, inventory list/detail, and filter",
+      "priority": 53,
+      "status": "todo",
+      "files": [
+        "apps/web/src/app/(app)/items/page.tsx"
+      ],
+      "accept": "Add Item form has a Size field (dropdown presets S/M/L/XL/32/34/36 with free-text) for PRODUCT items; size saved on create/edit; a SIZE column in the items list and size shown in the detail panel; an optional size filter narrows the list. Item TS interface + ItemForm + EMPTY_FORM + save/edit maps updated."
+    },
+    {
+      "id": "R54",
+      "title": "[frontend] Size shown in billing item picker + POS catalog (prints on bill)",
+      "priority": 54,
+      "status": "todo",
+      "files": [
+        "apps/web/src/components/vyapar/txn-form.tsx",
+        "apps/web/src/hooks/use-pos-catalog.ts"
+      ],
+      "accept": "Billing item picker (txn-form) and POS catalog display the item size and match it in search/filter; the chosen size is folded into the stored line name so it prints on the bill (TxnLine.name is denormalized; no line schema change). PosProduct type/cache/map/filter include size so offline rows carry it. typecheck green."
+    },
+    {
+      "id": "R55",
+      "title": "[backend] Hotel checkout accepts split payments array; include folioPayments in details",
+      "priority": 55,
+      "status": "todo",
+      "files": [
+        "apps/api/src/hotel/hotel.controller.ts",
+        "apps/api/src/hotel/hotel.service.ts"
+      ],
+      "accept": "check-out/:id body widened to accept optional payments:[{method,amount,bankAccountId?,reference?}] (single {method,amount,bankAccountId} still works). checkOut normalizes to a list, validates each non-cash entry has a bankAccountId and that sum(amounts) doesn't exceed pending, writes one FolioPayment row per entry (paidAmount incremented by the total) inside the transaction, and after commit posts ONE PAYMENT_IN whose payments[] has one element per entry (txnCore enforces sum===total). 'Bank Transfer' maps to paymentType 'BANK'. getReservationWithDetails includes folioPayments so the invoice/print can show 'Paid via'. cashFlow then surfaces each method separately with no reports change."
+    },
+    {
+      "id": "R56",
+      "title": "[frontend] Split-payment checkout UI + 'Paid via' on invoice + Bank Transfer label",
+      "priority": 56,
+      "status": "todo",
+      "files": [
+        "apps/web/src/app/(app)/hotel/page.tsx"
+      ],
+      "accept": "Checkout dialog offers Single | Split mode. Split lets staff add/remove rows {method,amount,bankAccountId?}; per-row method select (Cash/Card/UPI/Bank Transfer) + conditional bank picker; live 'remaining = pendingDues - sum(rows)'; checkout enabled only when the rows sum to pendingDues. Submits settle { payments: rows }. Single-mode 'Bank' relabeled 'Bank Transfer' (maps to BANK). The Print Bill shows a 'Paid via: <method> <amount>' block from the reservation's folioPayments. Reports show each method as its own cash-flow line."
     }
   ]
 }

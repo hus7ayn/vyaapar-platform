@@ -36,7 +36,13 @@ export class ReportsService {
     const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
 
     const branchFilter = branchId ? { branchId } : {};
-    const [todaySales, monthSales, parties, accounts, items, openOrders, monthExpenses, monthPayroll, recentTxns] = await Promise.all([
+    const hotelResWhere = (since: Date) => ({
+      businessId,
+      status: 'CHECKED_OUT',
+      ...(branchId ? { branchId } : {}),
+      checkedOutAt: { gte: since },
+    });
+    const [todaySales, monthSales, parties, accounts, items, openOrders, monthExpenses, monthPayroll, recentTxns, monthHotel, todayHotel] = await Promise.all([
       this.prisma.txn.aggregate({ where: { ...this.txnWhere(businessId, 'SALE_INVOICE', undefined, undefined, branchId), date: { gte: today } }, _sum: { total: true }, _count: true }),
       this.prisma.txn.aggregate({ where: { ...this.txnWhere(businessId, 'SALE_INVOICE', undefined, undefined, branchId), date: { gte: monthStart } }, _sum: { total: true }, _count: true }),
       this.prisma.party.findMany({ where: { businessId, deletedAt: null, ...branchFilter } }),
@@ -59,6 +65,11 @@ export class ReportsService {
         take: 10,
         include: { party: { select: { name: true } } },
       }),
+      // Hotel revenue (billed): room + folio/service charges for stays checked out in the
+      // period. Folio payments post PAYMENT_IN txns which are NOT counted as sales, so this
+      // is double-count-safe.
+      this.prisma.reservation.aggregate({ where: hotelResWhere(monthStart), _sum: { totalAmount: true, extraCharges: true } }),
+      this.prisma.reservation.aggregate({ where: hotelResWhere(today), _sum: { totalAmount: true, extraCharges: true } }),
     ]);
 
     let totalReceivable = 0, totalPayable = 0;
@@ -106,13 +117,16 @@ export class ReportsService {
     const monthSaleAmt = num(monthSales._sum.total);
     const monthExpenseAmt = num(monthExpenses._sum.total);
     const monthSalaryAmt = num(monthPayroll._sum.totalAmount);
+    const monthHotelRevenue = num(monthHotel._sum.totalAmount) + num(monthHotel._sum.extraCharges);
+    const todayHotelRevenue = num(todayHotel._sum.totalAmount) + num(todayHotel._sum.extraCharges);
 
     return {
       todaySale: num(todaySales._sum.total), todayInvoices: todaySales._count,
       monthSale: monthSaleAmt, monthInvoices: monthSales._count,
       monthExpense: monthExpenseAmt,
       monthSalary: monthSalaryAmt,
-      netRevenue: monthSaleAmt - monthExpenseAmt,
+      monthHotelRevenue, todayHotelRevenue,
+      netRevenue: monthSaleAmt + monthHotelRevenue - monthExpenseAmt,
       totalReceivable, totalPayable,
       cashInHand, bankBalance,
       stockValue, lowStockCount, openOrders,
