@@ -109,6 +109,9 @@ export default function HotelPage() {
   const [newPaymentAmount, setNewPaymentAmount] = useState('');
   const [newPaymentMethod, setNewPaymentMethod] = useState('CASH');
   const [newPaymentBankId, setNewPaymentBankId] = useState('');
+  // Settlement of the final balance chosen at the moment of checkout.
+  const [checkoutMethod, setCheckoutMethod] = useState('CASH');
+  const [checkoutBankId, setCheckoutBankId] = useState('');
 
   const { data: bankAccounts } = useQuery({
     queryKey: ['bank-accounts'],
@@ -247,10 +250,11 @@ export default function HotelPage() {
   });
 
   const checkoutMutation = useMutation({
-    mutationFn: async (id: string) =>
+    mutationFn: async ({ id, settle }: { id: string; settle?: { method: string; amount: number; bankAccountId?: string } }) =>
       api<any>(`/hotel/check-out/${id}`, {
         method: 'POST',
         token,
+        body: settle ? JSON.stringify(settle) : undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reservations', selectedBranchId] });
@@ -258,6 +262,8 @@ export default function HotelPage() {
       queryClient.invalidateQueries({ queryKey: ['hotel-stats', selectedBranchId] });
       queryClient.invalidateQueries({ queryKey: ['hotel-profit', selectedBranchId] });
       toast.success('Guest checked out successfully');
+      setCheckoutMethod('CASH');
+      setCheckoutBankId('');
       setCheckoutDialogOpen(false);
       setCheckoutReservation(null);
     },
@@ -1312,20 +1318,74 @@ export default function HotelPage() {
                   </Button>
                   
                   {checkoutReservation.status === 'CHECKED_IN' && (
-                    <Button 
-                      className="flex-1 bg-rose-600 hover:bg-rose-700 text-white"
-                      disabled={checkoutMutation.isPending}
-                      onClick={() => {
-                        if (summary.pendingDues > 0) {
-                          if (!confirm(`Guest still has ₹${summary.pendingDues} in pending dues. Are you sure you want to checkout without final payment?`)) {
-                            return;
+                    <div className="flex-1 flex flex-col gap-2">
+                      {summary.pendingDues > 0 && (
+                        <div className="flex gap-2">
+                          <select
+                            className="rounded-lg border px-2 py-1.5 bg-background text-xs shrink-0"
+                            value={checkoutMethod}
+                            onChange={(e) => setCheckoutMethod(e.target.value)}
+                          >
+                            <option value="CASH">Cash</option>
+                            <option value="BANK">Bank</option>
+                            <option value="UPI">UPI</option>
+                            <option value="CARD">Card</option>
+                          </select>
+                          {checkoutMethod !== 'CASH' && (
+                            <select
+                              className="rounded-lg border px-2 py-1.5 bg-background text-xs flex-1 min-w-0"
+                              value={checkoutBankId}
+                              onChange={(e) => setCheckoutBankId(e.target.value)}
+                            >
+                              <option value="">Bank account…</option>
+                              {(bankAccounts ?? []).filter((a) => a.accountType !== 'CASH').map((a) => (
+                                <option key={a.id} value={a.id}>{a.name}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      )}
+                      <Button
+                        className="w-full bg-rose-600 hover:bg-rose-700 text-white"
+                        disabled={checkoutMutation.isPending}
+                        onClick={() => {
+                          if (summary.pendingDues > 0) {
+                            if (checkoutMethod !== 'CASH' && !checkoutBankId) {
+                              toast.error('Select a bank account');
+                              return;
+                            }
+                            checkoutMutation.mutate({
+                              id: checkoutReservation.id,
+                              settle: {
+                                method: checkoutMethod,
+                                amount: summary.pendingDues,
+                                bankAccountId: checkoutMethod !== 'CASH' ? checkoutBankId : undefined,
+                              },
+                            });
+                          } else {
+                            checkoutMutation.mutate({ id: checkoutReservation.id });
                           }
-                        }
-                        checkoutMutation.mutate(checkoutReservation.id);
-                      }}
-                    >
-                      Complete Checkout
-                    </Button>
+                        }}
+                      >
+                        {summary.pendingDues > 0
+                          ? `Settle ${formatCurrency(summary.pendingDues)} & Checkout`
+                          : 'Complete Checkout'}
+                      </Button>
+                      {summary.pendingDues > 0 && (
+                        <button
+                          type="button"
+                          className="text-xs text-muted-foreground hover:underline disabled:opacity-50"
+                          disabled={checkoutMutation.isPending}
+                          onClick={() => {
+                            if (confirm(`Checkout with ₹${summary.pendingDues} still due (no payment recorded)?`)) {
+                              checkoutMutation.mutate({ id: checkoutReservation.id });
+                            }
+                          }}
+                        >
+                          Skip payment &amp; checkout with balance due
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

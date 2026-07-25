@@ -4,23 +4,114 @@
   "branch": "vercel-ready",
   "validate": "pnpm --filter @nexus/api typecheck && pnpm --filter @nexus/web typecheck",
   "stories": [
-    { "id": "R1", "title": "Rename app Vyaapar -> MSW Global", "priority": 1, "status": "pass", "files": ["packages/shared/src/constants.ts"], "accept": "Brand reads 'MSW Global' everywhere user-facing." },
-    { "id": "R2", "title": "Auto-refresh data lists (no manual reload)", "priority": 2, "status": "pass", "files": ["apps/web/src/hooks/use-pos-catalog.ts"], "accept": "Adding a product shows in POS without hard reload." },
-    { "id": "R3", "title": "Party supplier saved as customer", "priority": 3, "status": "pass", "files": ["apps/web/src/app/(app)/parties/page.tsx"], "accept": "Creating a party as Supplier persists partyType=SUPPLIER." },
-    { "id": "R4", "title": "Password strength on staff-create + eye everywhere", "priority": 4, "status": "pass", "files": ["apps/web/src/app/(app)/settings/users/page.tsx"], "accept": "Weak staff passwords rejected client-side." },
-    { "id": "R5", "title": "Add-category UI for items + expenses", "priority": 5, "status": "pass", "files": ["apps/api/src/categories/categories.service.ts"], "accept": "User can create a category from the form." },
-    { "id": "R6", "title": "Credit settle: collect payment (unpaid -> paid)", "priority": 6, "status": "pass", "files": ["apps/web/src/app/(app)/parties/page.tsx"], "accept": "One action records payment and flips toward PAID." },
-    { "id": "R9", "title": "Product return button in UI", "priority": 7, "status": "pass", "files": ["apps/web/src/components/pos/recent-orders-panel.tsx"], "accept": "Authorized user can issue a return; invoice REFUNDED." },
-    { "id": "R7", "title": "Payroll all staff/branches + advance/custom salary", "priority": 8, "status": "pass", "files": ["apps/api/src/payroll/payroll.service.ts"], "accept": "One Generate covers every active staff; advance/custom amount." },
-    { "id": "R8", "title": "RBAC Super Admin / Manager / Biller scoping + route guards", "priority": 9, "status": "pass", "files": ["apps/web/src/app/(app)/layout.tsx"], "accept": "Biller reaches only POS + today's sales; Manager scoped; Super Admin all." },
-    { "id": "R10", "title": "Barcode 2-up print + thermal bill customization", "priority": 10, "status": "pass", "files": ["apps/web/src/lib/print-tags.ts"], "accept": "Print 2 barcode slips; thermal header/footer customizable." },
-
+    {
+      "id": "R1",
+      "title": "Rename app Vyaapar -> MSW Global",
+      "priority": 1,
+      "status": "pass",
+      "files": [
+        "packages/shared/src/constants.ts"
+      ],
+      "accept": "Brand reads 'MSW Global' everywhere user-facing."
+    },
+    {
+      "id": "R2",
+      "title": "Auto-refresh data lists (no manual reload)",
+      "priority": 2,
+      "status": "pass",
+      "files": [
+        "apps/web/src/hooks/use-pos-catalog.ts"
+      ],
+      "accept": "Adding a product shows in POS without hard reload."
+    },
+    {
+      "id": "R3",
+      "title": "Party supplier saved as customer",
+      "priority": 3,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/parties/page.tsx"
+      ],
+      "accept": "Creating a party as Supplier persists partyType=SUPPLIER."
+    },
+    {
+      "id": "R4",
+      "title": "Password strength on staff-create + eye everywhere",
+      "priority": 4,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/settings/users/page.tsx"
+      ],
+      "accept": "Weak staff passwords rejected client-side."
+    },
+    {
+      "id": "R5",
+      "title": "Add-category UI for items + expenses",
+      "priority": 5,
+      "status": "pass",
+      "files": [
+        "apps/api/src/categories/categories.service.ts"
+      ],
+      "accept": "User can create a category from the form."
+    },
+    {
+      "id": "R6",
+      "title": "Credit settle: collect payment (unpaid -> paid)",
+      "priority": 6,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/parties/page.tsx"
+      ],
+      "accept": "One action records payment and flips toward PAID."
+    },
+    {
+      "id": "R9",
+      "title": "Product return button in UI",
+      "priority": 7,
+      "status": "pass",
+      "files": [
+        "apps/web/src/components/pos/recent-orders-panel.tsx"
+      ],
+      "accept": "Authorized user can issue a return; invoice REFUNDED."
+    },
+    {
+      "id": "R7",
+      "title": "Payroll all staff/branches + advance/custom salary",
+      "priority": 8,
+      "status": "pass",
+      "files": [
+        "apps/api/src/payroll/payroll.service.ts"
+      ],
+      "accept": "One Generate covers every active staff; advance/custom amount."
+    },
+    {
+      "id": "R8",
+      "title": "RBAC Super Admin / Manager / Biller scoping + route guards",
+      "priority": 9,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/layout.tsx"
+      ],
+      "accept": "Biller reaches only POS + today's sales; Manager scoped; Super Admin all."
+    },
+    {
+      "id": "R10",
+      "title": "Barcode 2-up print + thermal bill customization",
+      "priority": 10,
+      "status": "pass",
+      "files": [
+        "apps/web/src/lib/print-tags.ts"
+      ],
+      "accept": "Print 2 barcode slips; thermal header/footer customizable."
+    },
     {
       "id": "R11",
       "title": "Signup page: rename CTA to 'Sign Up', visible password rules, no email verification",
       "priority": 11,
       "status": "pass",
-      "files": ["apps/web/src/app/(auth)/signup/page.tsx"],
+      "files": [
+        "apps/web/src/app/(auth)/signup/page.tsx"
+      ],
       "accept": "Primary button reads 'Sign Up' (not 'Start Free Trial'). A visible password-requirements hint is shown and weak passwords are rejected before submit (already enforced by zod + backend @IsStrongPassword). Signup logs the user in immediately with no email-verification step (confirm none exists)."
     },
     {
@@ -28,7 +119,11 @@
       "title": "Friendly duplicate-SKU / unique-constraint errors (no 500)",
       "priority": 12,
       "status": "pass",
-      "files": ["apps/api/src/common/filters/prisma-exception.filter.ts", "apps/api/src/app.module.ts", "apps/api/src/items/items.service.ts"],
+      "files": [
+        "apps/api/src/common/filters/prisma-exception.filter.ts",
+        "apps/api/src/app.module.ts",
+        "apps/api/src/items/items.service.ts"
+      ],
       "accept": "Creating an item with an existing Item Code/SKU (unique [businessId,branchId,sku]) returns a clear 409 message like 'An item with this Item Code already exists' instead of HTTP 500 'Internal server error'. Implemented via a global Prisma exception filter that maps P2002/P2025 to friendly 4xx and names the field where possible."
     },
     {
@@ -36,7 +131,11 @@
       "title": "Housekeeping & Services keep the Hotel PMS header/tab bar",
       "priority": 13,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/hotel/layout.tsx", "apps/web/src/app/(app)/housekeeping/page.tsx", "apps/web/src/app/(app)/services/page.tsx"],
+      "files": [
+        "apps/web/src/app/(app)/hotel/layout.tsx",
+        "apps/web/src/app/(app)/housekeeping/page.tsx",
+        "apps/web/src/app/(app)/services/page.tsx"
+      ],
       "accept": "Clicking Housekeeping (and Services) from the Hotel PMS tab bar keeps the Hotel PMS header + tabs visible (route lives under /hotel/* or shares HotelLayout). Page styling is consistent with the rest of the hotel chrome. The 2 react/no-unescaped-entities lint errors on the housekeeping page are fixed."
     },
     {
@@ -44,7 +143,10 @@
       "title": "Replace window.prompt add-category with proper in-app UI",
       "priority": 14,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/items/page.tsx", "apps/web/src/components/vyapar/txn-form.tsx"],
+      "files": [
+        "apps/web/src/app/(app)/items/page.tsx",
+        "apps/web/src/components/vyapar/txn-form.tsx"
+      ],
       "accept": "Adding an item category and an expense category uses an in-app input (inline field or dialog), NOT window.prompt/alert. New category is created via POST /categories and auto-selected immediately."
     },
     {
@@ -52,7 +154,10 @@
       "title": "Add-item required fields + backend validation",
       "priority": 15,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/items/page.tsx", "apps/api/src/items/items.service.ts"],
+      "files": [
+        "apps/web/src/app/(app)/items/page.tsx",
+        "apps/api/src/items/items.service.ts"
+      ],
       "accept": "Creating an item requires (client + backend): Name, Category, Sale Price, Cost/Purchase Price, Unit, Opening Stock quantity ('no. of products'), and Barcode. Each missing field shows a clear message; the backend rejects incomplete payloads with a specific message. SKU/Item Code stays optional (auto-generated)."
     },
     {
@@ -60,7 +165,10 @@
       "title": "Add-party required fields (Name + Phone + Type)",
       "priority": 16,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/parties/page.tsx", "apps/api/src/parties/parties.service.ts"],
+      "files": [
+        "apps/web/src/app/(app)/parties/page.tsx",
+        "apps/api/src/parties/parties.service.ts"
+      ],
       "accept": "Creating a party requires (client + backend): Name, Phone, and an explicit Party Type (Customer/Supplier/Both, no silent default). Missing fields show a clear message; backend rejects incomplete payloads."
     },
     {
@@ -68,7 +176,11 @@
       "title": "Import: CSV support, real result feedback, downloadable template",
       "priority": 17,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/utilities/page.tsx", "apps/api/src/items/items.service.ts", "apps/api/src/parties/parties.service.ts"],
+      "files": [
+        "apps/web/src/app/(app)/utilities/page.tsx",
+        "apps/api/src/items/items.service.ts",
+        "apps/api/src/parties/parties.service.ts"
+      ],
       "accept": "The Utilities import accepts CSV (and still JSON) for items and parties, shows the backend result (created / skipped / per-row errors) instead of an always-success toast, and offers a 'Download template' with the expected columns. A duplicate SKU during import is reported as a row error, not a silent skip/500."
     },
     {
@@ -76,7 +188,11 @@
       "title": "Mobile shop/hotel switcher + mobile menu",
       "priority": 18,
       "status": "pass",
-      "files": ["apps/web/src/components/layout/top-bar.tsx", "apps/web/src/components/layout/mobile-nav.tsx", "apps/web/src/components/layout/shop-switcher.tsx"],
+      "files": [
+        "apps/web/src/components/layout/top-bar.tsx",
+        "apps/web/src/components/layout/mobile-nav.tsx",
+        "apps/web/src/components/layout/shop-switcher.tsx"
+      ],
       "accept": "On a narrow (mobile) screen a user can switch between shops and reach the Hotel PMS. The shop/entity switcher (currently only in the hidden-lg sidebar) is surfaced on mobile via the top bar or a menu/sheet, along with access to the 'More' nav (Hotel, Payroll, Staff, Settings)."
     },
     {
@@ -84,7 +200,11 @@
       "title": "Low-stock notifications (make the bell functional)",
       "priority": 19,
       "status": "pass",
-      "files": ["apps/api/src/notifications/notifications.service.ts", "apps/api/src/txns/txn-core.service.ts", "apps/api/src/events/events.gateway.ts"],
+      "files": [
+        "apps/api/src/notifications/notifications.service.ts",
+        "apps/api/src/txns/txn-core.service.ts",
+        "apps/api/src/events/events.gateway.ts"
+      ],
       "accept": "When a stock-affecting transaction drops an item to at/below its minStock (or to 0), a Notification row is created (and emitted via events.gateway emitNotification) so the top-bar bell shows a low-stock alert. No other notification types needed."
     },
     {
@@ -92,7 +212,11 @@
       "title": "Hotel module: item category management (Food/Beverages/etc.)",
       "priority": 20,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/hotel/layout.tsx", "apps/api/src/hotel/hotel.service.ts", "apps/web/src/app/(app)/services/page.tsx"],
+      "files": [
+        "apps/web/src/app/(app)/hotel/layout.tsx",
+        "apps/api/src/hotel/hotel.service.ts",
+        "apps/web/src/app/(app)/services/page.tsx"
+      ],
       "accept": "A hotel user has a place to create and manage item categories for hotel items (Food, Beverages, Snacks, Desserts, Room Service) and can filter items/services by category. Reuses the retail Category backend (branch-scoped) or a hotel-scoped equivalent."
     },
     {
@@ -100,7 +224,9 @@
       "title": "RBAC: 3-tier clarity in staff UI (multi-shop Manager deferred)",
       "priority": 21,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/settings/users/page.tsx"],
+      "files": [
+        "apps/web/src/app/(app)/settings/users/page.tsx"
+      ],
       "accept": "Staff-create UI presents the three access tiers (Super Admin / Manager / Biller) clearly, with role options grouped by tier and a per-role scope description. DEFERRED: assigning one Manager to MANY shops needs a User→branches schema + BranchScopeGuard + JWT change (single branchId today) — too large/cross-cutting for one minimal-diff iteration; documented in progress.txt."
     },
     {
@@ -108,7 +234,9 @@
       "title": "Credit payment proper form (mode, amount, allocation)",
       "priority": 22,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/parties/page.tsx"],
+      "files": [
+        "apps/web/src/app/(app)/parties/page.tsx"
+      ],
       "accept": "The Collect Payment action uses an in-app form (not window.prompt): amount (defaults to full balance, partial allowed), payment mode (Cash/Bank), optional note, and optional per-invoice allocation. Ledger/invoice status updates as before."
     },
     {
@@ -116,7 +244,12 @@
       "title": "Return / Refund / Exchange: per-item + history",
       "priority": 23,
       "status": "pass",
-      "files": ["apps/api/src/sale/sale.service.ts", "apps/api/src/sale/sale.controller.ts", "apps/web/src/components/pos/recent-orders-panel.tsx", "apps/web/src/components/vyapar/txn-list-page.tsx"],
+      "files": [
+        "apps/api/src/sale/sale.service.ts",
+        "apps/api/src/sale/sale.controller.ts",
+        "apps/web/src/components/pos/recent-orders-panel.tsx",
+        "apps/web/src/components/vyapar/txn-list-page.tsx"
+      ],
       "accept": "From a completed sale, an authorized user can return SPECIFIC items/quantities (not just the whole invoice), choose Refund (money back) or Exchange (return + new items), inventory auto-updates, and there is a Returns history view listing credit notes/returns."
     },
     {
@@ -124,7 +257,12 @@
       "title": "Customizable label/barcode designer",
       "priority": 24,
       "status": "pass",
-      "files": ["apps/web/src/lib/print-tags.ts", "apps/web/src/app/(app)/settings/page.tsx", "apps/web/src/app/(app)/items/page.tsx", "apps/api/src/settings/settings.service.ts"],
+      "files": [
+        "apps/web/src/lib/print-tags.ts",
+        "apps/web/src/app/(app)/settings/page.tsx",
+        "apps/web/src/app/(app)/items/page.tsx",
+        "apps/api/src/settings/settings.service.ts"
+      ],
       "accept": "A label designer lets the user choose which fields print (Item Name, Category, Size, Colour, MRP, Barcode, SKU/Item Code, Batch), and set label width/height, margins, font size, alignment and barcode size, with thermal paper presets. Settings persist and the printed tag reflects them."
     },
     {
@@ -132,16 +270,24 @@
       "title": "Payroll: advance ledger auto-deduction + payslip + per-employee history",
       "priority": 25,
       "status": "pass",
-      "files": ["apps/api/src/payroll/payroll.service.ts", "apps/api/src/payroll/payroll.controller.ts", "apps/web/src/app/(app)/payroll/page.tsx"],
+      "files": [
+        "apps/api/src/payroll/payroll.service.ts",
+        "apps/api/src/payroll/payroll.controller.ts",
+        "apps/web/src/app/(app)/payroll/page.tsx"
+      ],
       "accept": "A salary advance can be recorded against an employee as a tracked balance that AUTO-deducts from future payroll runs until cleared; each payroll line can generate/print a payslip; and a per-employee salary history is viewable."
     },
-
     {
       "id": "R26",
       "title": "Create Hotel AND Shop entities, kept separate",
       "priority": 26,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/shops/page.tsx", "apps/api/src/branches/branches.service.ts", "apps/api/src/branches/branches.controller.ts", "apps/api/src/branches/shop-setup.util.ts"],
+      "files": [
+        "apps/web/src/app/(app)/shops/page.tsx",
+        "apps/api/src/branches/branches.service.ts",
+        "apps/api/src/branches/branches.controller.ts",
+        "apps/api/src/branches/shop-setup.util.ts"
+      ],
       "accept": "The entities page lets the user create BOTH a Shop and a Hotel (explicit type choice / separate 'Add Shop' + 'Add Hotel' actions) and lists Shops and Hotels in separate sections. Backend validates Branch.type in {SHOP,HOTEL}. A newly created HOTEL is bootstrapped (cash account, default room categories, hotel expense categories, txn sequences) so it's usable immediately — today only SHOP branches get bootstrapped. Hotels remain reachable via Hotel PMS, shops via the shop switcher."
     },
     {
@@ -149,7 +295,11 @@
       "title": "Return by bill number + select specific items (outside POS)",
       "priority": 27,
       "status": "pass",
-      "files": ["apps/web/src/components/vyapar/txn-list-page.tsx", "apps/web/src/components/pos/return-dialog.tsx", "apps/web/src/components/pos/recent-orders-panel.tsx"],
+      "files": [
+        "apps/web/src/components/vyapar/txn-list-page.tsx",
+        "apps/web/src/components/pos/return-dialog.tsx",
+        "apps/web/src/components/pos/recent-orders-panel.tsx"
+      ],
       "accept": "From the Sale Invoices list (which already searches by bill/invoice number), the Return action opens an item picker to return SPECIFIC products (checkboxes) with Refund/Exchange — not a whole-invoice-only refund. Reuses the existing backend partial refund (lineIds) and the POS item-picker (extracted into a shared ReturnDialog also used by the POS Recent Bills panel)."
     },
     {
@@ -157,7 +307,11 @@
       "title": "Payroll by start/end date range + print payslips for everyone",
       "priority": 28,
       "status": "pass",
-      "files": ["apps/api/src/payroll/payroll.service.ts", "apps/api/src/payroll/payroll.controller.ts", "apps/web/src/app/(app)/payroll/page.tsx"],
+      "files": [
+        "apps/api/src/payroll/payroll.service.ts",
+        "apps/api/src/payroll/payroll.controller.ts",
+        "apps/web/src/app/(app)/payroll/page.tsx"
+      ],
       "accept": "Payroll generation accepts a START date + END date range (period stored as a 'YYYY-MM-DD..YYYY-MM-DD' string — no migration; the field is free-form). One action prints a payslip for EVERY employee in a run (bulk 'Print all payslips'), reusing the existing per-line payslip layout (base/OT/bonus/deductions/advance/net) with page breaks."
     },
     {
@@ -165,7 +319,11 @@
       "title": "Barcode label positional (drag) designer",
       "priority": 29,
       "status": "pass",
-      "files": ["apps/web/src/lib/label-config.ts", "apps/web/src/lib/print-tags.ts", "apps/web/src/components/settings/label-designer-card.tsx"],
+      "files": [
+        "apps/web/src/lib/label-config.ts",
+        "apps/web/src/lib/print-tags.ts",
+        "apps/web/src/components/settings/label-designer-card.tsx"
+      ],
       "accept": "The label designer lets the user MOVE fields (Item Name, MRP, Sale Price, SKU, Category, Barcode image, Barcode number, Size, Colour) to any position on the label via drag on a scaled preview, with per-field font size, alignment and show/hide. print-tags renders with absolute x/y positioning. Config persists (localStorage) and is backward-compatible with the existing toggle-based config."
     },
     {
@@ -173,7 +331,12 @@
       "title": "Thermal receipt format designer (sections/order/show-hide)",
       "priority": 30,
       "status": "pass",
-      "files": ["apps/api/prisma/schema.prisma", "apps/api/src/receipts/receipts.service.ts", "apps/api/src/settings/settings.service.ts", "apps/web/src/app/(app)/settings/page.tsx"],
+      "files": [
+        "apps/api/prisma/schema.prisma",
+        "apps/api/src/receipts/receipts.service.ts",
+        "apps/api/src/settings/settings.service.ts",
+        "apps/web/src/app/(app)/settings/page.tsx"
+      ],
       "accept": "The user can customize the thermal bill format: reorder and show/hide sections (shop name, GSTIN, address, header text, item lines, totals breakdown, payments, footer) and set the base font size. generateThermal renders per this config instead of a fully hardcoded template. Config persists in FirmSettings (new receiptLayout JSON column, applied via db push on deploy). Free x/y is intentionally NOT used (single-column receipt)."
     },
     {
@@ -181,16 +344,21 @@
       "title": "Availability-aware room-number picker at check-in + reservation",
       "priority": 31,
       "status": "pass",
-      "files": ["apps/api/src/hotel/hotel.service.ts", "apps/api/src/hotel/hotel.controller.ts", "apps/web/src/app/(app)/hotel/check-in/page.tsx"],
+      "files": [
+        "apps/api/src/hotel/hotel.service.ts",
+        "apps/api/src/hotel/hotel.controller.ts",
+        "apps/web/src/app/(app)/hotel/check-in/page.tsx"
+      ],
       "accept": "The room dropdown on the check-in/reservation form offers only BOOKABLE rooms: for immediate check-in, rooms with status AVAILABLE; for a future reservation, rooms with no overlapping CONFIRMED/CHECKED_IN reservation for the chosen check-in/check-out dates (re-filtering when the dates change). Backend getRooms supports availability filtering (reusing checkOverlappingReservation), so the user never picks a room that gets rejected on submit."
     },
-
     {
       "id": "R32",
       "title": "Room picker works on DIRECT /hotel/check-in (resolve hotel branch)",
       "priority": 32,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/hotel/check-in/page.tsx"],
+      "files": [
+        "apps/web/src/app/(app)/hotel/check-in/page.tsx"
+      ],
       "accept": "Opening /hotel/check-in directly (e.g. via the Hotel PMS 'Check-in' tab, no ?branchId) resolves a HOTEL branch itself — fetch /branches?type=HOTEL, seed selectedBranchId from the query param else auto-select the first hotel (property selector when >1), and gate the rooms query on it — so the room dropdown populates instead of falling back to the user's shop branch (empty)."
     },
     {
@@ -198,7 +366,12 @@
       "title": "Payment method + bank account at hotel check-out / guest payment",
       "priority": 33,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/hotel/page.tsx", "apps/api/src/hotel/hotel.service.ts", "apps/api/src/hotel/hotel.controller.ts", "apps/api/prisma/schema.prisma"],
+      "files": [
+        "apps/web/src/app/(app)/hotel/page.tsx",
+        "apps/api/src/hotel/hotel.service.ts",
+        "apps/api/src/hotel/hotel.controller.ts",
+        "apps/api/prisma/schema.prisma"
+      ],
       "accept": "The Record Guest Payment / checkout flow lets the user choose a payment method (Cash/Bank/UPI/Card) and a bank account for non-cash; addFolioPayment threads paymentType + bankAccountId into the txnCore PAYMENT_IN (so it lands in the right cash/bank account) instead of hardcoding CASH. FolioPayment stores the chosen bankAccountId."
     },
     {
@@ -206,7 +379,11 @@
       "title": "Separate payroll staff for shops vs hotel (entity selector)",
       "priority": 34,
       "status": "pass",
-      "files": ["apps/web/src/app/(app)/payroll/page.tsx", "apps/api/src/payroll/payroll.service.ts", "apps/api/src/payroll/payroll.controller.ts"],
+      "files": [
+        "apps/web/src/app/(app)/payroll/page.tsx",
+        "apps/api/src/payroll/payroll.service.ts",
+        "apps/api/src/payroll/payroll.controller.ts"
+      ],
       "accept": "The payroll page has an entity selector (each Shop and Hotel). The staff list, add-staff, and Generate are scoped to the SELECTED entity (explicit branchId), so a hotel's staff and a shop's staff are separate — a new hire lands on the selected entity (incl. hotel), and generating payroll processes only that entity's staff (not business-wide)."
     },
     {
@@ -214,7 +391,11 @@
       "title": "Fix partial refund (selection UX) + Exchange with replacement-item picker",
       "priority": 35,
       "status": "pass",
-      "files": ["apps/web/src/components/pos/return-dialog.tsx", "apps/api/src/sale/sale.service.ts", "apps/api/src/sale/sale.controller.ts"],
+      "files": [
+        "apps/web/src/components/pos/return-dialog.tsx",
+        "apps/api/src/sale/sale.service.ts",
+        "apps/api/src/sale/sale.controller.ts"
+      ],
       "accept": "Partial refund reliably works: the return dialog starts with NO items selected (checked = 'return this item'), so choosing specific items sends lineIds and refunds only those. Exchange lets the user CHOOSE replacement item(s): a replacement picker feeds a backend exchangeInvoice that cash-refunds the returned items AND creates a fully-paid replacement SALE_INVOICE (deterministic backend-computed totals). Inventory updates for both sides."
     },
     {
@@ -222,7 +403,14 @@
       "title": "Remove a hotel folio charge / service request",
       "priority": 36,
       "status": "pass",
-      "files": ["apps/api/src/hotel/hotel.service.ts", "apps/api/src/hotel/hotel.controller.ts", "apps/api/src/services/services.service.ts", "apps/api/src/services/services.controller.ts", "apps/web/src/app/(app)/hotel/page.tsx", "apps/web/src/app/(app)/hotel/services/page.tsx"],
+      "files": [
+        "apps/api/src/hotel/hotel.service.ts",
+        "apps/api/src/hotel/hotel.controller.ts",
+        "apps/api/src/services/services.service.ts",
+        "apps/api/src/services/services.controller.ts",
+        "apps/web/src/app/(app)/hotel/page.tsx",
+        "apps/web/src/app/(app)/hotel/services/page.tsx"
+      ],
       "accept": "A user can DELETE a hotel folio extra charge (backend DELETE /hotel/reservations/:id/folio/:chargeId that reverses the stock deduction when the charge has an itemId) and a hotel service request (backend DELETE /services/:id), each with a remove button in the UI."
     },
     {
@@ -230,40 +418,50 @@
       "title": "P&L includes hotel + services revenue",
       "priority": 37,
       "status": "pass",
-      "files": ["apps/api/src/reports/reports.service.ts"],
+      "files": [
+        "apps/api/src/reports/reports.service.ts"
+      ],
       "accept": "The Profit & Loss report includes hotel revenue — room revenue + folio/service charges for reservations CHECKED_OUT in the period (reservation.totalAmount + extraCharges) — as a revenue block folded into gross sale / net profit. Today P&L aggregates only SALE_INVOICE so all hotel/service income is invisible; adding it is double-count-safe because P&L currently contains zero hotel data."
     },
-
     {
       "id": "R38",
       "title": "Fix exchange replacement picker (catalog /items response shape)",
       "priority": 38,
       "status": "pass",
-      "files": ["apps/web/src/components/pos/return-dialog.tsx"],
+      "files": [
+        "apps/web/src/components/pos/return-dialog.tsx"
+      ],
       "accept": "In the Return/Exchange dialog, the 'Choose replacements' step lists selectable catalog items so the user can actually pick the exchanged item. Root cause: return-dialog.tsx fetches GET /items as `{ items: CatalogItem[] }` but that endpoint (items.service.ts list()) returns a BARE array Item[] — so `catalog?.items` is undefined and the picker is permanently empty ('won't let choosing the exchanged item'). Fix the fetch to read the array directly. Do NOT change the API shape (items/page.tsx and txn-form.tsx correctly consume the bare array)."
     },
     {
       "id": "R39",
       "title": "Allow multiple partial returns per invoice (per-line remaining qty)",
       "priority": 39,
-      "status": "todo",
-      "files": ["apps/api/src/sale/sale.service.ts"],
+      "status": "pass",
+      "files": [
+        "apps/api/src/sale/sale.service.ts"
+      ],
       "accept": "refundInvoice no longer rejects every return after the first (current guard `if (txn.returns.length) throw 'already been returned'`). Instead it computes already-returned quantity per line from existing CREDIT_NOTE returns (returnAgainstTxnId) and rejects only a line that has nothing left to return; and the invoice is marked REFUNDED once cumulative returns exhaust all lines (not only on the single full-return path). A user can return one item now and another item later. Over-returning a fully-returned line is rejected."
     },
     {
       "id": "R40",
       "title": "Hotel: settle outstanding balance at check-out (backend)",
       "priority": 40,
-      "status": "todo",
-      "files": ["apps/api/src/hotel/hotel.service.ts", "apps/api/src/hotel/hotel.controller.ts"],
+      "status": "pass",
+      "files": [
+        "apps/api/src/hotel/hotel.service.ts",
+        "apps/api/src/hotel/hotel.controller.ts"
+      ],
       "accept": "POST /hotel/check-out/:id accepts an optional settlement body { method, amount, bankAccountId?, reference? }. When amount>0, checkOut records a FolioPayment, increments reservation.paidAmount, and posts exactly one PAYMENT_IN txn (paymentType=method, bankAccountId for non-cash) so cash/bank balances move — reusing the same accounting path as addFolioPayment (factor a shared private helper). No body / amount=0 behaves exactly as today (backward compatible). CHECKED_OUT / room CLEANING / housekeeping-task transitions unchanged. No SALE txn is created (no double count)."
     },
     {
       "id": "R41",
       "title": "Hotel: payment method + bank picker on Complete Checkout (frontend)",
       "priority": 41,
-      "status": "todo",
-      "files": ["apps/web/src/app/(app)/hotel/page.tsx"],
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/hotel/page.tsx"
+      ],
       "accept": "The checkout dialog's Complete Checkout action shows a payment-method selector (Cash/Bank/UPI/Card) and, for non-cash, a bank-account dropdown (reusing bankAccounts query + newPaymentMethod/newPaymentBankId state), pre-filled to settle summary.pendingDues. checkoutMutation POSTs { method, amount, bankAccountId } when pendingDues>0 so the final balance is settled with the chosen method at checkout. Non-cash without a bank account is blocked client-side. Zero-dues checkout works with no method selection."
     },
     {
@@ -271,7 +469,10 @@
       "title": "Hotel dashboard/report: billed revenue + profit + services (not folio-payments-only)",
       "priority": 42,
       "status": "todo",
-      "files": ["apps/api/src/reports/reports.service.ts", "apps/api/src/services/services.service.ts"],
+      "files": [
+        "apps/api/src/reports/reports.service.ts",
+        "apps/api/src/services/services.service.ts"
+      ],
       "accept": "hotelReport() bases totalRevenue/today/month/year on BILLED reservation revenue (totalAmount + extraCharges for CHECKED_OUT, bucketed by checkedOutAt) — matching the R37 P&L — instead of folio-payments-only, so a hotel that checks guests in/out but never records a folio payment still shows non-zero revenue/profit on /hotel/dashboard and /reports/hotel. Keep folio-payment collections exposed as a distinct `collected` metric. Include a serviceRevenue figure (COMPLETED serviceRequest amounts in period, informational — not double-added since checked-out service money is already in extraCharges). Also broaden services.create() reservation linking to include CONFIRMED (not only CHECKED_IN) so in-stay/upcoming services aren't orphaned. Shop home dashboard stays shop-only (shop/hotel kept separate)."
     },
     {
@@ -279,7 +480,9 @@
       "title": "Reconcile balance sheet after hotel revenue enters net profit (R37 side-effect)",
       "priority": 43,
       "status": "todo",
-      "files": ["apps/api/src/reports/reports.service.ts"],
+      "files": [
+        "apps/api/src/reports/reports.service.ts"
+      ],
       "accept": "balanceSheet() balances (assets == liabilities + equity within rounding) even though equity's retained earnings now include hotel revenue (R37). Add a hotel dues receivable asset = sum over CHECKED_OUT reservations of max(0, totalAmount + extraCharges - paidAmount), so accrued-but-uncollected hotel revenue is represented on the asset side matching the retained-earnings it produced. Collected hotel revenue is already reflected in cash/bank via PAYMENT_IN txns."
     }
   ]
