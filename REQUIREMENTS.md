@@ -159,3 +159,30 @@ Investigated deeply before coding. Findings summarized per item.
 
 ### Execution order (batch 3)
 R26 → R27 → R28 → R29 → R30 → R31.
+
+---
+
+## Batch 4 — reported issues (2026-07-25, post-deploy)
+
+Deep-investigated; several are regressions/gaps on batch-3 work.
+
+### R32 — Room picker on DIRECT check-in · S
+**Current:** `hotel/check-in/page.tsx:21` sets `branchId = searchParams.get('branchId')` only; the Hotel PMS "Check-in" tab (`hotel/layout.tsx:16`) links with no branchId, so the backend falls back to the user's SHOP branch → no hotel rooms. **Fix:** resolve the hotel branch on the page (fetch `/branches?type=HOTEL`, auto-select, gate room query) like dashboard/services/categories. **Accept:** direct check-in shows rooms.
+
+### R33 — Payment method at check-out · M
+**Current:** Record Guest Payment form hardcodes `method:'CASH'` (`hotel/page.tsx:286`), no bank picker; `addFolioPayment` posts a PAYMENT_IN with no bankAccountId (`hotel.service.ts:689-695`). **Fix:** method (Cash/Bank/UPI/Card) + bank-account select in the form; thread paymentType+bankAccountId to txnCore; store bankAccountId on FolioPayment. **Accept:** guest payment records the chosen method + account.
+
+### R34 — Separate payroll staff (shop vs hotel) · M
+**Current:** `getEmployees` unfiltered when branchId undefined → all branches mixed; `generatePayroll` is business-wide; new hires always SHOP (`payroll.service.ts:50-53`); page rides shop-only `activeShopId`, no entity selector. **Fix:** entity selector on payroll page; scope list/create/generate to the selected branch. **Accept:** shop & hotel staff separate; hire lands on selected entity; generate processes only that entity.
+
+### R35 — Fix partial refund + Exchange replacement picker · L
+**Current:** `return-dialog.tsx:37-43` pre-checks ALL lines with "checked = return", so selecting one item → allSelected → full refund (the "partial doesn't work" bug); Exchange (`:93`) just issues store credit with no replacement picker. Backend partial path is correct. **Fix:** default NO items selected; add a replacement-item picker + backend `exchangeInvoice` (cash-refund returns + fully-paid replacement sale, backend-computed totals). **Accept:** per-item partial refund works; exchange lets you choose replacements.
+
+### R36 — Remove folio charge / service · M
+**Current:** no delete for hotel folio charges (`hotel.service.ts:540`, UI `page.tsx:1107` read-only) or service requests (`services.service.ts`, only forward status). **Fix:** DELETE endpoints (folio charge reverses stock if itemId; service request) + UI remove buttons. **Accept:** added charges/services can be removed.
+
+### R37 — P&L includes hotel + services revenue · M
+**Current:** `profitAndLoss` (`reports.service.ts:409-439`) aggregates only SALE_INVOICE/CREDIT_NOTE; hotel checkout posts NO revenue txn (room+folio live on reservation/folio); folio PAYMENT_IN ignored by P&L. **Fix:** add hotel revenue block = Σ(reservation.totalAmount + extraCharges) for CHECKED_OUT reservations in the period (double-count-safe — P&L has zero hotel data today). **Accept:** hotel + service profit shows in P&L.
+
+### Execution order (batch 4)
+R32 → R33 → R34 → R35 → R36 → R37.
