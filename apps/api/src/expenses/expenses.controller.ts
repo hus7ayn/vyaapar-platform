@@ -29,9 +29,10 @@ export class ExpensesController {
   create(
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('sub') userId: string,
+    @CurrentUser('branchId') branchId: string | undefined,
     @Body() body: Omit<CreateTxnInput, 'txnType'> & { amount?: number },
   ) {
-    return this.expenses.create(businessId, userId, body);
+    return this.expenses.create(businessId, userId, body, branchId);
   }
 
   @Get('categories')

@@ -30,13 +30,21 @@ export class ExpensesService {
     return this.core.listTxns(businessId, { ...q, txnType: 'EXPENSE' });
   }
 
-  async create(businessId: string, userId: string, body: Omit<CreateTxnInput, 'txnType'> & { amount?: number }) {
+  async create(
+    businessId: string,
+    userId: string,
+    body: Omit<CreateTxnInput, 'txnType'> & { amount?: number },
+    branchId?: string,
+  ) {
     if (!body.expenseCategoryId) throw new BadRequestException('Expense category is required');
     const total = body.lines?.length ? undefined : (body.amount ?? body.total);
     if (!body.lines?.length && (!total || total <= 0)) throw new BadRequestException('Expense amount required');
 
     return this.core.createTxn(businessId, userId, {
       ...body,
+      // Attribute the expense to the resolved branch (e.g. the active hotel) when the caller
+      // didn't specify one, so hotel-branch expenses aren't saved null and count in profit.
+      branchId: body.branchId ?? branchId,
       txnType: 'EXPENSE',
       total,
       payments: body.payments?.length
