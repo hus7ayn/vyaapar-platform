@@ -24,6 +24,7 @@ export interface TxnLineInput {
   discountPercent?: number;
   discountAmount?: number;
   taxRate?: number;
+  sourceLineId?: string; // on a CREDIT_NOTE line, the original invoice line it returns
 }
 
 export interface TxnPaymentInput {
@@ -98,7 +99,7 @@ export class TxnCoreService {
 
     let subtotal = D(0);
     let taxTotal = D(0);
-    const built: (Omit<Prisma.TxnLineCreateWithoutTxnInput, 'txn'> & { itemId?: string })[] = [];
+    const built: (Omit<Prisma.TxnLineCreateWithoutTxnInput, 'txn'> & { itemId?: string; sourceLineId?: string | null })[] = [];
 
     for (const l of lines) {
       const item = l.itemId ? itemMap.get(l.itemId) : undefined;
@@ -128,6 +129,7 @@ export class TxnCoreService {
         taxRate,
         taxAmount: tax,
         total: taxable.add(tax),
+        sourceLineId: l.sourceLineId ?? null,
       });
     }
     return { built, subtotal, taxTotal, itemMap };
@@ -551,7 +553,7 @@ export class TxnCoreService {
           createdById: userId,
           clientId: input.clientId,
           heldAt: isHeld ? new Date() : null,
-          lines: { create: built.map(({ itemId, ...rest }) => ({ ...rest, item: itemId ? { connect: { id: itemId } } : undefined })) },
+          lines: { create: built.map(({ itemId, sourceLineId, ...rest }) => ({ ...rest, item: itemId ? { connect: { id: itemId } } : undefined, sourceLine: sourceLineId ? { connect: { id: sourceLineId } } : undefined })) },
         },
         include: { lines: true, party: true },
       });
@@ -678,7 +680,7 @@ export class TxnCoreService {
         sourceTxn: { select: { id: true, txnType: true, txnNumber: true } },
         convertedTxns: { select: { id: true, txnType: true, txnNumber: true } },
         returnAgainst: { select: { id: true, txnType: true, txnNumber: true } },
-        returns: { select: { id: true, txnType: true, txnNumber: true } },
+        returns: { select: { id: true, txnType: true, txnNumber: true, lines: { select: { sourceLineId: true, itemId: true, name: true, unitPrice: true, quantity: true } } } },
         allocationsAsPayment: { include: { againstTxn: { select: { id: true, txnType: true, txnNumber: true, total: true } } } },
         allocationsAsInvoice: { include: { paymentTxn: { select: { id: true, txnType: true, txnNumber: true } } } },
         branch: { select: { id: true, name: true } },
@@ -687,7 +689,26 @@ export class TxnCoreService {
       },
     });
     if (!txn) throw new NotFoundException('Transaction not found');
-    return txn;
+
+    // Attach already-returned quantity per invoice line (exact via sourceLineId, signature
+    // fallback for legacy credit-note lines) so the return dialog can cap each line's picker.
+    const sig = (l: { itemId: string | null; name: string; unitPrice: Prisma.Decimal | number }) =>
+      `${l.itemId ?? l.name}|${Number(l.unitPrice)}`;
+    const returnedById: Record<string, number> = {};
+    const legacyBySig: Record<string, number> = {};
+    for (const cn of txn.returns)
+      for (const l of cn.lines) {
+        if (l.sourceLineId) returnedById[l.sourceLineId] = (returnedById[l.sourceLineId] ?? 0) + Number(l.quantity);
+        else legacyBySig[sig(l)] = (legacyBySig[sig(l)] ?? 0) + Number(l.quantity);
+      }
+    const lines = txn.lines.map((l) => {
+      const already = returnedById[l.id] ?? 0;
+      const cap = Number(l.quantity) - already;
+      const take = Math.min(Math.max(0, legacyBySig[sig(l)] ?? 0), Math.max(0, cap));
+      if (legacyBySig[sig(l)] != null) legacyBySig[sig(l)] -= take;
+      return { ...l, returnedQty: already + take };
+    });
+    return { ...txn, lines };
   }
 
   // ─── Delete / restore (recycle bin) ───────────────────────────────────────

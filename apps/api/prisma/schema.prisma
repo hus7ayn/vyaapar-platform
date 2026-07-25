@@ -284,6 +284,7 @@ model Item {
   name          String
   sku           String    // item code
   barcode       String?
+  size          String?   // size variant label (e.g. S, M, L, XL, 32, 34, 36)
   hsnCode       String?   @map("hsn_code") // HSN for goods / SAC for services
   description   String?
   imageUrl      String?   @map("image_url")
@@ -329,6 +330,7 @@ model Item {
   @@index([businessId])
   @@index([businessId, branchId])
   @@index([barcode])
+  @@index([businessId, size])
   @@map("items")
 }
 
@@ -469,12 +471,18 @@ model TxnLine {
   taxRate    Decimal  @default(0) @map("tax_rate") @db.Decimal(5, 2)
   taxAmount  Decimal  @default(0) @map("tax_amount") @db.Decimal(14, 2)
   total      Decimal  @db.Decimal(14, 2)
+  // On a CREDIT_NOTE line, links back to the exact original invoice line it returns, so
+  // cumulative returned quantity per line is exact (enables quantity-level partial returns).
+  sourceLineId String? @map("source_line_id")
 
   txn  Txn   @relation(fields: [txnId], references: [id], onDelete: Cascade)
   item Item? @relation(fields: [itemId], references: [id])
+  sourceLine  TxnLine?  @relation("LineReturn", fields: [sourceLineId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  returnLines TxnLine[] @relation("LineReturn")
 
   @@index([txnId])
   @@index([itemId])
+  @@index([sourceLineId])
   @@map("txn_lines")
 }
 
