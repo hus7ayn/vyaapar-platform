@@ -286,6 +286,20 @@ export default function HotelPage() {
     },
   });
 
+  const removeChargeMutation = useMutation({
+    mutationFn: async (data: { reservationId: string; chargeId: string; isService: boolean }) =>
+      data.isService
+        ? api<any>(`/services/${data.chargeId}`, { method: 'DELETE', token })
+        : api<any>(`/hotel/reservations/${data.reservationId}/folio/${data.chargeId}`, { method: 'DELETE', token }),
+    onSuccess: (updatedRes) => {
+      queryClient.invalidateQueries({ queryKey: ['reservations', selectedBranchId] });
+      queryClient.invalidateQueries({ queryKey: ['services'] });
+      toast.success('Removed');
+      if (updatedRes && updatedRes.id) setCheckoutReservation(updatedRes);
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to remove'),
+  });
+
   const updatePaymentMutation = useMutation({
     mutationFn: async (data: { id: string; amount: number; method: string; bankAccountId?: string }) =>
       api<any>(`/hotel/reservations/${data.id}/payments`, {
@@ -1101,7 +1115,9 @@ export default function HotelPage() {
                      {/* Folio Charges Rows */}
                     {(() => {
                       const charges = [
-                        ...(checkoutReservation.folioCharges || []),
+                        ...(checkoutReservation.folioCharges || []).map((c: any) => ({
+                          id: c.id, description: c.description, chargeType: c.chargeType, createdAt: c.createdAt, amount: c.amount, isService: false,
+                        })),
                         ...((checkoutReservation.serviceRequests || [])
                           .filter((sr: any) => sr.status === 'COMPLETED')
                           .map((sr: any) => ({
@@ -1110,17 +1126,32 @@ export default function HotelPage() {
                             chargeType: 'SERVICE',
                             createdAt: sr.completedAt || sr.createdAt,
                             amount: sr.amount,
+                            isService: true,
                           })))
                       ];
+                      const canRemove = checkoutReservation.status === 'CHECKED_IN';
 
                       return charges.length > 0 ? (
                         charges.map((charge) => (
-                          <div key={charge.id} className="flex justify-between items-center p-2.5 bg-muted/20">
-                            <div>
+                          <div key={charge.id} className="flex justify-between items-center p-2.5 bg-muted/20 gap-2">
+                            <div className="min-w-0">
                               <span className="font-medium text-foreground">{charge.description}</span>
                               <span className="text-[10px] text-muted-foreground uppercase block">{charge.chargeType} • {new Date(charge.createdAt).toLocaleDateString()}</span>
                             </div>
-                            <span className="font-mono font-semibold text-muted-foreground">{formatCurrency(Number(charge.amount))}</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-mono font-semibold text-muted-foreground">{formatCurrency(Number(charge.amount))}</span>
+                              {canRemove && (
+                                <button
+                                  type="button"
+                                  title="Remove"
+                                  className="text-muted-foreground hover:text-destructive text-sm px-1"
+                                  disabled={removeChargeMutation.isPending}
+                                  onClick={() => { if (confirm('Remove this charge?')) removeChargeMutation.mutate({ reservationId: checkoutReservation.id, chargeId: charge.id, isService: charge.isService }); }}
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ))
                       ) : (

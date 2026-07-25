@@ -49,4 +49,10 @@ export class ServicesService {
       data: { status, assignedTo, completedAt: status === 'COMPLETED' ? new Date() : null },
     });
   }
+
+  async remove(businessId: string, id: string) {
+    const existing = await this.prisma.serviceRequest.findFirst({ where: { id, businessId } });
+    if (!existing) throw new NotFoundException('Service request not found');
+    return this.prisma.serviceRequest.delete({ where: { id } });
+  }
 }

@@ -221,7 +221,7 @@
       "id": "R36",
       "title": "Remove a hotel folio charge / service request",
       "priority": 36,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/api/src/hotel/hotel.service.ts", "apps/api/src/hotel/hotel.controller.ts", "apps/api/src/services/services.service.ts", "apps/api/src/services/services.controller.ts", "apps/web/src/app/(app)/hotel/page.tsx", "apps/web/src/app/(app)/hotel/services/page.tsx"],
       "accept": "A user can DELETE a hotel folio extra charge (backend DELETE /hotel/reservations/:id/folio/:chargeId that reverses the stock deduction when the charge has an itemId) and a hotel service request (backend DELETE /services/:id), each with a remove button in the UI."
     },

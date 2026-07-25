@@ -117,6 +117,15 @@ export default function ServicesPage() {
     },
   });
 
+  const removeRequest = useMutation({
+    mutationFn: (id: string) => api(`/services/${id}`, { method: 'DELETE', token }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['services', selectedBranchId] });
+      toast.success('Service request removed');
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to remove'),
+  });
+
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.roomId) {
@@ -241,6 +250,14 @@ export default function ServicesPage() {
                         <ArrowRight className="h-3 w-3 mr-1.5" /> Advance Status
                       </Button>
                     )}
+                    <button
+                      type="button"
+                      className="w-full text-[11px] text-muted-foreground hover:text-destructive mt-1"
+                      disabled={removeRequest.isPending}
+                      onClick={() => { if (confirm('Remove this service request?')) removeRequest.mutate(r.id); }}
+                    >
+                      Remove
+                    </button>
                   </Card>
                 ))}
                 {!colRequests.length && (

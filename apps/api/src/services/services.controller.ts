@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Patch, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Permission } from '@nexus/shared';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -37,5 +37,11 @@ export class ServicesController {
     @Body() body: { status: string; assignedTo?: string },
   ) {
     return this.services.updateStatus(businessId, id, body.status, body.assignedTo);
+  }
+
+  @Delete(':id')
+  @RequirePermissions(Permission.SERVICE_MANAGE)
+  remove(@CurrentUser('businessId') businessId: string, @Param('id') id: string) {
+    return this.services.remove(businessId, id);
   }
 }

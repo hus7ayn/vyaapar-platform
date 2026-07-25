@@ -53,6 +53,13 @@
   replacement SALE_INVOICE (unitPrice/taxRate from item, total computed backend-side, CASH payment floored to
   <= total so no paidAmount>total throw). Both sides update inventory via the txn engine. api+web typecheck green.
 
+- R36 (remove charge/service) PASS: no delete existed for folio charges or service requests. Backend:
+  hotel.service.deleteFolioCharge (deletes the FolioCharge; if it had an itemId, reverses the stock via
+  applyStock 'SALE_INVOICE' invert=true) + DELETE /hotel/reservations/:id/folio/:chargeId; services.service.remove
+  + DELETE /services/:id. Frontend: hotel/page.tsx folio rows show a ✕ remove (only while CHECKED_IN) that routes
+  to the service DELETE for service-derived rows (isService flag) or the folio DELETE otherwise; services/page.tsx
+  each request card has a Remove action. api+web typecheck green.
+
 ## Batch 3 (2026-07-25) — reported issues R26-R31. Same validate (api+web typecheck). Deployed via Vercel CLI
 ## from repo ROOT per project (apps/web=vyaapar-web, apps/api=vyaapar-api; Root Directory set on each project, so
 ## deploying from the app dir fails with apps/web/apps/web). API build auto-runs prisma db push.

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -171,6 +172,16 @@ export class HotelController {
     @Body() body: { description: string; amount: number; chargeType?: string; itemId?: string; quantity?: number },
   ) {
     return this.hotel.addFolioCharge(businessId, id, body);
+  }
+
+  @Delete('reservations/:id/folio/:chargeId')
+  @RequirePermissions(Permission.HOTEL_MANAGE)
+  deleteFolioCharge(
+    @CurrentUser('businessId') businessId: string,
+    @Param('id') id: string,
+    @Param('chargeId') chargeId: string,
+  ) {
+    return this.hotel.deleteFolioCharge(businessId, id, chargeId);
   }
 
   @Post('reservations/:id/cancel')

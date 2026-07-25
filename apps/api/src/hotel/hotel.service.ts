@@ -570,6 +570,31 @@ export class HotelService {
     return this.getReservationWithDetails(businessId, reservationId);
   }
 
+  async deleteFolioCharge(businessId: string, reservationId: string, chargeId: string) {
+    const reservation = await this.prisma.reservation.findFirst({ where: { id: reservationId, businessId } });
+    if (!reservation) throw new NotFoundException('Reservation not found');
+    const charge = await this.prisma.folioCharge.findFirst({ where: { id: chargeId, reservationId } });
+    if (!charge) throw new NotFoundException('Folio charge not found');
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.folioCharge.delete({ where: { id: chargeId } });
+      // Add back the stock that this charge deducted (invert the SALE_INVOICE effect).
+      if (charge.itemId) {
+        await this.txnCore.applyStock(
+          tx,
+          businessId,
+          reservation.branchId,
+          'SALE_INVOICE',
+          `Removed folio charge for booking ${reservation.bookingRef}`,
+          [{ itemId: charge.itemId, quantity: Number(charge.quantity ?? 1) }],
+          true, // invert -> restore stock
+        );
+      }
+    });
+
+    return this.getReservationWithDetails(businessId, reservationId);
+  }
+
   async cancelReservation(businessId: string, id: string, data?: { cancellationFee?: number; refundAmount?: number }) {
     const reservation = await this.prisma.reservation.findFirst({
       where: { id, businessId },
