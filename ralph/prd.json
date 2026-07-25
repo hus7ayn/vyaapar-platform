@@ -532,7 +532,7 @@
       "id": "R48",
       "title": "[schema] TxnLine.sourceLineId self-link + thread through txn-core",
       "priority": 48,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/api/prisma/schema.prisma",
         "apps/api/src/txns/txn-core.service.ts"
@@ -543,7 +543,7 @@
       "id": "R49",
       "title": "[backend] refundInvoice partial-quantity + exact over-return cap; exchange forwards returns",
       "priority": 49,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/api/src/sale/sale.service.ts",
         "apps/api/src/sale/sale.controller.ts"
@@ -554,7 +554,7 @@
       "id": "R50",
       "title": "[backend] getTxn exposes per-line purchased + already-returned qty",
       "priority": 50,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/api/src/txns/txn-core.service.ts"
       ],
@@ -574,7 +574,7 @@
       "id": "R52",
       "title": "[schema] Item.size + persistence/search/filter in items service",
       "priority": 52,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/api/prisma/schema.prisma",
         "apps/api/src/items/items.service.ts"
@@ -606,7 +606,7 @@
       "id": "R55",
       "title": "[backend] Hotel checkout accepts split payments array; include folioPayments in details",
       "priority": 55,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/api/src/hotel/hotel.controller.ts",
         "apps/api/src/hotel/hotel.service.ts"
