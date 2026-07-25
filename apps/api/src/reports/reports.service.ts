@@ -407,7 +407,7 @@ export class ReportsService {
   // ─── Financial statements ──────────────────────────────────────────────────
 
   async profitAndLoss(businessId: string, from?: string, to?: string, branchId?: string) {
-    const [sales, saleReturns, purchases, purchaseReturns, expenses, saleLines, saleReturnLines] = await Promise.all([
+    const [sales, saleReturns, purchases, purchaseReturns, expenses, saleLines, saleReturnLines, hotelRes] = await Promise.all([
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId), _sum: { total: true, taxAmount: true } }),
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'CREDIT_NOTE', from, to, branchId), _sum: { total: true } }),
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'PURCHASE_BILL', from, to, branchId), _sum: { total: true, taxAmount: true } }),
@@ -415,18 +415,32 @@ export class ReportsService {
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'EXPENSE', from, to, branchId), _sum: { total: true } }),
       this.prisma.txnLine.findMany({ where: { txn: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId) } }),
       this.prisma.txnLine.findMany({ where: { txn: this.txnWhere(businessId, 'CREDIT_NOTE', from, to, branchId) } }),
+      // Hotel income: room revenue + folio/service charges for stays checked out in the period.
+      // P&L holds zero hotel data otherwise, so this is double-count-safe.
+      this.prisma.reservation.aggregate({
+        where: {
+          businessId,
+          status: 'CHECKED_OUT',
+          ...(branchId && { branchId }),
+          ...(range(from, to) && { checkedOutAt: range(from, to) }),
+        },
+        _sum: { totalAmount: true, extraCharges: true },
+      }),
     ]);
 
     const grossSale = num(sales._sum.total) - num(saleReturns._sum.total);
+    const hotelRevenue = num(hotelRes._sum.totalAmount) + num(hotelRes._sum.extraCharges);
     const cogs = saleLines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0)
       - saleReturnLines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0);
-    const grossProfit = grossSale - num(sales._sum.taxAmount) - cogs;
+    const grossProfit = grossSale - num(sales._sum.taxAmount) - cogs + hotelRevenue;
     const totalExpenses = num(expenses._sum.total);
 
     return {
       sale: num(sales._sum.total),
       saleReturns: num(saleReturns._sum.total),
       netSale: grossSale,
+      hotelRevenue,
+      totalRevenue: grossSale + hotelRevenue,
       purchase: num(purchases._sum.total),
       purchaseReturns: num(purchaseReturns._sum.total),
       cogs,

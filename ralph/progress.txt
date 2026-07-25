@@ -60,6 +60,13 @@
   to the service DELETE for service-derived rows (isService flag) or the folio DELETE otherwise; services/page.tsx
   each request card has a Remove action. api+web typecheck green.
 
+- R37 (P&L hotel/services revenue) PASS: profitAndLoss aggregated only SALE_INVOICE/CREDIT_NOTE, so hotel room +
+  folio/service income (which never posts a sale txn) was invisible. Added a reservation.aggregate (status
+  CHECKED_OUT, scoped by branch + checkedOutAt in the period via range()) summing totalAmount + extraCharges ->
+  hotelRevenue, folded into grossProfit and netProfit; exposed hotelRevenue + totalRevenue (grossSale+hotel) in
+  the payload (the generic P&L page renders them automatically). Double-count-safe: P&L had zero hotel data before.
+  api+web typecheck green. ALL 6 BATCH-4 STORIES (R32-R37) PASS.
+
 ## Batch 3 (2026-07-25) — reported issues R26-R31. Same validate (api+web typecheck). Deployed via Vercel CLI
 ## from repo ROOT per project (apps/web=vyaapar-web, apps/api=vyaapar-api; Root Directory set on each project, so
 ## deploying from the app dir fails with apps/web/apps/web). API build auto-runs prisma db push.

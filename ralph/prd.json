@@ -229,7 +229,7 @@
       "id": "R37",
       "title": "P&L includes hotel + services revenue",
       "priority": 37,
-      "status": "todo",
+      "status": "pass",
       "files": ["apps/api/src/reports/reports.service.ts"],
       "accept": "The Profit & Loss report includes hotel revenue — room revenue + folio/service charges for reservations CHECKED_OUT in the period (reservation.totalAmount + extraCharges) — as a revenue block folded into gross sale / net profit. Today P&L aggregates only SALE_INVOICE so all hotel/service income is invisible; adding it is double-count-safe because P&L currently contains zero hotel data."
     }
