@@ -201,7 +201,7 @@ export default function HotelPage() {
       queryClient.invalidateQueries({ queryKey: ['reservations', selectedBranchId] });
       queryClient.invalidateQueries({ queryKey: ['rooms', selectedBranchId] });
       queryClient.invalidateQueries({ queryKey: ['hotel-stats', selectedBranchId] });
-      queryClient.invalidateQueries({ queryKey: ['hotel-profit', selectedBranchId] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success('Booking cancelled successfully');
       setCancelDialogOpen(false);
       setCancelReservationId(null);
@@ -223,7 +223,7 @@ export default function HotelPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reservations', selectedBranchId] });
       queryClient.invalidateQueries({ queryKey: ['hotel-stats', selectedBranchId] });
-      queryClient.invalidateQueries({ queryKey: ['hotel-profit', selectedBranchId] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success('Reservation marked as paid');
     },
     onError: (err) => {
@@ -260,7 +260,7 @@ export default function HotelPage() {
       queryClient.invalidateQueries({ queryKey: ['reservations', selectedBranchId] });
       queryClient.invalidateQueries({ queryKey: ['rooms', selectedBranchId] });
       queryClient.invalidateQueries({ queryKey: ['hotel-stats', selectedBranchId] });
-      queryClient.invalidateQueries({ queryKey: ['hotel-profit', selectedBranchId] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success('Guest checked out successfully');
       setCheckoutMethod('CASH');
       setCheckoutBankId('');
@@ -316,7 +316,7 @@ export default function HotelPage() {
     onSuccess: (updatedRes, variables) => {
       queryClient.invalidateQueries({ queryKey: ['reservations', selectedBranchId] });
       queryClient.invalidateQueries({ queryKey: ['hotel-stats', selectedBranchId] });
-      queryClient.invalidateQueries({ queryKey: ['hotel-profit', selectedBranchId] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success('Payment recorded successfully');
       setNewPaymentAmount('');
       setNewPaymentMethod('CASH');

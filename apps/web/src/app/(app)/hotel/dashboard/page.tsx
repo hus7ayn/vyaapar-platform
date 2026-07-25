@@ -57,19 +57,22 @@ function HotelDashboardContent() {
 
   const { data: stats, isLoading } = useQuery<HotelStats>({
     queryKey: ['hotel-stats', selectedBranchId],
-    queryFn: () => api<HotelStats>(`/reports/hotel${selectedBranchId ? `?branchId=${selectedBranchId}` : ''}`, { token }),
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    // Pass branchId as an api() option so x-branch-id targets the hotel branch (the report
+    // endpoint also honors ?branchId). refetchOnMount:'always' + interval => near real-time.
+    queryFn: () => api<HotelStats>('/reports/hotel', { token, branchId: selectedBranchId }),
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+    refetchInterval: 30_000,
     enabled: !!selectedBranchId,
   });
 
   const { data: reservations } = useQuery({
     queryKey: ['hotel-reservations-recent', selectedBranchId],
-    queryFn: () => api<any[]>(`/hotel/reservations?status=CHECKED_IN${selectedBranchId ? `&branchId=${selectedBranchId}` : ''}`, { token }),
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    queryFn: () => api<any[]>('/hotel/reservations?status=CHECKED_IN', { token, branchId: selectedBranchId }),
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
     enabled: !!selectedBranchId,
   });
 
@@ -80,7 +83,8 @@ function HotelDashboardContent() {
     auditHistory: { auditDate: string; roomRevenue: number | string; occupancyRate: number | string }[];
   }>({
     queryKey: ['revenue-metrics', selectedBranchId],
-    queryFn: () => api(`/hotel/revenue-metrics?branchId=${selectedBranchId}`, { token }),
+    queryFn: () => api('/hotel/revenue-metrics', { token, branchId: selectedBranchId }),
+    refetchOnMount: 'always',
     enabled: !!selectedBranchId,
   });
 
