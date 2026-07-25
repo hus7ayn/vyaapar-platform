@@ -564,7 +564,7 @@
       "id": "R51",
       "title": "[frontend] Per-line return quantity picker (return N of M)",
       "priority": 51,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/web/src/components/pos/return-dialog.tsx"
       ],
@@ -585,7 +585,7 @@
       "id": "R53",
       "title": "[frontend] Size in Add/Edit Item form, inventory list/detail, and filter",
       "priority": 53,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/web/src/app/(app)/items/page.tsx"
       ],
@@ -595,7 +595,7 @@
       "id": "R54",
       "title": "[frontend] Size shown in billing item picker + POS catalog (prints on bill)",
       "priority": 54,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/web/src/components/vyapar/txn-form.tsx",
         "apps/web/src/hooks/use-pos-catalog.ts"
@@ -617,7 +617,7 @@
       "id": "R56",
       "title": "[frontend] Split-payment checkout UI + 'Paid via' on invoice + Bank Transfer label",
       "priority": 56,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/web/src/app/(app)/hotel/page.tsx"
       ],

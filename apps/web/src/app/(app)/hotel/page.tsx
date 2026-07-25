@@ -23,6 +23,14 @@ const STATUS_COLORS: Record<string, string> = {
 
 const ROOM_STATUSES = ['AVAILABLE', 'OCCUPIED', 'RESERVED', 'CLEANING', 'MAINTENANCE'] as const;
 
+// The stored paymentType 'BANK' is shown to users as "Bank Transfer".
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  CASH: 'Cash',
+  BANK: 'Bank Transfer',
+  UPI: 'UPI',
+  CARD: 'Card',
+};
+
 type HotelRoom = {
   id: string;
   roomNumber: string;
@@ -59,6 +67,7 @@ type Reservation = {
   guest: { firstName: string; lastName: string; documentPublicUrl?: string; idProofType?: string };
   room: { id: string; roomNumber: string };
   folioCharges: FolioCharge[];
+  folioPayments?: { id: string; method: string; amount: number | string; reference?: string | null }[];
   serviceRequests?: any[];
 };
 
@@ -112,6 +121,11 @@ export default function HotelPage() {
   // Settlement of the final balance chosen at the moment of checkout.
   const [checkoutMethod, setCheckoutMethod] = useState('CASH');
   const [checkoutBankId, setCheckoutBankId] = useState('');
+  // Split payment: settle the bill across several methods.
+  const [checkoutSplit, setCheckoutSplit] = useState(false);
+  const [splitRows, setSplitRows] = useState<{ method: string; amount: string; bankAccountId: string }[]>([
+    { method: 'CASH', amount: '', bankAccountId: '' },
+  ]);
 
   const { data: bankAccounts } = useQuery({
     queryKey: ['bank-accounts'],
@@ -250,7 +264,15 @@ export default function HotelPage() {
   });
 
   const checkoutMutation = useMutation({
-    mutationFn: async ({ id, settle }: { id: string; settle?: { method: string; amount: number; bankAccountId?: string } }) =>
+    mutationFn: async ({ id, settle }: {
+      id: string;
+      settle?: {
+        method?: string;
+        amount?: number;
+        bankAccountId?: string;
+        payments?: { method: string; amount: number; bankAccountId?: string }[];
+      };
+    }) =>
       api<any>(`/hotel/check-out/${id}`, {
         method: 'POST',
         token,
@@ -264,6 +286,8 @@ export default function HotelPage() {
       toast.success('Guest checked out successfully');
       setCheckoutMethod('CASH');
       setCheckoutBankId('');
+      setCheckoutSplit(false);
+      setSplitRows([{ method: 'CASH', amount: '', bankAccountId: '' }]);
       setCheckoutDialogOpen(false);
       setCheckoutReservation(null);
     },
@@ -1234,7 +1258,7 @@ export default function HotelPage() {
                         onChange={(e) => setNewPaymentMethod(e.target.value)}
                       >
                         <option value="CASH">Cash</option>
-                        <option value="BANK">Bank</option>
+                        <option value="BANK">Bank Transfer</option>
                         <option value="UPI">UPI</option>
                         <option value="CARD">Card</option>
                       </select>
@@ -1292,6 +1316,16 @@ export default function HotelPage() {
                     <span>Total Amount Paid</span>
                     <span className="font-mono">{formatCurrency(Number(checkoutReservation.paidAmount))}</span>
                   </div>
+                  {(checkoutReservation.folioPayments?.length ?? 0) > 0 && (
+                    <div className="text-xs text-muted-foreground pl-2 space-y-0.5">
+                      {checkoutReservation.folioPayments!.map((p) => (
+                        <div key={p.id} className="flex justify-between">
+                          <span>Paid via {PAYMENT_METHOD_LABELS[p.method] ?? p.method}{p.reference ? ` · ${p.reference}` : ''}</span>
+                          <span className="font-mono">{formatCurrency(Number(p.amount))}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex justify-between border-t border-dashed border-white/10 pt-2 text-base font-bold">
                     <span>{summary.pendingDues > 0 ? 'Remaining Balance' : 'Balance Cleared'}</span>
                     <span className={cn('font-mono', summary.pendingDues > 0 ? 'text-rose-500' : 'text-emerald-500')}>
@@ -1317,51 +1351,122 @@ export default function HotelPage() {
                     Print Bill
                   </Button>
                   
-                  {checkoutReservation.status === 'CHECKED_IN' && (
+                  {checkoutReservation.status === 'CHECKED_IN' && (() => {
+                    const splitSum = splitRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+                    const dueLeft = summary.pendingDues - splitSum;
+                    const splitValid =
+                      Math.abs(dueLeft) < 0.01 &&
+                      splitRows.every((r) => (parseFloat(r.amount) || 0) > 0 && (r.method === 'CASH' || r.bankAccountId));
+                    const banks = (bankAccounts ?? []).filter((a) => a.accountType !== 'CASH');
+                    const updateRow = (idx: number, patch: Partial<(typeof splitRows)[number]>) =>
+                      setSplitRows((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+                    return (
                     <div className="flex-1 flex flex-col gap-2">
                       {summary.pendingDues > 0 && (
-                        <div className="flex gap-2">
-                          <select
-                            className="rounded-lg border px-2 py-1.5 bg-background text-xs shrink-0"
-                            value={checkoutMethod}
-                            onChange={(e) => setCheckoutMethod(e.target.value)}
-                          >
-                            <option value="CASH">Cash</option>
-                            <option value="BANK">Bank</option>
-                            <option value="UPI">UPI</option>
-                            <option value="CARD">Card</option>
-                          </select>
-                          {checkoutMethod !== 'CASH' && (
-                            <select
-                              className="rounded-lg border px-2 py-1.5 bg-background text-xs flex-1 min-w-0"
-                              value={checkoutBankId}
-                              onChange={(e) => setCheckoutBankId(e.target.value)}
-                            >
-                              <option value="">Bank account…</option>
-                              {(bankAccounts ?? []).filter((a) => a.accountType !== 'CASH').map((a) => (
-                                <option key={a.id} value={a.id}>{a.name}</option>
+                        <>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-muted-foreground">Pay by:</span>
+                            <button type="button" className={cn('px-2 py-0.5 rounded border', !checkoutSplit && 'bg-primary text-primary-foreground border-primary')} onClick={() => setCheckoutSplit(false)}>Single</button>
+                            <button type="button" className={cn('px-2 py-0.5 rounded border', checkoutSplit && 'bg-primary text-primary-foreground border-primary')} onClick={() => setCheckoutSplit(true)}>Split</button>
+                          </div>
+                          {!checkoutSplit ? (
+                            <div className="flex gap-2">
+                              <select
+                                className="rounded-lg border px-2 py-1.5 bg-background text-xs shrink-0"
+                                value={checkoutMethod}
+                                onChange={(e) => setCheckoutMethod(e.target.value)}
+                              >
+                                <option value="CASH">Cash</option>
+                                <option value="BANK">Bank Transfer</option>
+                                <option value="UPI">UPI</option>
+                                <option value="CARD">Card</option>
+                              </select>
+                              {checkoutMethod !== 'CASH' && (
+                                <select
+                                  className="rounded-lg border px-2 py-1.5 bg-background text-xs flex-1 min-w-0"
+                                  value={checkoutBankId}
+                                  onChange={(e) => setCheckoutBankId(e.target.value)}
+                                >
+                                  <option value="">Bank account…</option>
+                                  {banks.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
+                                </select>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {splitRows.map((r, idx) => (
+                                <div key={idx} className="flex gap-1.5 items-center">
+                                  <select
+                                    className="rounded-lg border px-1.5 py-1.5 bg-background text-xs shrink-0"
+                                    value={r.method}
+                                    onChange={(e) => updateRow(idx, { method: e.target.value, bankAccountId: '' })}
+                                  >
+                                    <option value="CASH">Cash</option>
+                                    <option value="BANK">Bank Transfer</option>
+                                    <option value="UPI">UPI</option>
+                                    <option value="CARD">Card</option>
+                                  </select>
+                                  {r.method !== 'CASH' && (
+                                    <select
+                                      className="rounded-lg border px-1.5 py-1.5 bg-background text-xs flex-1 min-w-0"
+                                      value={r.bankAccountId}
+                                      onChange={(e) => updateRow(idx, { bankAccountId: e.target.value })}
+                                    >
+                                      <option value="">Bank…</option>
+                                      {banks.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
+                                    </select>
+                                  )}
+                                  <input
+                                    type="number" min={0} step="any" placeholder="Amount"
+                                    className="w-20 rounded-lg border px-2 py-1.5 bg-background text-xs"
+                                    value={r.amount}
+                                    onChange={(e) => updateRow(idx, { amount: e.target.value })}
+                                  />
+                                  {splitRows.length > 1 && (
+                                    <button type="button" className="text-muted-foreground hover:text-rose-600 text-sm px-1" onClick={() => setSplitRows((rows) => rows.filter((_, i) => i !== idx))}>✕</button>
+                                  )}
+                                </div>
                               ))}
-                            </select>
+                              <div className="flex justify-between items-center text-xs">
+                                <button type="button" className="text-primary hover:underline" onClick={() => setSplitRows((rows) => [...rows, { method: 'CASH', amount: '', bankAccountId: '' }])}>+ Add method</button>
+                                <span className={cn('font-medium', Math.abs(dueLeft) < 0.01 ? 'text-emerald-600' : 'text-rose-600')}>
+                                  {dueLeft > 0.009 ? `${formatCurrency(dueLeft)} left` : dueLeft < -0.009 ? `${formatCurrency(-dueLeft)} over` : 'Balanced ✓'}
+                                </span>
+                              </div>
+                            </div>
                           )}
-                        </div>
+                        </>
                       )}
                       <Button
                         className="w-full bg-rose-600 hover:bg-rose-700 text-white"
-                        disabled={checkoutMutation.isPending}
+                        disabled={checkoutMutation.isPending || (summary.pendingDues > 0 && checkoutSplit && !splitValid)}
                         onClick={() => {
                           if (summary.pendingDues > 0) {
-                            if (checkoutMethod !== 'CASH' && !checkoutBankId) {
-                              toast.error('Select a bank account');
-                              return;
+                            if (checkoutSplit) {
+                              checkoutMutation.mutate({
+                                id: checkoutReservation.id,
+                                settle: {
+                                  payments: splitRows.map((r) => ({
+                                    method: r.method,
+                                    amount: parseFloat(r.amount) || 0,
+                                    bankAccountId: r.method !== 'CASH' ? r.bankAccountId : undefined,
+                                  })),
+                                },
+                              });
+                            } else {
+                              if (checkoutMethod !== 'CASH' && !checkoutBankId) {
+                                toast.error('Select a bank account');
+                                return;
+                              }
+                              checkoutMutation.mutate({
+                                id: checkoutReservation.id,
+                                settle: {
+                                  method: checkoutMethod,
+                                  amount: summary.pendingDues,
+                                  bankAccountId: checkoutMethod !== 'CASH' ? checkoutBankId : undefined,
+                                },
+                              });
                             }
-                            checkoutMutation.mutate({
-                              id: checkoutReservation.id,
-                              settle: {
-                                method: checkoutMethod,
-                                amount: summary.pendingDues,
-                                bankAccountId: checkoutMethod !== 'CASH' ? checkoutBankId : undefined,
-                              },
-                            });
                           } else {
                             checkoutMutation.mutate({ id: checkoutReservation.id });
                           }
@@ -1386,7 +1491,8 @@ export default function HotelPage() {
                         </button>
                       )}
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
             );
