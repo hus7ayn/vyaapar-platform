@@ -20,9 +20,16 @@ export class ServicesService {
   async create(businessId: string, data: Record<string, any>) {
     let reservationId: string | null = null;
     if (data.roomId) {
-      const activeRes = await this.prisma.reservation.findFirst({
-        where: { roomId: data.roomId, status: 'CHECKED_IN' },
-      });
+      // Link to the guest currently in the room; if none, fall back to the next confirmed
+      // booking so an in-stay / upcoming service is billed at checkout (not orphaned).
+      const activeRes =
+        (await this.prisma.reservation.findFirst({
+          where: { roomId: data.roomId, businessId, status: 'CHECKED_IN' },
+        })) ??
+        (await this.prisma.reservation.findFirst({
+          where: { roomId: data.roomId, businessId, status: 'CONFIRMED' },
+          orderBy: { checkIn: 'asc' },
+        }));
       if (activeRes) {
         reservationId = activeRes.id;
       }

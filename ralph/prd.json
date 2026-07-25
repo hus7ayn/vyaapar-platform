@@ -468,7 +468,7 @@
       "id": "R42",
       "title": "Hotel dashboard/report: billed revenue + profit + services (not folio-payments-only)",
       "priority": 42,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/api/src/reports/reports.service.ts",
         "apps/api/src/services/services.service.ts"
@@ -479,7 +479,7 @@
       "id": "R43",
       "title": "Reconcile balance sheet after hotel revenue enters net profit (R37 side-effect)",
       "priority": 43,
-      "status": "todo",
+      "status": "pass",
       "files": [
         "apps/api/src/reports/reports.service.ts"
       ],

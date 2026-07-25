@@ -27,6 +27,8 @@ type HotelStats = {
   monthProfit: number;
   yearProfit: number;
   netProfit: number;
+  collected: number;
+  serviceRevenue: number;
   totalCollected: number;
   pendingAmount: number;
   totalReservations: number;
@@ -118,6 +120,12 @@ function HotelDashboardContent() {
       value: formatCurrency(stats?.yearProfit ?? 0),
       icon: Wallet,
       color: 'text-emerald-600',
+    },
+    {
+      label: 'Service Revenue',
+      value: formatCurrency(stats?.serviceRevenue ?? 0),
+      icon: Wallet,
+      color: 'text-teal-500',
     },
     {
       label: 'Pending Collection',

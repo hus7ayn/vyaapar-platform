@@ -514,12 +514,25 @@ export class ReportsService {
     const payable = get('Accounts Payable').credit;
     const loans = get('Loan Accounts').credit;
 
-    const totalAssets = cashBank + receivable + stock;
+    // Hotel dues receivable: billed-but-uncollected balance on checked-out stays. P&L net
+    // profit now includes accrued hotel revenue (R37); the collected part sits in Cash & Bank
+    // (posted as PAYMENT_IN) and this receivable backs the uncollected part, so retained
+    // earnings stays matched by real assets instead of a negative owner's-capital plug.
+    const hotelStays = await this.prisma.reservation.findMany({
+      where: { businessId, status: 'CHECKED_OUT', ...branchWhere(branchId) },
+      select: { totalAmount: true, extraCharges: true, paidAmount: true },
+    });
+    const hotelReceivable = hotelStays.reduce(
+      (s, r) => s + Math.max(0, num(r.totalAmount) + num(r.extraCharges) - num(r.paidAmount)),
+      0,
+    );
+
+    const totalAssets = cashBank + receivable + stock + hotelReceivable;
     const totalLiabilities = payable + loans;
     const equity = totalAssets - totalLiabilities;
 
     return {
-      assets: { cashAndBank: cashBank, receivables: receivable, closingStock: stock, total: totalAssets },
+      assets: { cashAndBank: cashBank, receivables: receivable, hotelReceivable, closingStock: stock, total: totalAssets },
       liabilities: { payables: payable, loans, total: totalLiabilities },
       equity: { retainedEarnings: pnl.netProfit, ownersCapital: equity - pnl.netProfit, total: equity },
       totalLiabilitiesAndEquity: totalLiabilities + equity,
@@ -680,13 +693,17 @@ export class ReportsService {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const yearStart = new Date(now.getFullYear(), 0, 1);
 
-    const [rooms, reservations, folioPayments, expenses] = await Promise.all([
+    const [rooms, reservations, folioPayments, expenses, completedServices] = await Promise.all([
       this.prisma.room.findMany({ where: roomWhere }),
       this.prisma.reservation.findMany({ where: resWhere }),
       this.prisma.folioPayment.findMany({
         where: { businessId, ...(branchId && { reservation: { branchId } }) },
       }),
       this.prisma.txn.findMany({ where: this.txnWhere(businessId, 'EXPENSE', undefined, undefined, branchId) }),
+      this.prisma.serviceRequest.findMany({
+        where: { businessId, status: 'COMPLETED', ...(branchId && { room: { branchId } }) },
+        select: { amount: true, completedAt: true },
+      }),
     ]);
 
     const totalRooms = rooms.length;
@@ -695,17 +712,31 @@ export class ReportsService {
     const cleaning = rooms.filter((r) => r.status === 'CLEANING').length;
     const available = rooms.filter((r) => r.status === 'AVAILABLE').length;
 
-    const paymentsIn = (since?: Date) =>
-      folioPayments.filter((p) => !since || p.createdAt >= since).reduce((s, p) => s + num(p.amount), 0);
+    // Revenue is recognised on a BILLED basis — room + folio/service charges for stays
+    // CHECKED OUT in the period (reservation.totalAmount + extraCharges), bucketed by
+    // checkedOutAt. This matches the R37 P&L and shows revenue even when no folio payment
+    // was explicitly recorded (the folioPayments-only basis showed zero in that case).
+    const checkedOut = reservations.filter((r) => r.status === 'CHECKED_OUT' && r.checkedOutAt);
+    const billedIn = (since?: Date) =>
+      checkedOut
+        .filter((r) => !since || (r.checkedOutAt && r.checkedOutAt >= since))
+        .reduce((s, r) => s + num(r.totalAmount) + num(r.extraCharges), 0);
     const expensesIn = (since?: Date) =>
       expenses.filter((e) => !since || e.date >= since).reduce((s, e) => s + num(e.total), 0);
 
-    const totalRevenue = paymentsIn();
-    const todayRevenue = paymentsIn(todayStart);
-    const monthRevenue = paymentsIn(monthStart);
-    const yearRevenue = paymentsIn(yearStart);
+    const totalRevenue = billedIn();
+    const todayRevenue = billedIn(todayStart);
+    const monthRevenue = billedIn(monthStart);
+    const yearRevenue = billedIn(yearStart);
 
-    const totalBilled = reservations.reduce((s, r) => s + num(r.totalAmount), 0);
+    // Actual cash collected via folio payments (distinct from billed revenue above).
+    const collected = folioPayments.reduce((s, p) => s + num(p.amount), 0);
+    // Service income (completed service requests). Informational — the checked-out portion
+    // is already inside extraCharges/totalRevenue, so this is NOT added into revenue/profit.
+    const serviceRevenue = completedServices.reduce((s, sr) => s + num(sr.amount), 0);
+
+    // Billed total incl. extra/service charges so pending reflects service money too.
+    const totalBilled = reservations.reduce((s, r) => s + num(r.totalAmount) + num(r.extraCharges), 0);
     const totalCollected = reservations.reduce((s, r) => s + num(r.paidAmount), 0);
 
     return {
@@ -717,6 +748,8 @@ export class ReportsService {
       monthProfit: monthRevenue - expensesIn(monthStart),
       yearProfit: yearRevenue - expensesIn(yearStart),
       netProfit: totalRevenue - expensesIn(),
+      collected,
+      serviceRevenue,
       totalCollected,
       pendingAmount: Math.max(0, totalBilled - totalCollected),
       totalReservations: reservations.length,
