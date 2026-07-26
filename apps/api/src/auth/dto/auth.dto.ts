@@ -65,8 +65,18 @@ export class ResetPasswordDto {
   @IsEmail()
   email: string;
 
+  // Role-specific reset key (Super Admin / Admin / Biller key) — replaces email OTP.
   @IsString()
-  code: string;
+  roleKey: string;
+
+  @IsString()
+  @IsStrongPassword()
+  newPassword: string;
+}
+
+export class ChangePasswordDto {
+  @IsString()
+  currentPassword: string;
 
   @IsString()
   @IsStrongPassword()

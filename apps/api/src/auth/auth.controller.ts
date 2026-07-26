@@ -12,6 +12,7 @@ import {
   OtpVerifyDto,
   ForgotPasswordDto,
   ResetPasswordDto,
+  ChangePasswordDto,
 } from './dto/auth.dto';
 
 @ApiTags('auth')
@@ -58,7 +59,13 @@ export class AuthController {
   @Public()
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.auth.resetPassword(dto.email, dto.code, dto.newPassword);
+    return this.auth.resetPassword(dto.email, dto.roleKey, dto.newPassword);
+  }
+
+  @ApiBearerAuth()
+  @Post('change-password')
+  changePassword(@CurrentUser('sub') userId: string, @Body() dto: ChangePasswordDto) {
+    return this.auth.changePassword(userId, dto.currentPassword, dto.newPassword);
   }
 
   @ApiBearerAuth()

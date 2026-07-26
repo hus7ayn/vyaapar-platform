@@ -790,6 +790,61 @@
         "apps/web/src/app/(app)/items/page.tsx"
       ],
       "accept": "Add Item no longer requires a barcode; the field is labeled 'auto-generated if left blank' and stays editable for a unique override."
+    },
+    {
+      "id": "R65",
+      "title": "Login rejects disabled (isActive:false) users",
+      "priority": 65,
+      "status": "pass",
+      "files": [
+        "apps/api/src/auth/auth.service.ts"
+      ],
+      "accept": "login() rejects users with isActive:false ('This account has been disabled') so a disabled user cannot mint fresh tokens."
+    },
+    {
+      "id": "R70",
+      "title": "#2 Forgot-password via role key (no email/OTP), fail-closed",
+      "priority": 70,
+      "status": "pass",
+      "files": [
+        "apps/api/src/auth/auth.service.ts",
+        "apps/api/src/auth/auth.controller.ts",
+        "apps/api/src/auth/dto/auth.dto.ts"
+      ],
+      "accept": "resetPassword(email, roleKey, newPassword) verifies the account by email + the role-specific key from env (resetKeyForRole -> SUPER_ADMIN_RESET_KEY/ADMIN_RESET_KEY/BILLER_RESET_KEY). Fails closed (generic UnauthorizedException) on unknown email, unconfigured key, or mismatch — no OTP, no account enumeration, no bypass. New password must meet policy. Sessions invalidated."
+    },
+    {
+      "id": "R71",
+      "title": "#2 Web forgot-password single-step role-key form",
+      "priority": 71,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(auth)/forgot-password/page.tsx"
+      ],
+      "accept": "One form: email + reset key + new password (client policy precheck) -> POST /auth/reset-password {email, roleKey, newPassword}. No OTP step/copy."
+    },
+    {
+      "id": "R72",
+      "title": "#10 Authenticated change-password endpoint",
+      "priority": 72,
+      "status": "pass",
+      "files": [
+        "apps/api/src/auth/auth.service.ts",
+        "apps/api/src/auth/auth.controller.ts",
+        "apps/api/src/auth/dto/auth.dto.ts"
+      ],
+      "accept": "POST /auth/change-password (JWT-guarded) bcrypt-compares currentPassword then hashes newPassword (policy-checked); invalidates sessions."
+    },
+    {
+      "id": "R73",
+      "title": "#10 Web change-password page + settings nav card",
+      "priority": 73,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/settings/account/page.tsx",
+        "apps/web/src/app/(app)/settings/page.tsx"
+      ],
+      "accept": "Settings has a Change Password card -> /settings/account with current + new + confirm inputs, client policy precheck, POST /auth/change-password."
     }
   ]
 }

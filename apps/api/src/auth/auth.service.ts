@@ -96,6 +96,7 @@ export class AuthService {
       include: { business: true },
     });
     if (!user) throw new UnauthorizedException('Invalid credentials');
+    if (!user.isActive) throw new UnauthorizedException('This account has been disabled');
     if (user.isLocked) throw new UnauthorizedException('Account locked');
     if (!user.business.isActive) throw new UnauthorizedException('Business account suspended');
 
@@ -187,24 +188,55 @@ export class AuthService {
     );
   }
 
-  async resetPassword(email: string, code: string, newPassword: string) {
-    const otp = await this.prisma.otpCode.findFirst({
-      where: { email, code, used: false, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!otp) throw new BadRequestException('Invalid or expired code');
+  // Maps a user's role to the configured reset key (env). Returns undefined when the key isn't
+  // configured, in which case reset MUST fail closed (no key = no reset).
+  private resetKeyForRole(role: string): string | undefined {
+    switch (role) {
+      case 'SUPER_ADMIN':
+      case 'ADMIN': // tenant owner = "Super Admin"
+        return process.env.SUPER_ADMIN_RESET_KEY;
+      case 'HOTEL_OWNER':
+      case 'BRANCH_MANAGER': // "Admin" (shop/hotel scoped)
+      case 'ACCOUNTANT':
+        return process.env.ADMIN_RESET_KEY;
+      default: // BILLER, BILLER_HOTEL, RECEPTIONIST, HOUSEKEEPING, MAINTENANCE_STAFF
+        return process.env.BILLER_RESET_KEY;
+    }
+  }
 
-    const user = await this.prisma.user.findFirst({ where: { email } });
-    if (!user) throw new BadRequestException('User not found');
+  // Forgot-password without email: verify the account by its email + the role-specific reset
+  // key. Fails closed — a role with no configured key, a missing/mismatched key, or an unknown
+  // email are all rejected with the same generic error (no account enumeration).
+  async resetPassword(email: string, roleKey: string, newPassword: string) {
+    const user = await this.prisma.user.findFirst({ where: { email, deletedAt: null } });
+    const invalid = () => new UnauthorizedException('Invalid reset key or email address');
+    if (!user) throw invalid();
+    const expected = this.resetKeyForRole(user.role);
+    if (!expected || !roleKey || roleKey !== expected) throw invalid();
 
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await this.prisma.$transaction([
       this.prisma.user.update({ where: { id: user.id }, data: { passwordHash, failedAttempts: 0, isLocked: false } }),
-      this.prisma.otpCode.update({ where: { id: otp.id }, data: { used: true } }),
       this.prisma.session.deleteMany({ where: { userId: user.id } }),
     ]);
 
     return { message: 'Password reset successful' };
+  }
+
+  // Authenticated change-password: verify the current password, then update. Invalidates all
+  // sessions (refresh tokens) so a stolen refresh token can't survive a password change.
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findFirst({ where: { id: userId, deletedAt: null } });
+    if (!user) throw new UnauthorizedException('User not found');
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) throw new UnauthorizedException('Current password is incorrect');
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+      this.prisma.session.deleteMany({ where: { userId } }),
+    ]);
+    return { message: 'Password changed successfully' };
   }
 
   async getSessions(userId: string) {

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Hash, Receipt, Users } from 'lucide-react';
+import { Building2, Hash, Receipt, Users, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
@@ -207,6 +207,19 @@ export default function SettingsPage() {
             </div>
           </div>
           <Button variant="outline" size="sm">Manage</Button>
+        </Card>
+      </Link>
+
+      <Link href="/settings/account">
+        <Card className="p-6 flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer">
+          <div className="flex items-center gap-3">
+            <KeyRound className="h-8 w-8 text-primary" />
+            <div>
+              <p className="font-semibold">Change password</p>
+              <p className="text-sm text-muted-foreground">Update your account password</p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm">Change</Button>
         </Card>
       </Link>
     </div>
