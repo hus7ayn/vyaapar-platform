@@ -252,9 +252,16 @@ export class ReceiptsService {
       for (const c of charges) totalRow(c.name, Number(c.amount).toFixed(2));
       if (Number(txn.roundOff) !== 0) totalRow('Round Off', Number(txn.roundOff).toFixed(2));
 
-      doc.rect(totalsX - 6, y - 2, right - totalsX + 6, 22).fill('#b91c1c');
-      doc.fillColor('#ffffff');
-      totalRow('TOTAL', `Rs. ${Number(txn.total).toFixed(2)}`, true);
+      // TOTAL band. Draw the red rectangle and its white text explicitly, then advance y PAST
+      // the band before the next row — otherwise the 22px band bled onto the "Received" line
+      // below, printing dark text over red (the color-overlap bug).
+      const bandTop = y - 2;
+      const bandH = 22;
+      doc.rect(totalsX - 6, bandTop, right - totalsX + 6, bandH).fill('#b91c1c');
+      doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11);
+      doc.text('TOTAL', totalsX, bandTop + 6, { width: 110 });
+      doc.text(`Rs. ${Number(txn.total).toFixed(2)}`, totalsX + 110, bandTop + 6, { width: right - totalsX - 110, align: 'right' });
+      y = bandTop + bandH + 6;
       doc.fillColor('#111827');
 
       if (Number(txn.paidAmount) > 0) totalRow('Received', Number(txn.paidAmount).toFixed(2));

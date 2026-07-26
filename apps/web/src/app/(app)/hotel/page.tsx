@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog';
 import { ReservationCalendar } from '@/components/hotel/reservation-calendar';
+import { printHtmlDocument } from '@/lib/print-html';
 import { Building, Search, Calendar, DollarSign, AlertCircle, RefreshCw, X } from 'lucide-react';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -374,6 +375,68 @@ export default function HotelPage() {
       grandTotal,
       pendingDues,
     };
+  };
+
+  // Print the folio as a dedicated 80mm receipt document (opened in a new window), the same
+  // robust path the POS thermal bill uses. This replaces window.print() of the live dialog,
+  // which printed the modal's black overlay over the content (the "blank bill" bug).
+  const printFolio = (r: Reservation) => {
+    const s = getReservationSummary(r);
+    const esc = (v: unknown) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const money = (n: unknown) => `Rs. ${Number(n || 0).toFixed(2)}`;
+    const dt = (d: string) => new Date(d).toLocaleDateString('en-IN');
+    const hotelName = branches?.find((b) => b.id === selectedBranchId)?.name || 'Hotel';
+    const chargeRows = (r.folioCharges ?? [])
+      .map((c) => `<tr><td>${esc(c.description)}</td><td class="r">${money(c.amount)}</td></tr>`)
+      .join('');
+    const serviceRows = (r.serviceRequests ?? [])
+      .filter((sr: { status?: string; amount?: unknown }) => sr.status === 'COMPLETED' && sr.amount)
+      .map((sr: { serviceType?: string; description?: string; amount?: unknown }) =>
+        `<tr><td>${esc((sr.serviceType || 'Service').replace('_', ' '))}</td><td class="r">${money(sr.amount)}</td></tr>`)
+      .join('');
+    const paymentRows = (r.folioPayments ?? [])
+      .map((p) => `<tr><td>Paid via ${esc(PAYMENT_METHOD_LABELS[p.method] || p.method)}${p.reference ? ` · ${esc(p.reference)}` : ''}</td><td class="r">${money(p.amount)}</td></tr>`)
+      .join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Folio ${esc(r.bookingRef)}</title>
+<style>
+  @page { size: 80mm auto; margin: 0; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Courier New', ui-monospace, monospace; width: 80mm; margin: 0 auto; padding: 4mm; color: #000; font-size: 12px; line-height: 1.45; }
+  h1 { font-size: 16px; text-align: center; margin: 0 0 2px; }
+  .muted { text-align: center; color: #333; font-size: 11px; }
+  .divider { border-top: 1px dashed #000; margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 1px 0; vertical-align: top; }
+  .r { text-align: right; }
+  .total td { font-weight: 700; font-size: 14px; border-top: 1px solid #000; padding-top: 4px; }
+</style></head><body>
+  <h1>${esc(hotelName)}</h1>
+  <div class="muted">Guest Folio / Invoice</div>
+  <div class="divider"></div>
+  <table>
+    <tr><td>Guest</td><td class="r">${esc(r.guest.firstName)} ${esc(r.guest.lastName)}</td></tr>
+    <tr><td>Booking</td><td class="r">${esc(r.bookingRef)}</td></tr>
+    <tr><td>Room</td><td class="r">${esc(r.room?.roomNumber || '')}</td></tr>
+    <tr><td>Check-in</td><td class="r">${dt(r.checkIn)}</td></tr>
+    <tr><td>Check-out</td><td class="r">${dt(r.checkOut)}</td></tr>
+    <tr><td>Nights</td><td class="r">${s.nights}</td></tr>
+  </table>
+  <div class="divider"></div>
+  <table>
+    <tr><td>Room charges (${s.nights} night${s.nights > 1 ? 's' : ''})</td><td class="r">${money(s.roomSubtotal)}</td></tr>
+    ${chargeRows}${serviceRows}
+  </table>
+  <div class="divider"></div>
+  <table>
+    <tr class="total"><td>TOTAL</td><td class="r">${money(s.grandTotal)}</td></tr>
+    <tr><td>Amount paid</td><td class="r">${money(r.paidAmount)}</td></tr>
+    ${paymentRows}
+    <tr class="total"><td>${s.pendingDues > 0 ? 'BALANCE DUE' : 'BALANCE'}</td><td class="r">${money(s.pendingDues)}</td></tr>
+  </table>
+  <div class="divider"></div>
+  <div class="muted">Thank you for staying with us!</div>
+</body></html>`;
+    if (printHtmlDocument(html)) toast.success('Bill sent to printer');
   };
 
   const checkAvailability = () => {
@@ -1339,17 +1402,11 @@ export default function HotelPage() {
                 {/* Bottom Actions — fixed footer, always visible without scrolling. print:hidden so the
                     "Print Bill"/checkout buttons don't appear on the printed receipt. */}
                 <div className="flex gap-2 px-6 py-3 border-t bg-card shrink-0 print:hidden">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    className="flex-1" 
-                    onClick={() => {
-                      try {
-                        window.print();
-                      } catch {
-                        toast.error('Print failed');
-                      }
-                    }}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => printFolio(checkoutReservation)}
                   >
                     Print Bill
                   </Button>

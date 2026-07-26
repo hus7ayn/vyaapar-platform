@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
@@ -8,6 +8,7 @@ import { TopBar } from '@/components/layout/top-bar';
 import { ConnectionBanner } from '@/components/connection-banner';
 import { DesktopAppBanner } from '@/components/desktop-app-banner';
 import { useAuthStore } from '@/stores/auth-store';
+import { startSyncInterval } from '@/lib/sync-manager';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -15,10 +16,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const role = useAuthStore((s) => s.user?.role);
   const [mounted, setMounted] = useState(false);
+  const syncClientId = useRef(typeof crypto !== 'undefined' ? crypto.randomUUID() : 'client');
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Flush any queued offline sales from ANY page (not just POS) whenever the server is
+  // reachable, so pending sales don't sit as "waiting to sync" after leaving the POS.
+  useEffect(() => {
+    if (!accessToken) return;
+    return startSyncInterval(accessToken, syncClientId.current);
+  }, [accessToken]);
 
   useEffect(() => {
     if (mounted && !accessToken) {

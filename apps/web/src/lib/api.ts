@@ -119,7 +119,11 @@ export async function api<T>(
 
 export async function checkApiHealth(): Promise<boolean> {
   try {
-    const res = await fetchWithTimeout(`${API_URL}/api/v1/health/ready`, {}, 5000);
+    // Use the lightweight liveness probe (no DB query). /health/ready runs a DB SELECT which
+    // can exceed the timeout when a serverless Postgres is cold-starting, producing a FALSE
+    // "Offline" even though the internet + server are fine. Server-reachable is the signal we
+    // want here; the actual sync push handles DB readiness itself.
+    const res = await fetchWithTimeout(`${API_URL}/api/v1/health`, {}, 8000);
     return res.ok;
   } catch {
     return false;
