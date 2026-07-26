@@ -16,6 +16,17 @@ export class HotelService {
     private txnCore: TxnCoreService,
   ) {}
 
+  // Calendar nights between two dates. Normalize to the UTC calendar date so the time-of-day
+  // can never add a spurious night — Math.ceil on the raw millisecond diff over-charged a night
+  // whenever checkout's time was even microseconds past check-in's (e.g. 2.0000001 days -> 3).
+  private nightsBetween(checkIn: Date | string, checkOut: Date | string): number {
+    const a = new Date(checkIn);
+    const b = new Date(checkOut);
+    const d1 = Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate());
+    const d2 = Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate());
+    return Math.max(1, Math.round((d2 - d1) / 86400000));
+  }
+
   async getRooms(
     businessId: string,
     branchId?: string,
@@ -245,9 +256,7 @@ export class HotelService {
       },
     });
 
-    const nights = Math.ceil(
-      (new Date(data.checkOut).getTime() - new Date(data.checkIn).getTime()) / 86400000,
-    );
+    const nights = this.nightsBetween(data.checkIn, data.checkOut);
     const totalAmount = data.roomRate * nights;
     const bookingRef = `BK-${Date.now().toString(36).toUpperCase()}`;
 
@@ -422,9 +431,7 @@ export class HotelService {
     }
     if (!guestId) throw new BadRequestException('Guest required');
 
-    const nights = Math.ceil(
-      (new Date(data.checkOut).getTime() - new Date(data.checkIn).getTime()) / 86400000,
-    );
+    const nights = this.nightsBetween(data.checkIn, data.checkOut);
     const bookingRef = `BK-${Date.now().toString(36).toUpperCase()}`;
 
     const reservation = await this.prisma.$transaction(async (tx) => {
@@ -882,8 +889,7 @@ export class HotelService {
     });
 
     const roomNights = reservations.reduce((s, r) => {
-      const nights = Math.max(1, Math.ceil((new Date(r.checkOut).getTime() - new Date(r.checkIn).getTime()) / 86400000));
-      return s + nights;
+      return s + this.nightsBetween(r.checkIn, r.checkOut);
     }, 0);
 
     const roomRevenue = reservations.reduce((s, r) => s + Number(r.totalAmount), 0);
