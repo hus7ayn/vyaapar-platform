@@ -118,14 +118,20 @@ export async function api<T>(
 }
 
 export async function checkApiHealth(): Promise<boolean> {
-  try {
-    // Use the lightweight liveness probe (no DB query). /health/ready runs a DB SELECT which
-    // can exceed the timeout when a serverless Postgres is cold-starting, producing a FALSE
-    // "Offline" even though the internet + server are fine. Server-reachable is the signal we
-    // want here; the actual sync push handles DB readiness itself.
-    const res = await fetchWithTimeout(`${API_URL}/api/v1/health`, {}, 8000);
-    return res.ok;
-  } catch {
-    return false;
+  // Lightweight liveness probe (no DB query, so a cold Postgres can't cause a false negative).
+  // window.print() (thermal/label printing) opens a SYNCHRONOUS native dialog that freezes the
+  // event loop; the probe's abort timer becomes overdue and fires the moment the dialog closes,
+  // aborting the still-in-flight fetch with a spurious AbortError that looks exactly like an
+  // outage. Re-probe once against a now-live event loop before declaring the server unreachable,
+  // so printing a receipt never flips the app into false "Offline / Sync Mode".
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetchWithTimeout(`${API_URL}/api/v1/health`, {}, 8000);
+      return res.ok;
+    } catch (e) {
+      if (attempt === 0 && (e as Error)?.name === 'AbortError') continue;
+      return false;
+    }
   }
+  return false;
 }

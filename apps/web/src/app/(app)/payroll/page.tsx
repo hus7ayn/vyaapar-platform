@@ -73,7 +73,8 @@ export default function PayrollPage() {
   const activeShopId = useAuthStore((s) => s.activeShopId);
   const qc = useQueryClient();
 
-  const [tab, setTab] = useState<'staff' | 'runs'>('staff');
+  const [tab, setTab] = useState<'staff' | 'runs' | 'history'>('staff');
+  const [historyEmpId, setHistoryEmpId] = useState('');
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
@@ -206,6 +207,63 @@ export default function PayrollPage() {
       .map((p) => ({ run: p, line: p.lines.find((l) => l.employee.id === empId) }))
       .filter((x): x is { run: PayrollRun; line: PayrollLine } => !!x.line);
 
+  // Enriched salary-history view for one employee — shared by the "Salary History" tab and the
+  // per-row History dialog. Shows payment date/mode + full salary breakdown + totals.
+  const salaryHistoryTable = (emp: Employee) => {
+    const hist = employeeHistory(emp.id);
+    if (!hist.length) {
+      return <p className="text-sm text-muted-foreground py-4">No payroll runs yet for {emp.firstName} {emp.lastName}. Generate a run in the <b>Payroll Runs</b> tab, then their salary history appears here.</p>;
+    }
+    const paid = hist.filter((h) => h.run.status === 'PAID');
+    const totalPaid = paid.reduce((s, h) => s + Number(h.line.netSalary), 0);
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          {emp.designation && <span className="text-muted-foreground">{emp.designation}</span>}
+          <span>Monthly base: <b>{formatMoney(emp.baseSalary)}</b></span>
+          <span>Total paid: <b className="text-emerald-700">{formatMoney(totalPaid)}</b> across {paid.length} run{paid.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[680px]">
+            <thead>
+              <tr className="text-xs text-muted-foreground border-b">
+                <th className="py-1 text-left">Period</th>
+                <th className="py-1 text-left">Paid on</th>
+                <th className="py-1 text-right">Base</th>
+                <th className="py-1 text-right">OT</th>
+                <th className="py-1 text-right">Bonus</th>
+                <th className="py-1 text-right">Deductions</th>
+                <th className="py-1 text-right">Advance</th>
+                <th className="py-1 text-right">Net</th>
+                <th className="py-1 text-right"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {hist.map(({ run, line }) => (
+                <tr key={run.id} className="border-b last:border-0">
+                  <td className="py-1.5 whitespace-nowrap">{run.period}</td>
+                  <td className="py-1.5 text-muted-foreground whitespace-nowrap">
+                    {run.status === 'PAID'
+                      ? (run.paidAt ? new Date(run.paidAt).toLocaleDateString('en-IN') : 'Paid')
+                      : <span className="capitalize">{run.status.toLowerCase()}</span>}
+                    {run.status === 'PAID' && run.paymentMode ? ` · ${run.paymentMode}` : ''}
+                  </td>
+                  <td className="py-1.5 text-right">{formatMoney(line.baseSalary)}</td>
+                  <td className="py-1.5 text-right">{formatMoney(line.overtime)}</td>
+                  <td className="py-1.5 text-right">{formatMoney(line.bonus)}</td>
+                  <td className="py-1.5 text-right text-rose-600">{Number(line.deductions) > 0 ? `-${formatMoney(line.deductions)}` : formatMoney(0)}</td>
+                  <td className="py-1.5 text-right">{formatMoney(line.advance)}</td>
+                  <td className="py-1.5 text-right font-semibold">{formatMoney(line.netSalary)}</td>
+                  <td className="py-1.5 text-right"><Button size="sm" variant="ghost" className="h-7" onClick={() => printPayslip(run, line)}>Payslip</Button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
   // One payslip's inner HTML (no <html>/<head>) so it can be printed alone or
   // concatenated for a whole run.
   const payslipBody = (run: PayrollRun, line: PayrollLine) => {
@@ -272,18 +330,18 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
         </div>
       </div>
 
-      <div className="flex gap-1 border-b">
-        {(['staff', 'runs'] as const).map((t) => (
+      <div className="flex gap-1 border-b overflow-x-auto">
+        {(['staff', 'runs', 'history'] as const).map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
             className={cn(
-              'px-4 py-2 text-sm font-medium border-b-2 -mb-px',
+              'px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap',
               tab === t ? 'border-[hsl(348,85%,52%)] text-[hsl(348,85%,52%)]' : 'border-transparent text-muted-foreground',
             )}
           >
-            {t === 'staff' ? `Staff (${employees?.length ?? 0})` : `Payroll Runs (${payrolls?.length ?? 0})`}
+            {t === 'staff' ? `Staff (${employees?.length ?? 0})` : t === 'runs' ? `Payroll Runs (${payrolls?.length ?? 0})` : 'Salary History'}
           </button>
         ))}
       </div>
@@ -422,6 +480,32 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
         </div>
       )}
 
+      {tab === 'history' && (
+        <div className="bg-white rounded-lg border shadow-sm p-4 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div>
+              <h2 className="font-semibold">Salary History</h2>
+              <p className="text-sm text-muted-foreground">Past payroll records per employee — amounts, payment dates, deductions and net pay.</p>
+            </div>
+            <select
+              className="sm:ml-auto h-10 rounded-lg border px-3 text-sm bg-background w-full sm:w-64"
+              value={historyEmpId}
+              onChange={(e) => setHistoryEmpId(e.target.value)}
+            >
+              <option value="">Select an employee…</option>
+              {(employees ?? []).map((e) => (
+                <option key={e.id} value={e.id}>{e.firstName} {e.lastName}{e.employeeId ? ` (${e.employeeId})` : ''}</option>
+              ))}
+            </select>
+          </div>
+          {(() => {
+            const emp = (employees ?? []).find((e) => e.id === historyEmpId);
+            if (!emp) return <p className="text-sm text-muted-foreground py-4">Choose an employee to view their salary history.</p>;
+            return salaryHistoryTable(emp);
+          })()}
+        </div>
+      )}
+
       <Dialog open={empOpen} onOpenChange={setEmpOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add Staff Member</DialogTitle></DialogHeader>
@@ -497,58 +581,7 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
       <Dialog open={!!historyFor} onOpenChange={(o) => !o && setHistoryFor(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader><DialogTitle>Salary history{historyFor ? ` — ${historyFor.firstName} ${historyFor.lastName}` : ''}</DialogTitle></DialogHeader>
-          {historyFor && (() => {
-            const hist = employeeHistory(historyFor.id);
-            if (!hist.length) return <p className="text-sm text-muted-foreground py-4">No payroll runs yet for this employee.</p>;
-            const paid = hist.filter((h) => h.run.status === 'PAID');
-            const totalPaid = paid.reduce((s, h) => s + Number(h.line.netSalary), 0);
-            return (
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-                  {historyFor.designation && <span className="text-muted-foreground">{historyFor.designation}</span>}
-                  <span>Monthly base: <b>{formatMoney(historyFor.baseSalary)}</b></span>
-                  <span>Total paid: <b className="text-emerald-700">{formatMoney(totalPaid)}</b> across {paid.length} run{paid.length !== 1 ? 's' : ''}</span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[680px]">
-                    <thead>
-                      <tr className="text-xs text-muted-foreground border-b">
-                        <th className="py-1 text-left">Period</th>
-                        <th className="py-1 text-left">Paid on</th>
-                        <th className="py-1 text-right">Base</th>
-                        <th className="py-1 text-right">OT</th>
-                        <th className="py-1 text-right">Bonus</th>
-                        <th className="py-1 text-right">Deductions</th>
-                        <th className="py-1 text-right">Advance</th>
-                        <th className="py-1 text-right">Net</th>
-                        <th className="py-1 text-right"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {hist.map(({ run, line }) => (
-                        <tr key={run.id} className="border-b last:border-0">
-                          <td className="py-1.5 whitespace-nowrap">{run.period}</td>
-                          <td className="py-1.5 text-muted-foreground whitespace-nowrap">
-                            {run.status === 'PAID'
-                              ? (run.paidAt ? new Date(run.paidAt).toLocaleDateString('en-IN') : 'Paid')
-                              : <span className="capitalize">{run.status.toLowerCase()}</span>}
-                            {run.status === 'PAID' && run.paymentMode ? ` · ${run.paymentMode}` : ''}
-                          </td>
-                          <td className="py-1.5 text-right">{formatMoney(line.baseSalary)}</td>
-                          <td className="py-1.5 text-right">{formatMoney(line.overtime)}</td>
-                          <td className="py-1.5 text-right">{formatMoney(line.bonus)}</td>
-                          <td className="py-1.5 text-right text-rose-600">{Number(line.deductions) > 0 ? `-${formatMoney(line.deductions)}` : formatMoney(0)}</td>
-                          <td className="py-1.5 text-right">{formatMoney(line.advance)}</td>
-                          <td className="py-1.5 text-right font-semibold">{formatMoney(line.netSalary)}</td>
-                          <td className="py-1.5 text-right"><Button size="sm" variant="ghost" className="h-7" onClick={() => printPayslip(run, line)}>Payslip</Button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })()}
+          {historyFor && salaryHistoryTable(historyFor)}
         </DialogContent>
       </Dialog>
     </div>

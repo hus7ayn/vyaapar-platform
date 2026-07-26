@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Wifi, WifiOff, Loader2 } from 'lucide-react';
 import { getPendingSyncCount } from '@/lib/sync-manager';
 import { checkApiHealth } from '@/lib/api';
@@ -9,6 +9,9 @@ export function ConnectionBanner() {
   const [apiOk, setApiOk] = useState(true);
   const [pending, setPending] = useState(0);
   const [checking, setChecking] = useState(false);
+  // Consecutive-failure counter so ONE bad probe (e.g. a print dialog freezing the event loop
+  // and aborting the in-flight health fetch) can't flip the UI into false "Offline / Sync Mode".
+  const fails = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -17,23 +20,33 @@ export function ConnectionBanner() {
     const poll = async () => {
       setChecking(true);
       const [ok, count] = await Promise.all([checkApiHealth(), getPendingSyncCount()]);
-      if (active) {
-        setApiOk(ok);
-        setPending(count);
-        setChecking(false);
+      if (!active) return;
+      if (ok) {
+        fails.current = 0;
+        setApiOk(true);
+      } else {
+        fails.current += 1;
+        if (fails.current >= 2) setApiOk(false); // only after 2 consecutive real failures
       }
+      setPending(count);
+      setChecking(false);
     };
     poll();
     const id = setInterval(poll, 20_000);
-    // navigator online/offline events only trigger an immediate re-check (a hint, not truth).
+    // Re-check on connectivity hints AND when the tab/window regains focus — the latter fires
+    // right after a print dialog closes, so any residual "Offline" state self-heals immediately.
     const recheck = () => poll();
     window.addEventListener('online', recheck);
     window.addEventListener('offline', recheck);
+    window.addEventListener('focus', recheck);
+    document.addEventListener('visibilitychange', recheck);
     return () => {
       active = false;
       clearInterval(id);
       window.removeEventListener('online', recheck);
       window.removeEventListener('offline', recheck);
+      window.removeEventListener('focus', recheck);
+      document.removeEventListener('visibilitychange', recheck);
     };
   }, []);
 
