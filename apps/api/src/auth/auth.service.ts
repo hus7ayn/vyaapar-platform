@@ -97,6 +97,7 @@ export class AuthService {
     });
     if (!user) throw new UnauthorizedException('Invalid credentials');
     if (!user.isActive) throw new UnauthorizedException('This account has been disabled');
+    if (!user.isApproved) throw new UnauthorizedException('Your account is awaiting Super Admin approval');
     if (user.isLocked) throw new UnauthorizedException('Account locked');
     if (!user.business.isActive) throw new UnauthorizedException('Business account suspended');
 
@@ -133,12 +134,14 @@ export class AuthService {
   async refresh(refreshToken: string) {
     const session = await this.prisma.session.findUnique({
       where: { refreshToken },
-      include: { user: true },
+      include: { user: { include: { business: true } } },
     });
     if (!session || session.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid refresh token');
     }
     const user = session.user;
+    if (user.deletedAt) throw new UnauthorizedException('Invalid refresh token');
+    this.assertLoginAllowed(user);
     return this.issueTokens(
       user.id,
       user.email,
@@ -175,8 +178,9 @@ export class AuthService {
 
     await this.prisma.otpCode.update({ where: { id: otp.id }, data: { used: true } });
 
-    const user = await this.prisma.user.findFirst({ where: { email: dto.email } });
+    const user = await this.prisma.user.findFirst({ where: { email: dto.email, deletedAt: null }, include: { business: true } });
     if (!user) throw new UnauthorizedException();
+    this.assertLoginAllowed(user);
 
     return this.issueTokens(
       user.id,
@@ -186,6 +190,16 @@ export class AuthService {
       user.role,
       ROLE_PERMISSIONS[user.role] ?? [],
     );
+  }
+
+  // Shared gate for every path that mints tokens (login, OTP verify, refresh) so a
+  // disabled / unapproved / locked account (or a suspended business) can never obtain
+  // usable tokens by any route.
+  private assertLoginAllowed(user: { isActive: boolean; isApproved: boolean; isLocked: boolean; business?: { isActive: boolean } }) {
+    if (!user.isActive) throw new UnauthorizedException('This account has been disabled');
+    if (!user.isApproved) throw new UnauthorizedException('Your account is awaiting Super Admin approval');
+    if (user.isLocked) throw new UnauthorizedException('Account locked');
+    if (user.business && !user.business.isActive) throw new UnauthorizedException('Business account suspended');
   }
 
   // Maps a user's role to the configured reset key (env). Returns undefined when the key isn't

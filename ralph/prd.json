@@ -928,6 +928,21 @@
         "apps/web/src/app/(app)/items/page.tsx"
       ],
       "accept": "Dialog form grids grid-cols-1 sm:grid-cols-2 so fields stack on phones."
+    },
+    {
+      "id": "R92",
+      "title": "Super Admin approval gate for Admin/Biller accounts (+ disable email verification)",
+      "priority": 92,
+      "status": "pass",
+      "files": [
+        "apps/api/prisma/schema.prisma",
+        "apps/api/src/users/users.service.ts",
+        "apps/api/src/users/users.controller.ts",
+        "apps/api/src/auth/auth.service.ts",
+        "apps/api/src/auth/strategies/jwt.strategy.ts",
+        "apps/web/src/app/(app)/settings/users/page.tsx"
+      ],
+      "accept": "User.isApproved Boolean @default(true) (grandfathers all existing users + owners; new staff created isApproved:false = PENDING). Every token-minting path (login, verifyOtp, refresh) rejects unapproved/disabled/locked/suspended via shared assertLoginAllowed; jwt.strategy where-clause requires isApproved:true so tokens for pending users are rejected on every request. Super-Admin-only approve endpoint PATCH /users/:id/approve gated BUSINESS_MANAGE (shop admins forbidden), same-business scoped. Web: PENDING APPROVAL badge + Approve button (owner only) + create note. Email verification already disabled (signup logs in immediately; forgot-password uses role keys). Adversarially verified: no lockout, no bypass, correct authorization."
     }
   ]
 }

@@ -47,6 +47,17 @@ export class UsersController {
     return this.users.setActive(businessId, id, !!body.isActive, callerId);
   }
 
+  // Approval is Super Admin only (BUSINESS_MANAGE), not shop admins.
+  @Patch(':id/approve')
+  @RequirePermissions(Permission.BUSINESS_MANAGE)
+  approve(
+    @CurrentUser('businessId') businessId: string,
+    @CurrentUser('sub') approverId: string,
+    @Param('id') id: string,
+  ) {
+    return this.users.approve(businessId, id, approverId);
+  }
+
   @Delete(':id')
   @RequirePermissions(Permission.USER_MANAGE)
   remove(

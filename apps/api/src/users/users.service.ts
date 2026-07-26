@@ -26,6 +26,8 @@ export class UsersService {
         lastName: true,
         role: true,
         isActive: true,
+        isApproved: true,
+        approvedAt: true,
         branchId: true,
         lastLoginAt: true,
       },
@@ -62,13 +64,26 @@ export class UsersService {
         role: data.role,
         branchId: targetBranchId,
         permissions,
+        // New staff start PENDING — a Super Admin must approve before they can access.
+        isApproved: false,
       },
     });
   }
 
   private readonly staffSelect = {
-    id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, branchId: true, lastLoginAt: true,
+    id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, isApproved: true, approvedAt: true, branchId: true, lastLoginAt: true,
   } as const;
+
+  // Super Admin approves a pending staff account so it can sign in. Gated to owners
+  // (BUSINESS_MANAGE) at the controller — shop admins cannot approve.
+  async approve(businessId: string, id: string, approverId: string) {
+    const target = await this.assertManageable(businessId, id);
+    return this.prisma.user.update({
+      where: { id: target.id },
+      data: { isApproved: true, approvedAt: new Date(), approvedById: approverId },
+      select: this.staffSelect,
+    });
+  }
 
   // A manageable target must be in the same business, not soft-deleted, and NOT a business
   // owner / platform super admin — those are never editable through this tenant endpoint.
