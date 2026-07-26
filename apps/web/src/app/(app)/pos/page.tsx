@@ -10,7 +10,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { api } from '@/lib/api';
+import { api, checkApiHealth } from '@/lib/api';
 import { formatCurrency, cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { usePosStore, CartItem } from '@/stores/pos-store';
@@ -170,7 +170,12 @@ export default function PosPage() {
             body: JSON.stringify(payload),
             timeoutMs: 20_000,
           });
-        } catch {
+        } catch (err) {
+          // Only fall back to offline Sync Mode if the server is GENUINELY unreachable. A slow
+          // or failed response while the internet is up is a real error (or already-created
+          // sale) and must surface — not be silently mislabeled "offline" and queued to sync.
+          const reachable = await checkApiHealth();
+          if (reachable) throw err;
           await queueSyncOperation({ entity: 'sale_invoice', action: 'create', payload });
           throw new Error('OFFLINE_QUEUED');
         }

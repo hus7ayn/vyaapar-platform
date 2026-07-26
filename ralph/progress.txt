@@ -320,3 +320,8 @@ R92 Super Admin approval gate: User.isApproved @default(true) (db-push backfills
 #5 PDF color overlap: TOTAL red band was 22px but the row advanced only 16px, bleeding onto the 'Received' line (dark text over red). Fixed: draw the band + white TOTAL text explicitly and advance y past the band before the next row.
 #1 discount %+amount: already live (R77 shows Item Discount + Bill Discount = -Rs in the form summary) — confirmed intact.
 #3 label printer: R88 (image-load race) + R89 (rotation) are the software fixes and are correct; the remaining 'sideways' is the TVS driver custom paper size (25x50 vs 50x25), which is genuine Windows driver setup outside the web app.
+
+=== Batch 9 ===
+#1 Bill discount type (Percentage/Amount): txn-form gets a %/₹ toggle (billDiscountType). Amount mode subtracts a fixed rupee value (capped at subtotal+tax); sends discountAmount vs discountPercent accordingly (backend computeTotals already supports bill-level discountAmount). Applied discount amount shown in the summary + prints on invoice/PDF.
+#2 POS false-offline on print/checkout: the checkout POST catch treated ANY failure as offline -> queued to Sync Mode. Now it calls checkApiHealth (lightweight /health) first; if the server is reachable it re-throws the real error instead of queuing, so receipts process normally when online. Only a genuinely unreachable server triggers offline queue.
+#3 Salary History enriched: the existing per-employee history dialog (R25) now shows Paid-on date + payment mode, Base/OT/Bonus/Deductions/Advance/Net breakdown, and a total-paid summary (was only Period/Status/Advance/Net). Data already came from getPayrolls; payslip print unchanged.

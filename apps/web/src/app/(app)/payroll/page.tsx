@@ -495,34 +495,58 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
 
       {/* Per-employee salary history */}
       <Dialog open={!!historyFor} onOpenChange={(o) => !o && setHistoryFor(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-3xl">
           <DialogHeader><DialogTitle>Salary history{historyFor ? ` — ${historyFor.firstName} ${historyFor.lastName}` : ''}</DialogTitle></DialogHeader>
           {historyFor && (() => {
             const hist = employeeHistory(historyFor.id);
             if (!hist.length) return <p className="text-sm text-muted-foreground py-4">No payroll runs yet for this employee.</p>;
+            const paid = hist.filter((h) => h.run.status === 'PAID');
+            const totalPaid = paid.reduce((s, h) => s + Number(h.line.netSalary), 0);
             return (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-muted-foreground border-b">
-                    <th className="py-1 text-left">Period</th>
-                    <th className="py-1 text-left">Status</th>
-                    <th className="py-1 text-right">Advance</th>
-                    <th className="py-1 text-right">Net</th>
-                    <th className="py-1 text-right"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hist.map(({ run, line }) => (
-                    <tr key={run.id} className="border-b last:border-0">
-                      <td className="py-1.5">{run.period}</td>
-                      <td className="py-1.5 capitalize text-muted-foreground">{run.status.toLowerCase()}</td>
-                      <td className="py-1.5 text-right">{formatMoney(line.advance)}</td>
-                      <td className="py-1.5 text-right font-medium">{formatMoney(line.netSalary)}</td>
-                      <td className="py-1.5 text-right"><Button size="sm" variant="ghost" className="h-7" onClick={() => printPayslip(run, line)}>Payslip</Button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                  {historyFor.designation && <span className="text-muted-foreground">{historyFor.designation}</span>}
+                  <span>Monthly base: <b>{formatMoney(historyFor.baseSalary)}</b></span>
+                  <span>Total paid: <b className="text-emerald-700">{formatMoney(totalPaid)}</b> across {paid.length} run{paid.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[680px]">
+                    <thead>
+                      <tr className="text-xs text-muted-foreground border-b">
+                        <th className="py-1 text-left">Period</th>
+                        <th className="py-1 text-left">Paid on</th>
+                        <th className="py-1 text-right">Base</th>
+                        <th className="py-1 text-right">OT</th>
+                        <th className="py-1 text-right">Bonus</th>
+                        <th className="py-1 text-right">Deductions</th>
+                        <th className="py-1 text-right">Advance</th>
+                        <th className="py-1 text-right">Net</th>
+                        <th className="py-1 text-right"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hist.map(({ run, line }) => (
+                        <tr key={run.id} className="border-b last:border-0">
+                          <td className="py-1.5 whitespace-nowrap">{run.period}</td>
+                          <td className="py-1.5 text-muted-foreground whitespace-nowrap">
+                            {run.status === 'PAID'
+                              ? (run.paidAt ? new Date(run.paidAt).toLocaleDateString('en-IN') : 'Paid')
+                              : <span className="capitalize">{run.status.toLowerCase()}</span>}
+                            {run.status === 'PAID' && run.paymentMode ? ` · ${run.paymentMode}` : ''}
+                          </td>
+                          <td className="py-1.5 text-right">{formatMoney(line.baseSalary)}</td>
+                          <td className="py-1.5 text-right">{formatMoney(line.overtime)}</td>
+                          <td className="py-1.5 text-right">{formatMoney(line.bonus)}</td>
+                          <td className="py-1.5 text-right text-rose-600">{Number(line.deductions) > 0 ? `-${formatMoney(line.deductions)}` : formatMoney(0)}</td>
+                          <td className="py-1.5 text-right">{formatMoney(line.advance)}</td>
+                          <td className="py-1.5 text-right font-semibold">{formatMoney(line.netSalary)}</td>
+                          <td className="py-1.5 text-right"><Button size="sm" variant="ghost" className="h-7" onClick={() => printPayslip(run, line)}>Payslip</Button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             );
           })()}
         </DialogContent>

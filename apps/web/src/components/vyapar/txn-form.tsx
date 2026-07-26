@@ -91,6 +91,7 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
       : [emptyLine()],
   );
   const [billDiscountPct, setBillDiscountPct] = useState('');
+  const [billDiscountType, setBillDiscountType] = useState<'PCT' | 'AMT'>('PCT');
   const [shipping, setShipping] = useState('');
   const [roundOffEnabled, setRoundOffEnabled] = useState(true);
   const [amount, setAmount] = useState(''); // for payments/expense
@@ -179,12 +180,14 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
       subtotal += taxable;
       tax += taxable * ((Number(l.taxRate) || 0) / 100);
     }
-    const billDiscount = (subtotal + tax) * ((Number(billDiscountPct) || 0) / 100);
+    const billDiscount = billDiscountType === 'AMT'
+      ? Math.min(Number(billDiscountPct) || 0, subtotal + tax)
+      : (subtotal + tax) * ((Number(billDiscountPct) || 0) / 100);
     const charges = Number(shipping) || 0;
     const raw = subtotal + tax - billDiscount + charges;
     const total = roundOffEnabled ? Math.round(raw) : raw;
     return { subtotal, tax, itemDiscount, billDiscount, charges, roundOff: total - raw, total };
-  }, [lines, billDiscountPct, shipping, roundOffEnabled]);
+  }, [lines, billDiscountPct, billDiscountType, shipping, roundOffEnabled]);
 
   const effectiveTotal = meta.hasLines ? totals.total : Number(amount) || 0;
   const received = creditSale ? 0 : paidNow === '' ? effectiveTotal : Number(paidNow) || 0;
@@ -227,7 +230,15 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
             discountPercent: l.discountPercent ? Number(l.discountPercent) : undefined,
             taxRate: Number(l.taxRate) || 0,
           }));
-        body.discountPercent = billDiscountPct ? Number(billDiscountPct) : undefined;
+        // Bill-level discount: send EITHER a percentage OR a fixed amount (never both, so the
+        // backend's computeTotals uses the right one).
+        if (billDiscountType === 'AMT') {
+          body.discountAmount = billDiscountPct ? Number(billDiscountPct) : undefined;
+          body.discountPercent = undefined;
+        } else {
+          body.discountPercent = billDiscountPct ? Number(billDiscountPct) : undefined;
+          body.discountAmount = undefined;
+        }
         body.additionalCharges = Number(shipping) > 0 ? [{ name: 'Shipping', amount: Number(shipping) }] : undefined;
         body.roundOffEnabled = roundOffEnabled;
       } else {
@@ -526,12 +537,34 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
               )}
               <div className="flex justify-between"><span className="text-muted-foreground">Subtotal (after item disc.)</span><span>{formatMoney(totals.subtotal)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span>{formatMoney(totals.tax)}</span></div>
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground flex items-center gap-2">
-                  Bill Discount %
-                  {totals.billDiscount > 0 && <span className="text-emerald-700 font-medium">= -{formatMoney(totals.billDiscount)}</span>}
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-muted-foreground flex items-center gap-2 flex-wrap">
+                  Bill Discount
+                  {totals.billDiscount > 0 && <span className="text-emerald-700 font-medium">-{formatMoney(totals.billDiscount)}</span>}
                 </span>
-                <Input className="h-8 w-24 text-right" type="number" min="0" max="100" value={billDiscountPct} onChange={(e) => setBillDiscountPct(e.target.value)} />
+                <div className="flex items-center gap-1">
+                  <div className="flex rounded-md border overflow-hidden text-xs">
+                    <button
+                      type="button"
+                      className={cn('px-2 py-1.5', billDiscountType === 'PCT' ? 'bg-primary text-primary-foreground' : 'bg-background')}
+                      onClick={() => setBillDiscountType('PCT')}
+                    >%</button>
+                    <button
+                      type="button"
+                      className={cn('px-2 py-1.5', billDiscountType === 'AMT' ? 'bg-primary text-primary-foreground' : 'bg-background')}
+                      onClick={() => setBillDiscountType('AMT')}
+                    >₹</button>
+                  </div>
+                  <Input
+                    className="h-8 w-20 text-right"
+                    type="number"
+                    min="0"
+                    max={billDiscountType === 'PCT' ? 100 : undefined}
+                    placeholder={billDiscountType === 'PCT' ? '%' : '₹'}
+                    value={billDiscountPct}
+                    onChange={(e) => setBillDiscountPct(e.target.value)}
+                  />
+                </div>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Shipping / Charges</span>
