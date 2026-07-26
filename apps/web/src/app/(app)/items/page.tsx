@@ -360,7 +360,7 @@ export default function ItemsPage() {
     if (!form.baseUnit.trim()) return 'Please select a unit';
     if (!isService) {
       if (form.openingStock.trim() === '') return 'Opening stock (no. of products) is required';
-      if (!form.barcode.trim()) return 'Barcode is required';
+      // Barcode is optional — auto-generated (unique) on the server when left blank.
     }
     return null;
   };
@@ -751,9 +751,9 @@ export default function ItemsPage() {
                   <Input value={form.sku} onChange={(e) => set({ sku: e.target.value })} placeholder="Auto-generated if empty" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Barcode (editable){!editingItem && !isService && ' *'}</label>
-                  <Input value={form.barcode} onChange={(e) => set({ barcode: e.target.value })} placeholder="13-digit; last 5 digits = cost in paise" />
-                  <p className="text-[10px] text-muted-foreground mt-1">Last 5 digits encode cost price (e.g. 00150 = ₹1.50)</p>
+                  <label className="text-xs font-medium text-muted-foreground">Barcode (auto-generated if left blank)</label>
+                  <Input value={form.barcode} onChange={(e) => set({ barcode: e.target.value })} placeholder="Leave blank to auto-generate a unique barcode" />
+                  <p className="text-[10px] text-muted-foreground mt-1">Auto-generated from product details; you can override it (must stay unique). Last 5 digits encode cost price.</p>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground">HSN Code</label>

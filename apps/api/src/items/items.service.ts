@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveBranchWarehouse } from '../inventory/warehouse.util';
@@ -175,12 +175,22 @@ export class ItemsService {
       if (!isService) {
         if (body.openingStock === undefined || body.openingStock === null)
           throw new BadRequestException('Opening stock (no. of products) is required');
-        if (!body.barcode?.trim()) throw new BadRequestException('Barcode is required');
+        // Barcode is NO LONGER required — it is auto-generated below when left blank.
       }
     }
     const sku = body.sku?.trim() || `ITM-${Date.now().toString(36).toUpperCase()}`;
     const openingStock = new Prisma.Decimal(body.openingStock ?? 0);
     const costPrice = body.costPrice ?? body.purchasePrice ?? 0;
+
+    // Barcode: auto-generate a unique one from the product details when none is supplied;
+    // if the user supplied one, validate it's unique within the business.
+    let barcode = body.barcode?.trim() || null;
+    if (barcode) {
+      const clash = await this.prisma.item.findFirst({ where: { businessId, barcode, deletedAt: null } });
+      if (clash) throw new ConflictException('An item with this barcode already exists.');
+    } else {
+      barcode = await this.generateUniqueBarcode(businessId, { sku, id: sku }, Number(costPrice));
+    }
     const resolvedBranch =
       branchId
       ?? (await this.prisma.branch.findFirst({ where: { businessId, isDefault: true, deletedAt: null } }))?.id
@@ -194,7 +204,7 @@ export class ItemsService {
           name: body.name.trim(),
           itemType: body.itemType ?? 'PRODUCT',
           sku,
-          barcode: body.barcode,
+          barcode,
           size: body.size?.trim() || null,
           hsnCode: body.hsnCode,
           categoryId: body.categoryId,
@@ -242,13 +252,21 @@ export class ItemsService {
 
   async update(businessId: string, id: string, body: Partial<ItemInput> & { isActive?: boolean }) {
     await this.get(businessId, id);
+    // Keep an edited barcode unique within the business (empty clears it to null).
+    if (body.barcode !== undefined && body.barcode?.trim()) {
+      const clash = await this.prisma.item.findFirst({
+        where: { businessId, barcode: body.barcode.trim(), deletedAt: null, id: { not: id } },
+        select: { id: true },
+      });
+      if (clash) throw new ConflictException('An item with this barcode already exists.');
+    }
     const item = await this.prisma.item.update({
       where: { id },
       data: {
         ...(body.name !== undefined && { name: body.name }),
         ...(body.itemType !== undefined && { itemType: body.itemType }),
         ...(body.sku !== undefined && { sku: body.sku }),
-        ...(body.barcode !== undefined && { barcode: body.barcode }),
+        ...(body.barcode !== undefined && { barcode: body.barcode?.trim() || null }),
         ...(body.size !== undefined && { size: body.size?.trim() || null }),
         ...(body.hsnCode !== undefined && { hsnCode: body.hsnCode }),
         ...(body.categoryId !== undefined && { categoryId: body.categoryId }),
@@ -369,11 +387,44 @@ export class ItemsService {
     return QRCode.toDataURL(text, { width: 256, margin: 2 });
   }
 
+  // Build a barcode from the product details and retry with a perturbed prefix until it is
+  // unique within the business (the cost suffix is preserved so labels still decode cost).
+  private async generateUniqueBarcode(
+    businessId: string,
+    seed: { sku: string; id: string },
+    cost: number,
+    opts?: { excludeItemId?: string; existingPrefix?: string },
+  ): Promise<string> {
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const candidate =
+        attempt === 0
+          ? buildItemBarcode(seed, cost, opts?.existingPrefix)
+          : buildItemBarcode({ sku: `${seed.sku}${attempt}`, id: seed.id }, cost);
+      const clash = await this.prisma.item.findFirst({
+        where: {
+          businessId,
+          barcode: candidate,
+          deletedAt: null,
+          ...(opts?.excludeItemId ? { id: { not: opts.excludeItemId } } : {}),
+        },
+        select: { id: true },
+      });
+      if (!clash) return candidate;
+    }
+    // Fallback: item-id digits guarantee uniqueness even if every prefix perturbation collided.
+    return buildItemBarcode({ sku: seed.id.replace(/\D/g, '') || seed.id, id: seed.id }, cost);
+  }
+
   async assignBarcode(businessId: string, itemId: string) {
     const item = await this.get(businessId, itemId);
     const cost = Number(item.costPrice) || Number(item.purchasePrice) || 0;
     const existingPrefix = item.barcode?.replace(/\D/g, '').slice(0, 8);
-    const barcode = buildItemBarcode({ sku: item.sku, id: item.id }, cost, existingPrefix);
+    const barcode = await this.generateUniqueBarcode(
+      businessId,
+      { sku: item.sku, id: item.id },
+      cost,
+      { excludeItemId: item.id, existingPrefix },
+    );
     return this.prisma.item.update({ where: { id: itemId }, data: { barcode } });
   }
 

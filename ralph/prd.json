@@ -770,6 +770,26 @@
         "apps/web/src/lib/sync-manager.ts"
       ],
       "accept": "processSyncQueue gates on checkApiHealth (not navigator.onLine), pushes ALL queued rows when reachable, keeps rows queued on failure (bumps attempts for diagnostics only). getPendingSyncCount counts all rows so nothing disappears from the pending count. Fixes stuck 'Ready to Sync'."
+    },
+    {
+      "id": "R75",
+      "title": "#3 Auto-generate unique barcode on item create; validate uniqueness on edit",
+      "priority": 75,
+      "status": "pass",
+      "files": [
+        "apps/api/src/items/items.service.ts"
+      ],
+      "accept": "Item create auto-generates a unique barcode from product details when none supplied (generateUniqueBarcode retries a perturbed prefix, keeps cost suffix); supplied barcode validated unique (ConflictException). update() rejects a barcode used by another item (empty clears to null). assignBarcode retries-until-unique. Uniqueness enforced in application code (no DB migration, so prisma db push deploy stays safe)."
+    },
+    {
+      "id": "R76",
+      "title": "#3 Web items form: barcode optional (auto-generated)",
+      "priority": 76,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/items/page.tsx"
+      ],
+      "accept": "Add Item no longer requires a barcode; the field is labeled 'auto-generated if left blank' and stays editable for a unique override."
     }
   ]
 }
