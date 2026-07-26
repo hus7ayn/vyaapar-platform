@@ -366,9 +366,9 @@ export default function ItemsPage() {
   };
 
   return (
-    <div className="p-4 lg:p-6 flex gap-4 items-start">
+    <div className="p-4 lg:p-6 flex flex-col lg:flex-row gap-4 items-stretch lg:items-start">
       {/* LEFT pane */}
-      <div className="w-80 shrink-0 bg-white rounded-lg border shadow-sm flex flex-col max-h-[calc(100vh-7rem)]">
+      <div className="w-full lg:w-80 lg:shrink-0 bg-white rounded-lg border shadow-sm flex flex-col lg:max-h-[calc(100vh-7rem)]">
         <div className="p-3 border-b space-y-2">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-bold">Items</h1>
@@ -453,7 +453,8 @@ export default function ItemsPage() {
               <div className="p-3 border-b">
                 <p className="font-semibold text-sm">All Items</p>
               </div>
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[760px]">
                 <thead>
                   <tr className="text-xs text-muted-foreground border-b bg-slate-50">
                     <th className="px-3 py-2 text-left">NAME</th>
@@ -495,6 +496,7 @@ export default function ItemsPage() {
                   );})}
                 </tbody>
               </table>
+              </div>
             </div>
           </>
         )}
@@ -706,7 +708,7 @@ export default function ItemsPage() {
           >
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">Basics</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <label className="text-xs font-medium text-muted-foreground">Item Name *</label>
                   <Input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Basmati Rice 5kg" autoFocus />
@@ -773,7 +775,7 @@ export default function ItemsPage() {
 
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">Pricing {isService ? '' : '& Stock'}</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground">Sale Price{!editingItem && ' *'}</label>
                   <Input type="number" min="0" step="0.01" value={form.salePrice} onChange={(e) => set({ salePrice: e.target.value })} placeholder="0.00" />
@@ -854,7 +856,7 @@ export default function ItemsPage() {
               adjustMutation.mutate();
             }}
           >
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Adjustment</label>
                 <select

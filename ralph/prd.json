@@ -898,6 +898,36 @@
         "apps/web/src/components/layout/sidebar.tsx"
       ],
       "accept": "layout redirect: Biller(Shop) confined to /pos+/reports+/sale, Biller(Hotel) confined to /hotel. Sidebar Reports entry gated by SALES_REPORTS_VIEW so Biller(Shop) can open sales reports (financial reports still 403 server-side)."
+    },
+    {
+      "id": "R82",
+      "title": "#9 Sales/Purchase list table scrolls (no page horizontal scroll)",
+      "priority": 82,
+      "status": "pass",
+      "files": [
+        "apps/web/src/components/vyapar/txn-list-page.tsx"
+      ],
+      "accept": "txn list table wrapped in overflow-x-auto with min-w-[720px] so wide columns scroll inside the card instead of overflowing the page on mobile."
+    },
+    {
+      "id": "R83",
+      "title": "#9 Items page two-pane stacks on mobile + table scrolls",
+      "priority": 83,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/items/page.tsx"
+      ],
+      "accept": "Items root flex-col lg:flex-row; left pane w-full lg:w-80; All Items table wrapped in overflow-x-auto (min-w) instead of a clipping overflow-hidden card, so mobile shows a stacked layout without cut-off."
+    },
+    {
+      "id": "R84",
+      "title": "#9 Item add/edit/adjust dialog grids stack on phones",
+      "priority": 84,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/items/page.tsx"
+      ],
+      "accept": "Dialog form grids grid-cols-1 sm:grid-cols-2 so fields stack on phones."
     }
   ]
 }

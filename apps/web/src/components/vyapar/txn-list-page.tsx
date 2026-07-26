@@ -94,7 +94,8 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
           <Input type="date" className="w-40" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
 
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[720px]">
           <thead>
             <tr className="text-xs text-muted-foreground border-b bg-slate-50">
               <th className="px-3 py-2 text-left">DATE</th>
@@ -163,6 +164,7 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       <TxnViewDialog txn={viewTxn} onClose={() => setViewTxn(null)} />
