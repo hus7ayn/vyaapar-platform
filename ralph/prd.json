@@ -845,6 +845,59 @@
         "apps/web/src/app/(app)/settings/page.tsx"
       ],
       "accept": "Settings has a Change Password card -> /settings/account with current + new + confirm inputs, client policy precheck, POST /auth/change-password."
+    },
+    {
+      "id": "R61",
+      "title": "RBAC: relabel roles + add BILLER_HOTEL + split SALES_REPORTS_VIEW (no migration)",
+      "priority": 61,
+      "status": "pass",
+      "files": [
+        "packages/shared/src/roles.ts",
+        "packages/shared/src/permissions.ts"
+      ],
+      "accept": "No role-string migration. ADMIN=Super Admin (full, business owner), BRANCH_MANAGER=Admin (full shop/hotel ops, NO payroll/BUSINESS_MANAGE => branch-locked), BILLER=Biller(Shop) (POS+returns+SALES_REPORTS_VIEW), new BILLER_HOTEL=Biller(Hotel) (hotel ops only). Added SALES_REPORTS_VIEW permission (sales reports) distinct from REPORTS_VIEW (financial); granted to owners/admin/accountant/biller-shop."
+    },
+    {
+      "id": "R63",
+      "title": "Re-gate reports: sales endpoints on SALES_REPORTS_VIEW (override class financial gate)",
+      "priority": 63,
+      "status": "pass",
+      "files": [
+        "apps/api/src/reports/reports.controller.ts"
+      ],
+      "accept": "reports /sale and /day-book use method-level SALES_REPORTS_VIEW (overrides class REPORTS_VIEW via getAllAndOverride), so Biller(Shop) reaches daily/weekly/monthly sales reports but not P&L/balance-sheet/cash-flow/GST (still REPORTS_VIEW)."
+    },
+    {
+      "id": "R64",
+      "title": "#11 User-management endpoints: update / disable / soft-delete",
+      "priority": 64,
+      "status": "pass",
+      "files": [
+        "apps/api/src/users/users.controller.ts",
+        "apps/api/src/users/users.service.ts"
+      ],
+      "accept": "PATCH /users/:id (name/role/branch), PATCH /users/:id/status (isActive), DELETE /users/:id (soft delete). All USER_MANAGE, same-business scoped; owners (BUSINESS_MANAGE)/super-admin not modifiable; cannot disable/delete self. Role changes restricted to STAFF_ASSIGNABLE_ROLES. Disable/delete effective next request (jwt.strategy re-checks isActive/deletedAt)."
+    },
+    {
+      "id": "R66",
+      "title": "#11 Web user-management row actions + new roles",
+      "priority": 66,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/settings/users/page.tsx"
+      ],
+      "accept": "User rows show DISABLED badge + Disable/Enable + Remove buttons (hidden for self); role picker offers Admin / Biller (Shop) / Biller (Hotel) + hotel staff with updated descriptions; password message uses the new policy."
+    },
+    {
+      "id": "R67",
+      "title": "Web confinement: Biller(Shop)->pos+reports+sale, Biller(Hotel)->hotel; Reports nav on SALES_REPORTS_VIEW",
+      "priority": 67,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/layout.tsx",
+        "apps/web/src/components/layout/sidebar.tsx"
+      ],
+      "accept": "layout redirect: Biller(Shop) confined to /pos+/reports+/sale, Biller(Hotel) confined to /hotel. Sidebar Reports entry gated by SALES_REPORTS_VIEW so Biller(Shop) can open sales reports (financial reports still 403 server-side)."
     }
   ]
 }

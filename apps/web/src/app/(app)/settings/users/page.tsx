@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Card } from '@/components/ui/card';
-import { Permission, ROLE_LABELS, ROLE_PERMISSIONS, SystemRole, isStrongPassword, PASSWORD_MIN_LENGTH } from '@nexus/shared';
+import { Permission, ROLE_LABELS, ROLE_PERMISSIONS, SystemRole, isStrongPassword, PASSWORD_POLICY_MESSAGE } from '@nexus/shared';
 import { usePermissions } from '@/hooks/use-permissions';
 
 interface UserRow {
@@ -38,15 +38,17 @@ const ASSIGNABLE_KEYS = new Set(ASSIGNABLE_ROLES.map(([key]) => key));
 // The three access tiers the product exposes (Super Admin sits above these and
 // is provisioned at tenant setup). The 9 granular roles map onto them.
 const ROLE_TIERS: { label: string; roles: SystemRole[] }[] = [
-  { label: 'Manager — full access to the assigned shop', roles: [SystemRole.BRANCH_MANAGER, SystemRole.ACCOUNTANT] },
-  { label: 'Biller / Cashier — POS billing only', roles: [SystemRole.BILLER] },
+  { label: 'Admin — full access to the assigned shop/hotel (no payroll)', roles: [SystemRole.BRANCH_MANAGER, SystemRole.ACCOUNTANT] },
+  { label: 'Biller (Shop) — POS billing + sales reports', roles: [SystemRole.BILLER] },
+  { label: 'Biller (Hotel) — hotel billing & operations', roles: [SystemRole.BILLER_HOTEL] },
   { label: 'Hotel staff', roles: [SystemRole.RECEPTIONIST, SystemRole.HOUSEKEEPING, SystemRole.MAINTENANCE_STAFF] },
 ];
 
 const ROLE_DESC: Partial<Record<SystemRole, string>> = {
-  [SystemRole.BRANCH_MANAGER]: 'Shop Admin — every feature (sales, purchases, inventory, reports) for the assigned shop only.',
+  [SystemRole.BRANCH_MANAGER]: 'Admin — every operational feature (sales, purchases, inventory, hotel, reports) for the assigned shop/hotel only. No payroll.',
   [SystemRole.ACCOUNTANT]: 'Accounts & reports for the assigned shop.',
-  [SystemRole.BILLER]: 'POS billing + today’s sales only — no profit/loss, reports or back-office.',
+  [SystemRole.BILLER]: 'Biller (Shop) — POS billing, product returns, and daily/weekly/monthly sales reports only. No revenue/financial reports, expenses or payroll.',
+  [SystemRole.BILLER_HOTEL]: 'Biller (Hotel) — hotel check-in/out, folio billing, housekeeping & services only. No sales/financial reports or payroll.',
   [SystemRole.RECEPTIONIST]: 'Hotel front desk — check-in/out, guests, folio.',
   [SystemRole.HOUSEKEEPING]: 'Housekeeping tasks only.',
   [SystemRole.MAINTENANCE_STAFF]: 'Maintenance tasks only.',
@@ -87,13 +89,26 @@ export default function UsersPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const setStatus = useMutation({
+    mutationFn: (v: { id: string; isActive: boolean }) =>
+      api(`/users/${v.id}/status`, { method: 'PATCH', token, body: JSON.stringify({ isActive: v.isActive }) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('User updated'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api(`/users/${id}`, { method: 'DELETE', token }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('User removed'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const submit = () => {
     if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim()) {
       toast.error('First name, last name and email are required');
       return;
     }
     if (!isStrongPassword(form.password)) {
-      toast.error(`Password must be at least ${PASSWORD_MIN_LENGTH} characters and include a letter and a number`);
+      toast.error(PASSWORD_POLICY_MESSAGE);
       return;
     }
     create.mutate();
@@ -159,23 +174,50 @@ export default function UsersPage() {
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          Password must be at least {PASSWORD_MIN_LENGTH} characters and include a letter and a number.
+          {PASSWORD_POLICY_MESSAGE}.
         </p>
         <Button onClick={submit} disabled={!form.branchId || create.isPending}>Create user</Button>
       </Card>
 
       <div className="space-y-2">
-        {users?.map((u) => (
-          <Card key={u.id} className="p-4 flex justify-between items-center">
-            <div>
-              <p className="font-medium">{u.firstName} {u.lastName}</p>
-              <p className="text-sm text-muted-foreground">{u.email}</p>
+        {users?.map((u) => {
+          const isSelf = u.id === user?.id;
+          return (
+          <Card key={u.id} className="p-4 flex flex-wrap justify-between items-center gap-3">
+            <div className="min-w-0">
+              <p className="font-medium flex items-center gap-2">
+                {u.firstName} {u.lastName}
+                {!u.isActive && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-semibold">DISABLED</span>}
+                {isSelf && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">You</span>}
+              </p>
+              <p className="text-sm text-muted-foreground truncate">{u.email}</p>
             </div>
-            <span className="text-sm px-3 py-1 rounded-full bg-secondary">
-              {ROLE_LABELS[u.role as SystemRole] ?? u.role}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm px-3 py-1 rounded-full bg-secondary">
+                {ROLE_LABELS[u.role as SystemRole] ?? u.role}
+              </span>
+              {!isSelf && (
+                <>
+                  <Button
+                    variant="outline" size="sm"
+                    disabled={setStatus.isPending}
+                    onClick={() => setStatus.mutate({ id: u.id, isActive: !u.isActive })}
+                  >
+                    {u.isActive ? 'Disable' : 'Enable'}
+                  </Button>
+                  <Button
+                    variant="outline" size="sm" className="text-rose-600 hover:text-rose-700"
+                    disabled={remove.isPending}
+                    onClick={() => { if (confirm(`Remove ${u.firstName} ${u.lastName}? They will lose access.`)) remove.mutate(u.id); }}
+                  >
+                    Remove
+                  </Button>
+                </>
+              )}
+            </div>
           </Card>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

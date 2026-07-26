@@ -19,8 +19,10 @@ export class ReportsController {
     return this.reports.dashboard(b, branchId);
   }
 
-  // Transaction reports
+  // Transaction reports. Sales reports (sale summary + day book) are available to Biller (Shop)
+  // via SALES_REPORTS_VIEW (this overrides the class-level financial REPORTS_VIEW).
   @Get('sale')
+  @RequirePermissions(Permission.SALES_REPORTS_VIEW)
   sale(@CurrentUser('businessId') b: string, @CurrentUser('branchId') branchId: string | undefined, @Query('from') from?: string, @Query('to') to?: string) {
     return this.reports.saleReport(b, from, to, branchId);
   }
@@ -31,6 +33,7 @@ export class ReportsController {
   }
 
   @Get('day-book')
+  @RequirePermissions(Permission.SALES_REPORTS_VIEW)
   dayBook(@CurrentUser('businessId') b: string, @CurrentUser('branchId') branchId: string | undefined, @Query('date') date: string) {
     return this.reports.dayBook(b, date ?? new Date().toISOString().slice(0, 10), branchId);
   }

@@ -39,7 +39,8 @@ export enum Permission {
   EXPENSE_APPROVE = 'expense:approve',
 
   // Reports
-  REPORTS_VIEW = 'reports:view',
+  SALES_REPORTS_VIEW = 'reports:sales_view', // daily/weekly/monthly SALES reports only (Biller-Shop)
+  REPORTS_VIEW = 'reports:view', // financial/revenue reports (P&L, balance sheet, cash-flow, GST, …)
   REPORTS_EXPORT = 'reports:export',
 
   // System
@@ -78,18 +79,33 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     Permission.EXPENSE_VIEW,
     Permission.EXPENSE_MANAGE,
     Permission.EXPENSE_APPROVE,
+    Permission.SALES_REPORTS_VIEW,
     Permission.REPORTS_VIEW,
     Permission.REPORTS_EXPORT,
     Permission.AUDIT_VIEW,
     Permission.SETTINGS_MANAGE,
   ],
-  // Front-counter cashier: POS selling only, plus customers (parties) since
-  // ringing up a sale needs a party picker — no back-office visibility.
+  // Biller (Shop): POS selling + returns, plus daily/weekly/monthly SALES reports only.
+  // No revenue/financial reports, no expenses, no payroll.
   BILLER: [
     Permission.POS_SELL,
     Permission.POS_REFUND,
     Permission.POS_DISCOUNT,
     Permission.POS_HOLD_ORDER,
+    Permission.SALES_REPORTS_VIEW,
+  ],
+  // Biller (Hotel): hotel billing + operations only — check-in/out, folio sale, housekeeping
+  // and service visibility. No sales/financial reports, no expenses, no payroll.
+  BILLER_HOTEL: [
+    Permission.POS_SELL,
+    Permission.POS_HOLD_ORDER,
+    Permission.HOTEL_VIEW,
+    Permission.HOTEL_CHECKIN,
+    Permission.HOTEL_CHECKOUT,
+    Permission.HOTEL_AADHAAR,
+    Permission.HK_VIEW,
+    Permission.SERVICE_VIEW,
+    Permission.SERVICE_MANAGE,
   ],
   HOTEL_OWNER: [
     Permission.BUSINESS_MANAGE,
@@ -117,19 +133,26 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     Permission.EXPENSE_VIEW,
     Permission.EXPENSE_MANAGE,
     Permission.EXPENSE_APPROVE,
+    Permission.SALES_REPORTS_VIEW,
     Permission.REPORTS_VIEW,
     Permission.REPORTS_EXPORT,
     Permission.AUDIT_VIEW,
     Permission.SETTINGS_MANAGE,
   ],
+  // Admin: full shop/hotel operational access within the ASSIGNED location, EXCLUDING payroll
+  // and BUSINESS_MANAGE (no BUSINESS_MANAGE => branch-scope guard confines them to one branch)
+  // and platform. Everything else the owner can do, they can do for their location.
   BRANCH_MANAGER: [
     Permission.BRANCH_MANAGE,
     Permission.USER_MANAGE,
     Permission.POS_SELL,
-    Permission.POS_HOLD_ORDER,
+    Permission.POS_REFUND,
+    Permission.POS_PRICE_OVERRIDE,
     Permission.POS_DISCOUNT,
+    Permission.POS_HOLD_ORDER,
     Permission.INVENTORY_VIEW,
     Permission.INVENTORY_MANAGE,
+    Permission.INVENTORY_ADJUST,
     Permission.HOTEL_VIEW,
     Permission.HOTEL_MANAGE,
     Permission.HOTEL_CHECKIN,
@@ -141,7 +164,12 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     Permission.SERVICE_MANAGE,
     Permission.EXPENSE_VIEW,
     Permission.EXPENSE_MANAGE,
+    Permission.EXPENSE_APPROVE,
+    Permission.SALES_REPORTS_VIEW,
     Permission.REPORTS_VIEW,
+    Permission.REPORTS_EXPORT,
+    Permission.AUDIT_VIEW,
+    Permission.SETTINGS_MANAGE,
   ],
   RECEPTIONIST: [
     Permission.POS_SELL,
@@ -165,6 +193,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     Permission.EXPENSE_VIEW,
     Permission.EXPENSE_MANAGE,
     Permission.EXPENSE_APPROVE,
+    Permission.SALES_REPORTS_VIEW,
     Permission.REPORTS_VIEW,
     Permission.REPORTS_EXPORT,
   ],

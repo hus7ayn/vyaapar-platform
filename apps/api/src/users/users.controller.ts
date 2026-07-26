@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Permission } from '@nexus/shared';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -24,5 +24,36 @@ export class UsersController {
   @RequirePermissions(Permission.USER_MANAGE)
   create(@CurrentUser('businessId') businessId: string, @CurrentUser('branchId') branchId: string | undefined, @Body() body: CreateUserDto) {
     return this.users.create(businessId, body, branchId);
+  }
+
+  @Patch(':id')
+  @RequirePermissions(Permission.USER_MANAGE)
+  update(
+    @CurrentUser('businessId') businessId: string,
+    @Param('id') id: string,
+    @Body() body: { firstName?: string; lastName?: string; role?: string; branchId?: string },
+  ) {
+    return this.users.update(businessId, id, body);
+  }
+
+  @Patch(':id/status')
+  @RequirePermissions(Permission.USER_MANAGE)
+  setStatus(
+    @CurrentUser('businessId') businessId: string,
+    @CurrentUser('sub') callerId: string,
+    @Param('id') id: string,
+    @Body() body: { isActive: boolean },
+  ) {
+    return this.users.setActive(businessId, id, !!body.isActive, callerId);
+  }
+
+  @Delete(':id')
+  @RequirePermissions(Permission.USER_MANAGE)
+  remove(
+    @CurrentUser('businessId') businessId: string,
+    @CurrentUser('sub') callerId: string,
+    @Param('id') id: string,
+  ) {
+    return this.users.remove(businessId, id, callerId);
   }
 }

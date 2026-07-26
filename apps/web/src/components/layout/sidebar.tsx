@@ -93,7 +93,7 @@ const NAV: NavItem[] = [
     ],
   },
   { label: 'MSW POS', icon: MonitorSmartphone, href: '/pos', match: (p) => p.startsWith('/pos'), permission: Permission.POS_SELL },
-  { label: 'Reports', icon: BarChart3, href: '/reports', match: (p) => p.startsWith('/reports'), permission: Permission.REPORTS_VIEW },
+  { label: 'Reports', icon: BarChart3, href: '/reports', match: (p) => p.startsWith('/reports'), permission: Permission.SALES_REPORTS_VIEW },
   { label: 'Reminders', icon: Bell, href: '/reminders', match: (p) => p.startsWith('/reminders'), permission: Permission.REPORTS_VIEW },
   { label: 'Utilities', icon: Wrench, href: '/utilities', match: (p) => p.startsWith('/utilities'), permission: Permission.SETTINGS_MANAGE },
 ];
