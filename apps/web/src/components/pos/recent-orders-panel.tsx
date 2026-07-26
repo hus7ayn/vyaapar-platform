@@ -36,7 +36,12 @@ export function RecentOrdersPanel({ branchId }: { branchId?: string }) {
 
   return (
     <>
-      <Button variant="outline" size="lg" onClick={() => setOpen(true)} className="gap-2 shrink-0">
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => setOpen(true)}
+        className="gap-1.5 shrink-0 h-9 bg-white/95 text-[hsl(348,85%,52%)] hover:bg-white font-semibold"
+      >
         <Clock className="h-4 w-4" /> Recent Bills
       </Button>
 

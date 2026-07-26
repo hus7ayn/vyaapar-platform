@@ -667,6 +667,67 @@
         "apps/web/src/components/settings/label-designer-card.tsx"
       ],
       "accept": "On desktop the designer goes side-by-side at lg (not xl); the preview column flexes/shrinks while the controls column keeps a fixed comfortable width (360-400px), so the action/button groups stay aligned horizontally with proper spacing instead of stacking cramped."
+    },
+    {
+      "id": "R68",
+      "title": "#1 Strong password policy (upper+lower+digit+special, >=8) with clear message",
+      "priority": 68,
+      "status": "pass",
+      "files": [
+        "packages/shared/src/password-policy.ts"
+      ],
+      "accept": "Shared PASSWORD_COMPLEXITY_REGEX requires lowercase+uppercase+digit+special char (min 8); message names all four classes. Signup client (zod) + server (@IsStrongPassword) reject weak passwords before account creation. Login unaffected (existing users not locked out)."
+    },
+    {
+      "id": "R77",
+      "title": "#4 Show discount % AND rupee amount in invoice totals",
+      "priority": 77,
+      "status": "pass",
+      "files": [
+        "apps/web/src/components/vyapar/txn-form.tsx"
+      ],
+      "accept": "txn-form totals compute+show aggregate Item Discount rupees and the Bill Discount % now shows '= -₹Y' computed live from the percentage, visible in the summary before Total."
+    },
+    {
+      "id": "R78",
+      "title": "#5 PDF header: constrain business name width to stop white-on-red overlap",
+      "priority": 78,
+      "status": "pass",
+      "files": [
+        "apps/api/src/receipts/receipts.service.ts"
+      ],
+      "accept": "PDF business-name text is width-constrained (320, no wrap, ellipsis) so a long name can't overrun into the right-aligned document label or wrap onto the address."
+    },
+    {
+      "id": "R79",
+      "title": "#6 Restore Recent Bills button visibility in POS",
+      "priority": 79,
+      "status": "pass",
+      "files": [
+        "apps/web/src/components/pos/recent-orders-panel.tsx"
+      ],
+      "accept": "Recent Bills trigger restyled (secondary, brand-red text on white, h-9) so it's visible in the red POS bar instead of white-on-white, and fits next to Hold."
+    },
+    {
+      "id": "R80",
+      "title": "#7 Hotel print CSS: printout shows only the folio, not chrome/buttons",
+      "priority": 80,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/hotel/page.tsx",
+        "apps/web/src/app/globals.css"
+      ],
+      "accept": "Checkout footer is print:hidden and a global @media print block hides the app shell (aside/header/nav), un-fixes the dialog, and hides entry forms — so window.print() prints only the bill, no 'Print Bill'/checkout buttons. POS thermal (separate window) unaffected."
+    },
+    {
+      "id": "R81",
+      "title": "#8 Hotel check-in uses room custom price over category default; manual rate preserved",
+      "priority": 81,
+      "status": "pass",
+      "files": [
+        "apps/web/src/app/(app)/hotel/check-in/page.tsx"
+      ],
+      "accept": "Rooms query returns price; preselect/onChange/submit seed roomRate from room.price ?? category.basePrice; a manually typed rate is used on submit (form.roomRate wins) and isn't clobbered. Dropdown shows the effective per-room price."
     }
   ]
 }

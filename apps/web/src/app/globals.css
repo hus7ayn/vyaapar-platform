@@ -35,3 +35,40 @@
     @apply bg-background text-foreground antialiased;
   }
 }
+
+/* Print: the hotel "Print Bill" uses window.print() on the live app. Hide the app shell,
+   action buttons (.print:hidden) and data-entry forms so the printout shows only the folio
+   bill — not the sidebar, nav, or the "Print Bill"/checkout buttons. The POS thermal receipt
+   prints in a separate window and is unaffected by this. */
+@media print {
+  aside,
+  header,
+  nav {
+    display: none !important;
+  }
+  main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  /* Un-fix the Radix dialog so the folio prints as a normal full-width block. */
+  [role='dialog'] {
+    position: static !important;
+    transform: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  [role='dialog'] * {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  /* Entry forms (add charge / record payment / split controls) are not part of the bill. */
+  [role='dialog'] form {
+    display: none !important;
+  }
+  [data-radix-popper-content-wrapper] {
+    position: static !important;
+    transform: none !important;
+  }
+}

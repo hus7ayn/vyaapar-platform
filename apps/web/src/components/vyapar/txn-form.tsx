@@ -168,11 +168,13 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
   const totals = useMemo(() => {
     let subtotal = 0;
     let tax = 0;
+    let itemDiscount = 0;
     for (const l of lines) {
       const qty = Number(l.quantity) || 0;
       const price = Number(l.unitPrice) || 0;
       const gross = qty * price;
       const disc = gross * ((Number(l.discountPercent) || 0) / 100);
+      itemDiscount += disc;
       const taxable = gross - disc;
       subtotal += taxable;
       tax += taxable * ((Number(l.taxRate) || 0) / 100);
@@ -181,7 +183,7 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
     const charges = Number(shipping) || 0;
     const raw = subtotal + tax - billDiscount + charges;
     const total = roundOffEnabled ? Math.round(raw) : raw;
-    return { subtotal, tax, billDiscount, charges, roundOff: total - raw, total };
+    return { subtotal, tax, itemDiscount, billDiscount, charges, roundOff: total - raw, total };
   }, [lines, billDiscountPct, shipping, roundOffEnabled]);
 
   const effectiveTotal = meta.hasLines ? totals.total : Number(amount) || 0;
@@ -519,10 +521,16 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
           <p className="text-sm font-semibold mb-2">Totals</p>
           {meta.hasLines ? (
             <>
+              {totals.itemDiscount > 0 && (
+                <div className="flex justify-between text-emerald-700"><span className="text-muted-foreground">Item Discount</span><span>-{formatMoney(totals.itemDiscount)}</span></div>
+              )}
               <div className="flex justify-between"><span className="text-muted-foreground">Subtotal (after item disc.)</span><span>{formatMoney(totals.subtotal)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span>{formatMoney(totals.tax)}</span></div>
               <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Bill Discount %</span>
+                <span className="text-muted-foreground flex items-center gap-2">
+                  Bill Discount %
+                  {totals.billDiscount > 0 && <span className="text-emerald-700 font-medium">= -{formatMoney(totals.billDiscount)}</span>}
+                </span>
                 <Input className="h-8 w-24 text-right" type="number" min="0" max="100" value={billDiscountPct} onChange={(e) => setBillDiscountPct(e.target.value)} />
               </div>
               <div className="flex justify-between items-center">

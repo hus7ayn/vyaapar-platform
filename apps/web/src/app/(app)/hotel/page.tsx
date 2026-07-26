@@ -1336,8 +1336,9 @@ export default function HotelPage() {
                 </div>
 
                 </div>
-                {/* Bottom Actions — fixed footer, always visible without scrolling */}
-                <div className="flex gap-2 px-6 py-3 border-t bg-card shrink-0">
+                {/* Bottom Actions — fixed footer, always visible without scrolling. print:hidden so the
+                    "Print Bill"/checkout buttons don't appear on the printed receipt. */}
+                <div className="flex gap-2 px-6 py-3 border-t bg-card shrink-0 print:hidden">
                   <Button 
                     type="button" 
                     variant="outline" 

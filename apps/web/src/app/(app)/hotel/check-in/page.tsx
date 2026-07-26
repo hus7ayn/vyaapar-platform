@@ -62,7 +62,7 @@ function CheckInForm() {
       if (branchId) qs.set('branchId', branchId);
       if (bookingType === 'CHECKIN') qs.set('status', 'AVAILABLE');
       else if (rangeReady) { qs.set('from', form.checkIn); qs.set('to', form.checkOut); }
-      return api<Array<{ id: string; roomNumber: string; status: string; category: { basePrice: number } }>>(
+      return api<Array<{ id: string; roomNumber: string; status: string; price?: number | string | null; category: { basePrice: number } }>>(
         `/hotel/rooms?${qs.toString()}`,
         { token },
       );
@@ -74,7 +74,8 @@ function CheckInForm() {
     if (preSelectedRoomId && rooms) {
       const room = rooms.find((r) => r.id === preSelectedRoomId);
       if (room && !form.roomRate) {
-        setForm((f) => ({ ...f, roomRate: Number(room.category.basePrice) }));
+        // Prefer the room's own custom price over the category default.
+        setForm((f) => ({ ...f, roomRate: Number(room.price ?? room.category.basePrice) }));
       }
     }
   }, [preSelectedRoomId, rooms]);
@@ -115,7 +116,8 @@ function CheckInForm() {
       return;
     }
     const room = rooms?.find((r) => r.id === form.roomId);
-    const rateToUse = form.roomRate || Number(room?.category.basePrice || 0);
+    // Manual rate wins; otherwise the room's custom price, then the category default.
+    const rateToUse = form.roomRate || Number(room?.price ?? room?.category.basePrice ?? 0);
 
     try {
       const endpoint = bookingType === 'CHECKIN' ? '/hotel/check-in' : '/hotel/reservations';
@@ -227,17 +229,19 @@ function CheckInForm() {
             value={form.roomId}
             onChange={(e) => {
               const room = rooms?.find((r) => r.id === e.target.value);
+              // Seed the room's custom price (falls back to category default). Manual edits
+              // afterward are preserved — nothing re-clobbers form.roomRate.
               setForm({
                 ...form,
                 roomId: e.target.value,
-                roomRate: Number(room?.category.basePrice ?? 0),
+                roomRate: Number(room?.price ?? room?.category.basePrice ?? 0),
               });
             }}
           >
             <option value="">Select room</option>
             {rooms?.map((r) => (
               <option key={r.id} value={r.id}>
-                Room {r.roomNumber} ({r.status}) — ₹{r.category.basePrice}/night
+                Room {r.roomNumber} ({r.status}) — ₹{Number(r.price ?? r.category.basePrice)}/night
               </option>
             ))}
           </select>

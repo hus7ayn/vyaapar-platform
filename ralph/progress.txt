@@ -301,3 +301,8 @@ R58 (#5 part 2 — bill): thermal bill editor rewritten to a designer with a liv
 
 R59 (UI): hotel checkout dialog restructured to fixed-header + scrollable-body + fixed-footer (DialogContent !flex flex-col max-h-[90vh] !p-0; body flex-1 overflow-y-auto; Bottom Actions moved into a shrink-0 border-t footer). Confirm/Complete Checkout button is now always visible without scrolling the long folio.
 R60 (UI): barcode label designer desktop layout fixed — was flex-col xl:flex-row with a shrink-0 720px preview crushing the flex-1 controls (buttons wrapped/cramped). Now lg:flex-row, preview lg:flex-1 min-w-0 (shrinkable), controls fixed lg:w-[360px] xl:w-[400px] shrink-0 so button rows stay horizontal with spacing.
+
+=== Batch 7 (R61+): RBAC spec + 11 features + label printer + sync. Decisions: ===
+- RBAC: NO role-string migration (avoids prod lockout). Relabel/repurpose existing roles — ADMIN stays full-access = "Super Admin" (business owner, unchanged perms); BRANCH_MANAGER = "Admin" (shop-scoped, no payroll — already is); BILLER = "Biller (Shop)" + SALES_REPORTS_VIEW; new BILLER_HOTEL = "Biller (Hotel)" hotel-ops only. Split REPORTS_VIEW -> SALES_REPORTS_VIEW + FINANCIAL_REPORTS_VIEW.
+- #2 reset keys: per-role env secrets (SUPER_ADMIN_RESET_KEY/ADMIN_RESET_KEY/BILLER_RESET_KEY), fail-closed, set in Vercel.
+- #3 barcode: per-business unique (partial index), auto-gen on create (retry-unique), editable+validated.

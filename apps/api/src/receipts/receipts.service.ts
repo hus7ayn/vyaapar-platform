@@ -176,7 +176,9 @@ export class ReceiptsService {
       // Header band
       doc.rect(0, 0, pageW, 90).fill('#b91c1c');
       doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(20);
-      doc.text(txn.business.name, left, 24);
+      // Constrain width + no wrap so a long business name can't overrun into the right-aligned
+      // document label or wrap down onto the address line (white-on-red overlap fix).
+      doc.text(txn.business.name, left, 24, { width: 320, lineBreak: false, ellipsis: true });
       doc.font('Helvetica').fontSize(9);
       if (txn.business.address) doc.text(txn.business.address, left, 50);
       const meta = [
