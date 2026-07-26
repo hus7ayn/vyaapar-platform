@@ -728,6 +728,48 @@
         "apps/web/src/app/(app)/hotel/check-in/page.tsx"
       ],
       "accept": "Rooms query returns price; preselect/onChange/submit seed roomRate from room.price ?? category.basePrice; a manually typed rate is used on submit (form.roomRate wins) and isn't clobbered. Dropdown shows the effective per-room price."
+    },
+    {
+      "id": "R88",
+      "title": "Label/thermal print: wait for images + safety timeout (fix 'sometimes nothing prints')",
+      "priority": 88,
+      "status": "pass",
+      "files": [
+        "apps/web/src/lib/print-html.ts"
+      ],
+      "accept": "printHtmlDocument injects a trigger that waits for all images (barcode) to load before print(), auto-closes on afterprint, and prints anyway after a 1.5s safety timeout. Replaces the racy w.onload=print assigned after document.close."
+    },
+    {
+      "id": "R89",
+      "title": "Label print rotation option (fix 'prints horizontally')",
+      "priority": 89,
+      "status": "pass",
+      "files": [
+        "apps/web/src/lib/label-config.ts",
+        "apps/web/src/lib/print-tags.ts",
+        "apps/web/src/components/settings/label-designer-card.tsx"
+      ],
+      "accept": "LabelConfig gains rotateDeg (0/90/180/270, normalized, back-compat); print-tags swaps @page dims + rotates content into a .page wrapper for 90/270; designer has a 'Print rotation' control so users match the TVS roll feed without editing the driver."
+    },
+    {
+      "id": "R90",
+      "title": "Sync banner: server reachability is source of truth (not navigator.onLine)",
+      "priority": 90,
+      "status": "pass",
+      "files": [
+        "apps/web/src/components/connection-banner.tsx"
+      ],
+      "accept": "Banner always pings checkApiHealth (/health/ready) and derives online from it; navigator online/offline events only trigger a re-check. Fixes 'shows Offline even when online'. Hidden when reachable + nothing pending."
+    },
+    {
+      "id": "R91",
+      "title": "Sync manager: flush on reachability, never silently drop rows",
+      "priority": 91,
+      "status": "pass",
+      "files": [
+        "apps/web/src/lib/sync-manager.ts"
+      ],
+      "accept": "processSyncQueue gates on checkApiHealth (not navigator.onLine), pushes ALL queued rows when reachable, keeps rows queued on failure (bumps attempts for diagnostics only). getPendingSyncCount counts all rows so nothing disappears from the pending count. Fixes stuck 'Ready to Sync'."
     }
   ]
 }

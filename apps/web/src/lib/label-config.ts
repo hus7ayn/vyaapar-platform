@@ -34,6 +34,7 @@ export interface LabelConfig {
   heightMm: number;
   barcodeHeightMm: number; // rendered height of the barcode image
   barcodeWidthMm?: number; // rendered width of the barcode image (0/undefined = auto)
+  rotateDeg?: 0 | 90 | 180 | 270; // rotate the printed label to match the printer's feed direction
 }
 
 export const LABEL_FIELDS: LabelField[] = ['name', 'category', 'size', 'colour', 'sku', 'mrp', 'price', 'barcode', 'barcodeNumber'];
@@ -79,6 +80,7 @@ export const DEFAULT_LABEL_CONFIG: LabelConfig = {
   heightMm: 25,
   barcodeHeightMm: 11,
   barcodeWidthMm: 0,
+  rotateDeg: 0,
 };
 
 const STORAGE_KEY = 'msw-label-config';
@@ -119,6 +121,7 @@ export function loadLabelConfig(): LabelConfig {
       heightMm: typeof parsed.heightMm === 'number' ? parsed.heightMm : DEFAULT_LABEL_CONFIG.heightMm,
       barcodeHeightMm: typeof parsed.barcodeHeightMm === 'number' ? parsed.barcodeHeightMm : DEFAULT_LABEL_CONFIG.barcodeHeightMm,
       barcodeWidthMm: typeof parsed.barcodeWidthMm === 'number' ? parsed.barcodeWidthMm : DEFAULT_LABEL_CONFIG.barcodeWidthMm,
+      rotateDeg: [90, 180, 270].includes(parsed.rotateDeg as number) ? (parsed.rotateDeg as 90 | 180 | 270) : 0,
       fields,
       custom,
     };

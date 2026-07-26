@@ -1,18 +1,22 @@
 import { getOfflineDB } from './offline-db';
-import { api } from './api';
+import { api, checkApiHealth } from './api';
 
 const SYNC_INTERVAL_MS = 15_000;
-const MAX_SYNC_ATTEMPTS = 5;
 
 let syncInFlight = false;
 
 export async function processSyncQueue(token: string, clientId: string) {
-  if (syncInFlight || !navigator.onLine) return { synced: 0, pending: 0 };
+  if (syncInFlight) return { synced: 0, pending: await getPendingSyncCount() };
 
   const db = await getOfflineDB();
   const all = await db.getAll('syncQueue');
-  const pending = all.filter((p) => (p.attempts ?? 0) < MAX_SYNC_ATTEMPTS);
-  if (!pending.length) return { synced: 0, pending: 0 };
+  if (!all.length) return { synced: 0, pending: 0 };
+
+  // Only attempt when the SERVER is actually reachable (navigator.onLine is unreliable and was
+  // the reason sync stayed stuck on "Ready to Sync" even when online). When unreachable, keep
+  // everything queued and do not burn retries.
+  const reachable = await checkApiHealth();
+  if (!reachable) return { synced: 0, pending: all.length };
 
   syncInFlight = true;
   try {
@@ -21,7 +25,7 @@ export async function processSyncQueue(token: string, clientId: string) {
       token,
       body: JSON.stringify({
         clientId,
-        operations: pending.map((p) => ({
+        operations: all.map((p) => ({
           entity: p.entity,
           action: p.action,
           payload: p.payload,
@@ -31,20 +35,15 @@ export async function processSyncQueue(token: string, clientId: string) {
     });
 
     const tx = db.transaction('syncQueue', 'readwrite');
-    await Promise.all(pending.map((p) => tx.store.delete(p.id)));
+    await Promise.all(all.map((p) => tx.store.delete(p.id)));
     await tx.done;
 
-    return { synced: result.synced ?? pending.length, pending: 0 };
+    return { synced: result.synced ?? all.length, pending: 0 };
   } catch {
-    const updated = await Promise.all(
-      pending.map(async (p) => {
-        const attempts = (p.attempts ?? 0) + 1;
-        await db.put('syncQueue', { ...p, attempts });
-        return attempts;
-      }),
-    );
-    const remaining = updated.filter((a) => a < MAX_SYNC_ATTEMPTS).length;
-    return { synced: 0, pending: remaining };
+    // Reachable but the push failed — keep every row queued (bump attempts only for
+    // diagnostics) so nothing is ever silently dropped; they retry on the next tick.
+    await Promise.all(all.map((p) => db.put('syncQueue', { ...p, attempts: (p.attempts ?? 0) + 1 })));
+    return { synced: 0, pending: all.length };
   } finally {
     syncInFlight = false;
   }
@@ -52,8 +51,8 @@ export async function processSyncQueue(token: string, clientId: string) {
 
 export async function getPendingSyncCount(): Promise<number> {
   const db = await getOfflineDB();
-  const pending = await db.getAll('syncQueue');
-  return pending.filter((p) => (p.attempts ?? 0) < MAX_SYNC_ATTEMPTS).length;
+  const all = await db.getAll('syncQueue');
+  return all.length;
 }
 
 export function startSyncInterval(token: string, clientId: string, intervalMs = SYNC_INTERVAL_MS) {

@@ -64,18 +64,28 @@ export function printBarcodeTags(tags: TagSpec[], config: LabelConfig = loadLabe
         ? `<img src="${t.dataUrl}" alt="${escapeHtml(t.barcode)}" style="left:${bc.xMm}mm;top:${bc.yMm}mm;height:${config.barcodeHeightMm}mm;${bw}" />`
         : '';
 
-      const tag = `<div class="tag">${textEls}${customEls}${barcodeEl}</div>`;
+      const tag = `<div class="page"><div class="tag">${textEls}${customEls}${barcodeEl}</div></div>`;
       return tag.repeat(count);
     })
     .join('');
 
+  // Optional rotation so a landscape (50x25) design can print onto a portrait-fed roll (or
+  // vice-versa) without touching the driver. For 90/270 the physical page is the swapped size
+  // and the designed label is rotated + centered into it.
+  const rot = [90, 180, 270].includes(config.rotateDeg as number) ? (config.rotateDeg as number) : 0;
+  const swap = rot === 90 || rot === 270;
+  const pageW = swap ? config.heightMm : config.widthMm;
+  const pageH = swap ? config.widthMm : config.heightMm;
+  const rotStyle = rot ? `transform: translate(-50%, -50%) rotate(${rot}deg); position: absolute; left: 50%; top: 50%;` : '';
+
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8" /><title>Tags</title>
 <style>
-  @page { size: ${config.widthMm}mm ${config.heightMm}mm; margin: 0; }
+  @page { size: ${pageW}mm ${pageH}mm; margin: 0; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
-  .tag { position: relative; width: ${config.widthMm}mm; height: ${config.heightMm}mm; page-break-after: always; overflow: hidden; }
+  .page { position: relative; width: ${pageW}mm; height: ${pageH}mm; page-break-after: always; overflow: hidden; }
+  .tag { position: relative; width: ${config.widthMm}mm; height: ${config.heightMm}mm; overflow: hidden; ${rotStyle} }
   .tag .fld { position: absolute; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
   .tag img { position: absolute; max-width: 100%; object-fit: contain; }
 </style>

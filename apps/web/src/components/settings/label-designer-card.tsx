@@ -307,6 +307,19 @@ export function LabelDesignerCard() {
               <label className="text-xs font-medium text-muted-foreground">Barcode height (mm)</label>
               <Input type="number" min="4" step="1" value={config.barcodeHeightMm} onChange={(e) => setConfig((c) => ({ ...c, barcodeHeightMm: Number(e.target.value) || c.barcodeHeightMm }))} />
             </div>
+            <div className="col-span-2 sm:col-span-3">
+              <label className="text-xs font-medium text-muted-foreground">Print rotation (use if labels print sideways)</label>
+              <select
+                className="h-10 w-full rounded-lg border px-3 text-sm bg-background"
+                value={config.rotateDeg ?? 0}
+                onChange={(e) => setConfig((c) => ({ ...c, rotateDeg: Number(e.target.value) as 0 | 90 | 180 | 270 }))}
+              >
+                <option value={0}>Normal (0°)</option>
+                <option value={90}>Rotate 90°</option>
+                <option value={180}>Rotate 180°</option>
+                <option value={270}>Rotate 270°</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
