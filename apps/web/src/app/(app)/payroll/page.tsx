@@ -89,11 +89,11 @@ export default function PayrollPage() {
   const [advanceAmount, setAdvanceAmount] = useState('');
   const [historyFor, setHistoryFor] = useState<Employee | null>(null);
 
-  // Scope payroll to ONE entity (shop or hotel) so their staff stay separate.
+  // Scope payroll to ONE shop so their staff stay separate.
   const [entityId, setEntityId] = useState<string>(activeShopId ?? '');
   const { data: entities } = useQuery({
     queryKey: ['branches', 'ALL'],
-    queryFn: () => api<Array<{ id: string; name: string; type: string }>>('/branches', { token }),
+    queryFn: () => api<Array<{ id: string; name: string }>>('/branches', { token }),
     enabled: !!token,
   });
   useEffect(() => {
@@ -309,7 +309,7 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
             <Wallet className="h-5 w-5 text-[hsl(348,85%,52%)]" /> Staff Payroll
           </h1>
           <p className="text-sm text-muted-foreground">
-            Staff, runs &amp; payslips are scoped to the selected entity below — shops and hotels stay separate
+            Staff, runs &amp; payslips are scoped to the selected shop below — each shop stays separate
           </p>
         </div>
         <div className="flex gap-2 items-center">
@@ -320,7 +320,7 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
             title="Payroll entity"
           >
             {(entities ?? []).map((en) => (
-              <option key={en.id} value={en.id}>{en.name}{en.type === 'HOTEL' ? ' (Hotel)' : ''}</option>
+              <option key={en.id} value={en.id}>{en.name}</option>
             ))}
           </select>
           <div className="text-right text-sm hidden sm:block">
@@ -349,7 +349,7 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
       {tab === 'staff' && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <p className="text-sm text-muted-foreground">Staff for the selected entity (shop or hotel)</p>
+            <p className="text-sm text-muted-foreground">Staff for the selected shop</p>
             <Button onClick={() => setEmpOpen(true)}><Plus className="h-4 w-4 mr-1" /> Add Staff</Button>
           </div>
           <div className="bg-white rounded-lg border shadow-sm overflow-hidden">

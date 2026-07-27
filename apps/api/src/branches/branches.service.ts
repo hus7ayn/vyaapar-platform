@@ -1,8 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { bootstrapHotelDefaults, bootstrapShopDefaults } from './shop-setup.util';
-
-const BRANCH_TYPES = ['SHOP', 'HOTEL'];
+import { bootstrapShopDefaults } from './shop-setup.util';
 
 @Injectable()
 export class BranchesService {
@@ -20,10 +18,8 @@ export class BranchesService {
   }
 
   async create(businessId: string, data: { name: string; code: string; address?: string; type?: string }) {
-    const type = data.type ?? 'SHOP';
-    if (!BRANCH_TYPES.includes(type)) {
-      throw new BadRequestException('Branch type must be SHOP or HOTEL');
-    }
+    // API is shop-only: every branch is created as type SHOP.
+    const type = 'SHOP';
     if (!data.name?.trim()) throw new BadRequestException('Name is required');
     if (!data.code?.trim()) throw new BadRequestException('Code is required');
 
@@ -42,11 +38,7 @@ export class BranchesService {
         },
       });
 
-      if (type === 'HOTEL') {
-        await bootstrapHotelDefaults(tx, businessId, branch.id, data.name);
-      } else {
-        await bootstrapShopDefaults(tx, businessId, branch.id, data.name);
-      }
+      await bootstrapShopDefaults(tx, businessId, branch.id, data.name);
 
       return branch;
     });

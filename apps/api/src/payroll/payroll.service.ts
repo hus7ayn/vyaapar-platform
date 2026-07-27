@@ -144,8 +144,8 @@ export class PayrollService {
     // Cover EVERY active staff member across the whole business, not just one
     // branch. Group by branch so each shop still gets its own payroll run
     // (matches the per-branch Payroll model + per-shop salary expense at payout).
-    // Scope to a single entity (shop or hotel) when a branch is given, so a
-    // hotel's payroll doesn't sweep in shop staff (and vice-versa).
+    // Scope to a single shop when a branch is given, so one shop's payroll
+    // doesn't sweep in another shop's staff (and vice-versa).
     const employees = await this.prisma.employee.findMany({
       where: { businessId, isActive: true, ...(branchId && { branchId }) },
     });

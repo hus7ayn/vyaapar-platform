@@ -15,8 +15,8 @@ export function MobileNav() {
 
   const items = [
     { href: '/dashboard', icon: LayoutDashboard, label: 'Home', match: (p: string) => p === '/dashboard', hideForRoles: ['BILLER'] },
-    { href: '/sale/invoices', icon: FileText, label: 'Sale', match: (p: string) => p.startsWith('/sale'), permission: Permission.POS_SELL, hideForRoles: ['BILLER', 'RECEPTIONIST'] },
-    { href: '/purchase/bills', icon: ShoppingBag, label: 'Purchase', match: (p: string) => p.startsWith('/purchase'), permission: Permission.INVENTORY_VIEW, hideForRoles: ['RECEPTIONIST'] },
+    { href: '/sale/invoices', icon: FileText, label: 'Sale', match: (p: string) => p.startsWith('/sale'), permission: Permission.POS_SELL, hideForRoles: ['BILLER'] },
+    { href: '/purchase/bills', icon: ShoppingBag, label: 'Purchase', match: (p: string) => p.startsWith('/purchase'), permission: Permission.INVENTORY_VIEW },
     { href: '/parties', icon: Users, label: 'Parties', match: (p: string) => p.startsWith('/parties'), permission: Permission.POS_SELL, hideForRoles: ['BILLER'] },
     { href: '/pos', icon: MonitorSmartphone, label: 'POS', match: (p: string) => p.startsWith('/pos'), permission: Permission.POS_SELL },
     { href: '/items', icon: Package, label: 'Items', match: (p: string) => p.startsWith('/items'), permission: Permission.INVENTORY_VIEW },

@@ -6,9 +6,9 @@ import { PrismaService } from '../../prisma/prisma.service';
  * Resolves the effective branch for every authenticated request — always, not
  * only when a header is sent, since `branchWhere()` treats an undefined
  * branchId as "no filter" (i.e. all branches). Only BUSINESS_MANAGE holders
- * (the business-wide owner: ADMIN/HOTEL_OWNER/SUPER_ADMIN) may operate across
+ * (the business-wide owner: ADMIN/SUPER_ADMIN) may operate across
  * branches via the x-branch-id header ("switch shop"). Every other role
- * (shop admin/BRANCH_MANAGER, receptionist, housekeeping, accountant, etc.)
+ * (BRANCH_MANAGER, accountant, etc.)
  * is locked to their own assigned branch and denied if none is assigned,
  * rather than silently falling back to "see everything". Sets
  * request.resolvedBranchId for CurrentUser('branchId').

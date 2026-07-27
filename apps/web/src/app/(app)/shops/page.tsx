@@ -1,9 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Plus, Store } from 'lucide-react';
+import { Plus, Store } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
@@ -17,7 +16,6 @@ interface Shop {
   code: string;
   address?: string | null;
   phone?: string | null;
-  type?: string;
   isDefault?: boolean;
   isActive?: boolean;
 }
@@ -28,33 +26,24 @@ interface ShopMetrics {
   lowStockItems: number;
 }
 
-type EntityType = 'SHOP' | 'HOTEL';
-
 export default function ShopsPage() {
   const queryClient = useQueryClient();
-  const router = useRouter();
   const token = useAuthStore((s) => s.accessToken) ?? undefined;
   const activeShopId = useAuthStore((s) => s.activeShopId);
   const setActiveShopId = useAuthStore((s) => s.setActiveShopId);
 
-  const [createType, setCreateType] = useState<EntityType | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: '', code: '', address: '', phone: '' });
 
   const { data: shops, isLoading: shopsLoading } = useQuery({
     queryKey: ['shops'],
-    queryFn: () => api<Shop[]>('/branches?type=SHOP', { token }),
+    queryFn: () => api<Shop[]>('/branches', { token }),
     enabled: !!token,
   });
 
-  const { data: hotels, isLoading: hotelsLoading } = useQuery({
-    queryKey: ['hotels-entities'],
-    queryFn: () => api<Shop[]>('/branches?type=HOTEL', { token }),
-    enabled: !!token,
-  });
-
-  const openCreate = (type: EntityType) => {
+  const openCreate = () => {
     setForm({ name: '', code: '', address: '', phone: '' });
-    setCreateType(type);
+    setCreateOpen(true);
   };
 
   const createMutation = useMutation({
@@ -67,19 +56,14 @@ export default function ShopsPage() {
           code: form.code.trim().toUpperCase(),
           address: form.address || undefined,
           phone: form.phone || undefined,
-          type: createType,
+          type: 'SHOP',
         }),
       }),
     onSuccess: (entity) => {
-      const isHotel = createType === 'HOTEL';
-      toast.success(`${isHotel ? 'Hotel' : 'Shop'} "${entity.name}" created`);
-      setCreateType(null);
+      toast.success(`Shop "${entity.name}" created`);
+      setCreateOpen(false);
       queryClient.invalidateQueries();
-      if (isHotel) {
-        router.push('/hotel/dashboard');
-      } else {
-        setActiveShopId(entity.id);
-      }
+      setActiveShopId(entity.id);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -97,7 +81,7 @@ export default function ShopsPage() {
               Each shop has its own items, parties, stock, and transactions.
             </p>
           </div>
-          <Button onClick={() => openCreate('SHOP')}>
+          <Button onClick={openCreate}>
             <Plus className="h-4 w-4 mr-1" /> Add Shop
           </Button>
         </div>
@@ -123,56 +107,14 @@ export default function ShopsPage() {
         </div>
       </section>
 
-      {/* Hotels — kept separate; managed in Hotel PMS */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-[hsl(220,70%,45%)]" /> Hotels
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              A hotel is a separate entity — rooms, reservations, folios and its own Hotel PMS.
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => openCreate('HOTEL')}>
-            <Plus className="h-4 w-4 mr-1" /> Add Hotel
-          </Button>
-        </div>
-
-        <div className="grid gap-3">
-          {hotelsLoading && <p className="text-muted-foreground text-sm">Loading hotels…</p>}
-          {(hotels ?? []).map((hotel) => (
-            <button
-              key={hotel.id}
-              type="button"
-              onClick={() => router.push('/hotel/dashboard')}
-              className="text-left w-full rounded-lg border p-4 bg-white shadow-sm transition-colors hover:border-[hsl(220,70%,45%)]"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-semibold">{hotel.name}</p>
-                  <p className="text-xs text-muted-foreground">{hotel.code}</p>
-                  {hotel.address && <p className="text-xs text-muted-foreground mt-1">{hotel.address}</p>}
-                </div>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-[hsl(220,70%,45%)] text-white">Hotel</span>
-              </div>
-              <p className="text-xs text-[hsl(220,70%,45%)] mt-2">Open in Hotel PMS →</p>
-            </button>
-          ))}
-          {!hotelsLoading && !(hotels ?? []).length && (
-            <p className="text-sm text-muted-foreground">No hotels yet — add one to start using the Hotel PMS.</p>
-          )}
-        </div>
-      </section>
-
-      <Dialog open={createType !== null} onOpenChange={(o) => !o && setCreateType(null)}>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add New {createType === 'HOTEL' ? 'Hotel' : 'Shop'}</DialogTitle>
+            <DialogTitle>Add New Shop</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <Input placeholder={`${createType === 'HOTEL' ? 'Hotel' : 'Shop'} name`} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-            <Input placeholder="Code (e.g. BR02 / HTL1)" value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
+            <Input placeholder="Shop name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            <Input placeholder="Code (e.g. BR02)" value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
             <Input placeholder="Address" value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />
             <Input placeholder="Phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
             <Button
@@ -180,7 +122,7 @@ export default function ShopsPage() {
               disabled={!form.name.trim() || !form.code.trim() || createMutation.isPending}
               onClick={() => createMutation.mutate()}
             >
-              Create {createType === 'HOTEL' ? 'Hotel' : 'Shop'}
+              Create Shop
             </Button>
           </div>
         </DialogContent>

@@ -99,7 +99,7 @@ export class PlatformService {
             lastLoginAt: true,
           },
         },
-        _count: { select: { txns: true, items: true, rooms: true } },
+        _count: { select: { txns: true, items: true } },
       },
     });
     if (!tenant) throw new NotFoundException('Tenant not found');

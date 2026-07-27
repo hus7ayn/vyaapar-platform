@@ -15,7 +15,7 @@ import { FilesService } from './files.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 
-const UPLOAD_PERMISSIONS = [Permission.INVENTORY_MANAGE, Permission.HOTEL_AADHAAR, Permission.EXPENSE_MANAGE];
+const UPLOAD_PERMISSIONS = [Permission.INVENTORY_MANAGE, Permission.EXPENSE_MANAGE];
 
 @ApiTags('files')
 @ApiBearerAuth()

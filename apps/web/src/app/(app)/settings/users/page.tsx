@@ -36,23 +36,17 @@ const ASSIGNABLE_ROLES = Object.entries(ROLE_LABELS).filter(
 );
 const ASSIGNABLE_KEYS = new Set(ASSIGNABLE_ROLES.map(([key]) => key));
 
-// The three access tiers the product exposes (Super Admin sits above these and
-// is provisioned at tenant setup). The 9 granular roles map onto them.
+// The access tiers the product exposes (Super Admin sits above these and
+// is provisioned at tenant setup). The shop roles map onto them.
 const ROLE_TIERS: { label: string; roles: SystemRole[] }[] = [
-  { label: 'Admin — full access to the assigned shop/hotel (no payroll)', roles: [SystemRole.BRANCH_MANAGER, SystemRole.ACCOUNTANT] },
-  { label: 'Biller (Shop) — POS billing + sales reports', roles: [SystemRole.BILLER] },
-  { label: 'Biller (Hotel) — hotel billing & operations', roles: [SystemRole.BILLER_HOTEL] },
-  { label: 'Hotel staff', roles: [SystemRole.RECEPTIONIST, SystemRole.HOUSEKEEPING, SystemRole.MAINTENANCE_STAFF] },
+  { label: 'Admin — full access to the assigned shop (no payroll)', roles: [SystemRole.BRANCH_MANAGER, SystemRole.ACCOUNTANT] },
+  { label: 'Biller — POS billing + sales reports', roles: [SystemRole.BILLER] },
 ];
 
 const ROLE_DESC: Partial<Record<SystemRole, string>> = {
-  [SystemRole.BRANCH_MANAGER]: 'Admin — every operational feature (sales, purchases, inventory, hotel, reports) for the assigned shop/hotel only. No payroll.',
+  [SystemRole.BRANCH_MANAGER]: 'Admin — every operational feature (sales, purchases, inventory, reports) for the assigned shop only. No payroll.',
   [SystemRole.ACCOUNTANT]: 'Accounts & reports for the assigned shop.',
-  [SystemRole.BILLER]: 'Biller (Shop) — POS billing, product returns, and daily/weekly/monthly sales reports only. No revenue/financial reports, expenses or payroll.',
-  [SystemRole.BILLER_HOTEL]: 'Biller (Hotel) — hotel check-in/out, folio billing, housekeeping & services only. No sales/financial reports or payroll.',
-  [SystemRole.RECEPTIONIST]: 'Hotel front desk — check-in/out, guests, folio.',
-  [SystemRole.HOUSEKEEPING]: 'Housekeeping tasks only.',
-  [SystemRole.MAINTENANCE_STAFF]: 'Maintenance tasks only.',
+  [SystemRole.BILLER]: 'Biller — POS billing, product returns, and daily/weekly/monthly sales reports only. No revenue/financial reports, expenses or payroll.',
 };
 
 export default function UsersPage() {
@@ -129,7 +123,7 @@ export default function UsersPage() {
 
       <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
         <p className="font-semibold text-foreground">Access tiers</p>
-        <p><span className="font-medium text-foreground">Super Admin</span> — everything, all shops &amp; hotels (set up at onboarding).</p>
+        <p><span className="font-medium text-foreground">Super Admin</span> — everything, all shops (set up at onboarding).</p>
         <p><span className="font-medium text-foreground">Manager</span> — every feature, but only for the shop assigned below.</p>
         <p><span className="font-medium text-foreground">Biller</span> — POS billing + today’s sales only.</p>
       </div>

@@ -36,13 +36,7 @@ export class ReportsService {
     const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
 
     const branchFilter = branchId ? { branchId } : {};
-    const hotelResWhere = (since: Date) => ({
-      businessId,
-      status: 'CHECKED_OUT',
-      ...(branchId ? { branchId } : {}),
-      checkedOutAt: { gte: since },
-    });
-    const [todaySales, monthSales, parties, accounts, items, openOrders, monthExpenses, monthPayroll, recentTxns, monthHotel, todayHotel] = await Promise.all([
+    const [todaySales, monthSales, parties, accounts, items, openOrders, monthExpenses, monthPayroll, recentTxns] = await Promise.all([
       this.prisma.txn.aggregate({ where: { ...this.txnWhere(businessId, 'SALE_INVOICE', undefined, undefined, branchId), date: { gte: today } }, _sum: { total: true }, _count: true }),
       this.prisma.txn.aggregate({ where: { ...this.txnWhere(businessId, 'SALE_INVOICE', undefined, undefined, branchId), date: { gte: monthStart } }, _sum: { total: true }, _count: true }),
       this.prisma.party.findMany({ where: { businessId, deletedAt: null, ...branchFilter } }),
@@ -65,11 +59,6 @@ export class ReportsService {
         take: 10,
         include: { party: { select: { name: true } } },
       }),
-      // Hotel revenue (billed): room + folio/service charges for stays checked out in the
-      // period. Folio payments post PAYMENT_IN txns which are NOT counted as sales, so this
-      // is double-count-safe.
-      this.prisma.reservation.aggregate({ where: hotelResWhere(monthStart), _sum: { totalAmount: true, extraCharges: true } }),
-      this.prisma.reservation.aggregate({ where: hotelResWhere(today), _sum: { totalAmount: true, extraCharges: true } }),
     ]);
 
     let totalReceivable = 0, totalPayable = 0;
@@ -117,16 +106,13 @@ export class ReportsService {
     const monthSaleAmt = num(monthSales._sum.total);
     const monthExpenseAmt = num(monthExpenses._sum.total);
     const monthSalaryAmt = num(monthPayroll._sum.totalAmount);
-    const monthHotelRevenue = num(monthHotel._sum.totalAmount) + num(monthHotel._sum.extraCharges);
-    const todayHotelRevenue = num(todayHotel._sum.totalAmount) + num(todayHotel._sum.extraCharges);
 
     return {
       todaySale: num(todaySales._sum.total), todayInvoices: todaySales._count,
       monthSale: monthSaleAmt, monthInvoices: monthSales._count,
       monthExpense: monthExpenseAmt,
       monthSalary: monthSalaryAmt,
-      monthHotelRevenue, todayHotelRevenue,
-      netRevenue: monthSaleAmt + monthHotelRevenue - monthExpenseAmt,
+      netRevenue: monthSaleAmt - monthExpenseAmt,
       totalReceivable, totalPayable,
       cashInHand, bankBalance,
       stockValue, lowStockCount, openOrders,
@@ -421,7 +407,7 @@ export class ReportsService {
   // ─── Financial statements ──────────────────────────────────────────────────
 
   async profitAndLoss(businessId: string, from?: string, to?: string, branchId?: string) {
-    const [sales, saleReturns, purchases, purchaseReturns, expenses, saleLines, saleReturnLines, hotelRes] = await Promise.all([
+    const [sales, saleReturns, purchases, purchaseReturns, expenses, saleLines, saleReturnLines] = await Promise.all([
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId), _sum: { total: true, taxAmount: true } }),
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'CREDIT_NOTE', from, to, branchId), _sum: { total: true } }),
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'PURCHASE_BILL', from, to, branchId), _sum: { total: true, taxAmount: true } }),
@@ -429,32 +415,19 @@ export class ReportsService {
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'EXPENSE', from, to, branchId), _sum: { total: true } }),
       this.prisma.txnLine.findMany({ where: { txn: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId) } }),
       this.prisma.txnLine.findMany({ where: { txn: this.txnWhere(businessId, 'CREDIT_NOTE', from, to, branchId) } }),
-      // Hotel income: room revenue + folio/service charges for stays checked out in the period.
-      // P&L holds zero hotel data otherwise, so this is double-count-safe.
-      this.prisma.reservation.aggregate({
-        where: {
-          businessId,
-          status: 'CHECKED_OUT',
-          ...(branchId && { branchId }),
-          ...(range(from, to) && { checkedOutAt: range(from, to) }),
-        },
-        _sum: { totalAmount: true, extraCharges: true },
-      }),
     ]);
 
     const grossSale = num(sales._sum.total) - num(saleReturns._sum.total);
-    const hotelRevenue = num(hotelRes._sum.totalAmount) + num(hotelRes._sum.extraCharges);
     const cogs = saleLines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0)
       - saleReturnLines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0);
-    const grossProfit = grossSale - num(sales._sum.taxAmount) - cogs + hotelRevenue;
+    const grossProfit = grossSale - num(sales._sum.taxAmount) - cogs;
     const totalExpenses = num(expenses._sum.total);
 
     return {
       sale: num(sales._sum.total),
       saleReturns: num(saleReturns._sum.total),
       netSale: grossSale,
-      hotelRevenue,
-      totalRevenue: grossSale + hotelRevenue,
+      totalRevenue: grossSale,
       purchase: num(purchases._sum.total),
       purchaseReturns: num(purchaseReturns._sum.total),
       cogs,
@@ -528,25 +501,12 @@ export class ReportsService {
     const payable = get('Accounts Payable').credit;
     const loans = get('Loan Accounts').credit;
 
-    // Hotel dues receivable: billed-but-uncollected balance on checked-out stays. P&L net
-    // profit now includes accrued hotel revenue (R37); the collected part sits in Cash & Bank
-    // (posted as PAYMENT_IN) and this receivable backs the uncollected part, so retained
-    // earnings stays matched by real assets instead of a negative owner's-capital plug.
-    const hotelStays = await this.prisma.reservation.findMany({
-      where: { businessId, status: 'CHECKED_OUT', ...branchWhere(branchId) },
-      select: { totalAmount: true, extraCharges: true, paidAmount: true },
-    });
-    const hotelReceivable = hotelStays.reduce(
-      (s, r) => s + Math.max(0, num(r.totalAmount) + num(r.extraCharges) - num(r.paidAmount)),
-      0,
-    );
-
-    const totalAssets = cashBank + receivable + stock + hotelReceivable;
+    const totalAssets = cashBank + receivable + stock;
     const totalLiabilities = payable + loans;
     const equity = totalAssets - totalLiabilities;
 
     return {
-      assets: { cashAndBank: cashBank, receivables: receivable, hotelReceivable, closingStock: stock, total: totalAssets },
+      assets: { cashAndBank: cashBank, receivables: receivable, closingStock: stock, total: totalAssets },
       liabilities: { payables: payable, loans, total: totalLiabilities },
       equity: { retainedEarnings: pnl.netProfit, ownersCapital: equity - pnl.netProfit, total: equity },
       totalLiabilitiesAndEquity: totalLiabilities + equity,
@@ -694,80 +654,6 @@ export class ReportsService {
       byRate[key].purchaseTax += num(l.taxAmount) * sign;
     }
     return Object.values(byRate).sort((a, b) => a.rate - b.rate);
-  }
-
-  // ─── Hotel report (PMS dashboard, kept from legacy platform) ──────────────
-
-  async hotelReport(businessId: string, branchId?: string) {
-    const roomWhere = { businessId, ...(branchId && { branchId }) };
-    const resWhere = { businessId, ...(branchId && { branchId }) };
-
-    const now = new Date();
-    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const yearStart = new Date(now.getFullYear(), 0, 1);
-
-    const [rooms, reservations, folioPayments, expenses, completedServices] = await Promise.all([
-      this.prisma.room.findMany({ where: roomWhere }),
-      this.prisma.reservation.findMany({ where: resWhere }),
-      this.prisma.folioPayment.findMany({
-        where: { businessId, ...(branchId && { reservation: { branchId } }) },
-      }),
-      this.prisma.txn.findMany({ where: this.txnWhere(businessId, 'EXPENSE', undefined, undefined, branchId) }),
-      this.prisma.serviceRequest.findMany({
-        where: { businessId, status: 'COMPLETED', ...(branchId && { room: { branchId } }) },
-        select: { amount: true, completedAt: true },
-      }),
-    ]);
-
-    const totalRooms = rooms.length;
-    const occupied = rooms.filter((r) => r.status === 'OCCUPIED').length;
-    const reserved = rooms.filter((r) => r.status === 'RESERVED').length;
-    const cleaning = rooms.filter((r) => r.status === 'CLEANING').length;
-    const available = rooms.filter((r) => r.status === 'AVAILABLE').length;
-
-    // Revenue is recognised on a BILLED basis — room + folio/service charges for stays
-    // CHECKED OUT in the period (reservation.totalAmount + extraCharges), bucketed by
-    // checkedOutAt. This matches the R37 P&L and shows revenue even when no folio payment
-    // was explicitly recorded (the folioPayments-only basis showed zero in that case).
-    const checkedOut = reservations.filter((r) => r.status === 'CHECKED_OUT' && r.checkedOutAt);
-    const billedIn = (since?: Date) =>
-      checkedOut
-        .filter((r) => !since || (r.checkedOutAt && r.checkedOutAt >= since))
-        .reduce((s, r) => s + num(r.totalAmount) + num(r.extraCharges), 0);
-    const expensesIn = (since?: Date) =>
-      expenses.filter((e) => !since || e.date >= since).reduce((s, e) => s + num(e.total), 0);
-
-    const totalRevenue = billedIn();
-    const todayRevenue = billedIn(todayStart);
-    const monthRevenue = billedIn(monthStart);
-    const yearRevenue = billedIn(yearStart);
-
-    // Actual cash collected via folio payments (distinct from billed revenue above).
-    const collected = folioPayments.reduce((s, p) => s + num(p.amount), 0);
-    // Service income (completed service requests). Informational — the checked-out portion
-    // is already inside extraCharges/totalRevenue, so this is NOT added into revenue/profit.
-    const serviceRevenue = completedServices.reduce((s, sr) => s + num(sr.amount), 0);
-
-    // Billed total incl. extra/service charges so pending reflects service money too.
-    const totalBilled = reservations.reduce((s, r) => s + num(r.totalAmount) + num(r.extraCharges), 0);
-    const totalCollected = reservations.reduce((s, r) => s + num(r.paidAmount), 0);
-
-    return {
-      totalRooms, occupied, reserved, cleaning, available,
-      occupancyRate: totalRooms ? (occupied / totalRooms) * 100 : 0,
-      utilizationRate: totalRooms ? ((occupied + reserved) / totalRooms) * 100 : 0,
-      totalRevenue, todayRevenue, monthRevenue, yearRevenue,
-      todayProfit: todayRevenue - expensesIn(todayStart),
-      monthProfit: monthRevenue - expensesIn(monthStart),
-      yearProfit: yearRevenue - expensesIn(yearStart),
-      netProfit: totalRevenue - expensesIn(),
-      collected,
-      serviceRevenue,
-      totalCollected,
-      pendingAmount: Math.max(0, totalBilled - totalCollected),
-      totalReservations: reservations.length,
-    };
   }
 
   // ─── Order reports ─────────────────────────────────────────────────────────

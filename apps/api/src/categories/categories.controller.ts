@@ -13,8 +13,8 @@ import { CategoriesService } from './categories.service';
 export class CategoriesController {
   constructor(private categories: CategoriesService) {}
 
-  // An explicit branchId (query) overrides the caller's active branch so the
-  // Hotel module can manage its own branch's categories.
+  // An explicit branchId (query) overrides the caller's active branch so a
+  // caller can manage another branch's categories.
   @Get()
   @RequirePermissions(Permission.INVENTORY_VIEW, Permission.POS_SELL)
   findAll(

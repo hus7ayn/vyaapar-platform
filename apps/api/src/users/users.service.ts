@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 
 // Business-wide roles (SUPER_ADMIN, and anything holding BUSINESS_MANAGE like
-// HOTEL_OWNER/ADMIN) are never assignable through this tenant-scoped endpoint —
+// ADMIN) are never assignable through this tenant-scoped endpoint —
 // a business owner is only ever created by a platform super admin (see
 // PlatformService.createTenant) or at signup, never by another tenant user.
 const STAFF_ASSIGNABLE_ROLES: string[] = Object.values(SystemRole).filter(

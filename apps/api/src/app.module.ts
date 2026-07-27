@@ -17,9 +17,6 @@ import { SettingsModule } from './settings/settings.module';
 import { UtilitiesModule } from './utilities/utilities.module';
 import { CategoriesModule } from './categories/categories.module';
 import { InventoryModule } from './inventory/inventory.module';
-import { HotelModule } from './hotel/hotel.module';
-import { HousekeepingModule } from './housekeeping/housekeeping.module';
-import { ServicesModule } from './services/services.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { ReportsModule } from './reports/reports.module';
@@ -58,9 +55,6 @@ import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter'
     UtilitiesModule,
     CategoriesModule,
     InventoryModule,
-    HotelModule,
-    HousekeepingModule,
-    ServicesModule,
     PayrollModule,
     ExpensesModule,
     ReportsModule,

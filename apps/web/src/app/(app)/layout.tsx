@@ -35,17 +35,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [mounted, accessToken, router]);
 
-  // Biller lockdown: Biller (Shop) is confined to the POS (billing) area; Biller (Hotel) is
-  // confined to the hotel module. They can bill there but must not reach reports/P&L, inventory,
-  // settings, etc. (Admins and owners are unaffected; their access is scoped server-side.)
+  // Biller lockdown: Biller is confined to the POS (billing) area. They can bill there but must
+  // not reach reports/P&L, inventory, settings, etc. (Admins and owners are unaffected; their
+  // access is scoped server-side.)
   useEffect(() => {
     if (!mounted || !accessToken) return;
-    // Biller (Shop) may use POS plus their own sales reports and sales invoices/returns.
+    // Biller may use POS plus their own sales reports and sales invoices/returns.
     const billerShopAllowed = ['/pos', '/reports', '/sale'];
     if (role === 'BILLER' && !billerShopAllowed.some((p) => pathname.startsWith(p))) {
       router.replace('/pos');
-    } else if (role === 'BILLER_HOTEL' && !pathname.startsWith('/hotel')) {
-      router.replace('/hotel');
     }
   }, [mounted, accessToken, role, pathname, router]);
 

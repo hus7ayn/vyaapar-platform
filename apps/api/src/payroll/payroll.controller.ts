@@ -78,7 +78,7 @@ export class PayrollController {
     @CurrentUser('businessId') businessId: string,
     @Body() body: { startDate: string; endDate: string; branchId?: string },
   ) {
-    // Scoped to the selected entity (shop or hotel) when branchId is given; else business-wide.
+    // Scoped to the selected shop when branchId is given; else business-wide.
     return this.payroll.generatePayroll(businessId, body.startDate, body.endDate, body.branchId);
   }
 

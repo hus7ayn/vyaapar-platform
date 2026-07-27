@@ -209,11 +209,10 @@ export class AuthService {
       case 'SUPER_ADMIN':
       case 'ADMIN': // tenant owner = "Super Admin"
         return process.env.SUPER_ADMIN_RESET_KEY;
-      case 'HOTEL_OWNER':
-      case 'BRANCH_MANAGER': // "Admin" (shop/hotel scoped)
+      case 'BRANCH_MANAGER': // "Admin" (shop scoped)
       case 'ACCOUNTANT':
         return process.env.ADMIN_RESET_KEY;
-      default: // BILLER, BILLER_HOTEL, RECEPTIONIST, HOUSEKEEPING, MAINTENANCE_STAFF
+      default: // BILLER
         return process.env.BILLER_RESET_KEY;
     }
   }

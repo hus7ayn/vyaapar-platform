@@ -42,8 +42,8 @@ export class ExpensesService {
 
     return this.core.createTxn(businessId, userId, {
       ...body,
-      // Attribute the expense to the resolved branch (e.g. the active hotel) when the caller
-      // didn't specify one, so hotel-branch expenses aren't saved null and count in profit.
+      // Attribute the expense to the resolved branch when the caller didn't specify
+      // one, so branch expenses aren't saved null and count in profit.
       branchId: body.branchId ?? branchId,
       txnType: 'EXPENSE',
       total,

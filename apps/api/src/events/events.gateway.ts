@@ -5,7 +5,7 @@ import Pusher from 'pusher';
  * Realtime push via Pusher Channels (replaces the old Socket.IO gateway —
  * Vercel serverless functions can't hold a persistent WebSocket connection).
  * Method names/signatures are unchanged from the Socket.IO version so
- * hotel/items/sale services didn't need to change.
+ * items/sale services didn't need to change.
  */
 @Injectable()
 export class EventsGateway {
@@ -26,10 +26,6 @@ export class EventsGateway {
     const channels = [`private-business-${businessId}`];
     if (branchId) channels.push(`private-branch-${branchId}`);
     this.pusher.trigger(channels, 'order:updated', order).catch(() => {});
-  }
-
-  emitRoomUpdate(businessId: string, room: unknown) {
-    this.pusher.trigger(`private-business-${businessId}`, 'room:updated', room).catch(() => {});
   }
 
   emitInventoryUpdate(businessId: string, data: unknown) {

@@ -49,7 +49,6 @@ const REPORTS: ReportDef[] = [
   { id: 'gstr3b', label: 'GSTR-3B', category: 'GST', endpoint: '/reports/gstr3b', needsDate: true },
   { id: 'hsn-summary', label: 'HSN Summary', category: 'GST', endpoint: '/reports/hsn-summary', needsDate: true },
   { id: 'tax-rate', label: 'Tax Rate Report', category: 'GST', endpoint: '/reports/tax-rate', needsDate: true },
-  { id: 'hotel', label: 'Hotel PMS Report', category: 'Hotel', endpoint: '/reports/hotel' },
 ];
 
 const CATEGORIES = [...new Set(REPORTS.map((r) => r.category))];
