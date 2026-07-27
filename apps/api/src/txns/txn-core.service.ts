@@ -83,9 +83,28 @@ export class TxnCoreService {
       create: { businessId, branchId: shopId, txnType, prefix: DEFAULT_PREFIXES[txnType], nextNumber: 2 },
       update: { nextNumber: { increment: 1 } },
     });
-    const n = seq.nextNumber - 1 || 1;
     const prefix = seq.prefix || DEFAULT_PREFIXES[txnType];
-    return { prefix, txnNumber: `${prefix}-${String(n).padStart(3, '0')}` };
+    // Guard against a counter that has drifted BEHIND existing transactions — seeded/imported
+    // data, a reset sequence, or a restored backup can leave the counter pointing at a number
+    // that's already used, which otherwise throws a unique-constraint error ("This number is
+    // already in use") and blocks every new sale. Skip any taken number and persist the counter
+    // ahead so the sequence self-heals on first use.
+    let n = seq.nextNumber - 1 || 1;
+    for (let i = 0; i < 5000; i++) {
+      const txnNumber = `${prefix}-${String(n).padStart(3, '0')}`;
+      const clash = await tx.txn.findFirst({
+        where: { businessId, branchId: branchId ?? null, txnType, txnNumber },
+        select: { id: true },
+      });
+      if (!clash) {
+        if (n + 1 > seq.nextNumber) {
+          await tx.txnNumberSequence.update({ where: { id: seq.id }, data: { nextNumber: n + 1 } });
+        }
+        return { prefix, txnNumber };
+      }
+      n++;
+    }
+    throw new BadRequestException('Could not allocate a transaction number');
   }
 
   // ─── Totals computation ────────────────────────────────────────────────────
