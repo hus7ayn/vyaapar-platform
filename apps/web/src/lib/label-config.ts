@@ -115,12 +115,16 @@ export function loadLabelConfig(): LabelConfig {
             align: c.align ?? 'left',
           }))
       : [];
+    // typeof NaN === 'number' (and 0/negatives) would otherwise slip through and emit an invalid
+    // @page size, making the browser fall back to a full A4 sheet that the driver scales+rotates.
+    const posNum = (v: unknown, f: number) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : f);
+    const nonNegNum = (v: unknown, f: number) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : f);
     return {
       ...DEFAULT_LABEL_CONFIG,
-      widthMm: typeof parsed.widthMm === 'number' ? parsed.widthMm : DEFAULT_LABEL_CONFIG.widthMm,
-      heightMm: typeof parsed.heightMm === 'number' ? parsed.heightMm : DEFAULT_LABEL_CONFIG.heightMm,
-      barcodeHeightMm: typeof parsed.barcodeHeightMm === 'number' ? parsed.barcodeHeightMm : DEFAULT_LABEL_CONFIG.barcodeHeightMm,
-      barcodeWidthMm: typeof parsed.barcodeWidthMm === 'number' ? parsed.barcodeWidthMm : DEFAULT_LABEL_CONFIG.barcodeWidthMm,
+      widthMm: posNum(parsed.widthMm, DEFAULT_LABEL_CONFIG.widthMm),
+      heightMm: posNum(parsed.heightMm, DEFAULT_LABEL_CONFIG.heightMm),
+      barcodeHeightMm: posNum(parsed.barcodeHeightMm, DEFAULT_LABEL_CONFIG.barcodeHeightMm),
+      barcodeWidthMm: nonNegNum(parsed.barcodeWidthMm, DEFAULT_LABEL_CONFIG.barcodeWidthMm ?? 0),
       rotateDeg: [90, 180, 270].includes(parsed.rotateDeg as number) ? (parsed.rotateDeg as 90 | 180 | 270) : 0,
       fields,
       custom,

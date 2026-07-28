@@ -86,7 +86,7 @@ export function printBarcodeTags(tags: TagSpec[], config: LabelConfig = loadLabe
   body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
   .page { position: relative; width: ${pageW}mm; height: ${pageH}mm; page-break-after: always; overflow: hidden; }
   .tag { position: relative; width: ${config.widthMm}mm; height: ${config.heightMm}mm; overflow: hidden; ${rotStyle} }
-  .tag .fld { position: absolute; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
+  .tag .fld { position: absolute; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; writing-mode: horizontal-tb; text-orientation: mixed; direction: ltr; }
   .tag img { position: absolute; max-width: 100%; object-fit: contain; }
 </style>
 </head><body>${body}</body></html>`;
