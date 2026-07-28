@@ -17,19 +17,41 @@ export class SaleService {
       this.events.emitOrderUpdate(businessId, txn.branchId ?? '', txn);
       return txn;
     };
-    if (!body.partyId) return doCreate();
-    // Credit-limit check. Serialize per-party via a Postgres advisory lock so two concurrent
-    // sales for the same party can't both read a stale currentBalance and jointly exceed creditLimit.
+
+    // No clientId and no party → nothing to guard, create directly.
+    if (!body.clientId && !body.partyId) return doCreate();
+
+    // Wrap the idempotency check + create in ONE advisory-locked transaction. The xact lock is
+    // held until this outer transaction commits — which happens AFTER createTxn's own inner insert
+    // has committed — so a second request carrying the same clientId blocks here, then sees the
+    // first invoice below and returns it instead of creating a duplicate. This makes a
+    // retried/double-submitted/timed-out checkout safe even under a slow server, atomically, with
+    // no reliance on a unique index (which a bulk `prisma db push` could fail to add on live data).
     return this.core.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${body.partyId}))`;
-      const party = await tx.party.findFirst({ where: { id: body.partyId, businessId } });
-      if (party?.creditLimit != null) {
-        const paidAmount = (body.payments ?? []).filter((p) => p.paymentType !== 'DEBT').reduce((s, p) => s + p.amount, 0);
-        const balance = Number(body.total) - paidAmount;
-        if (Number(party.currentBalance) + balance > Number(party.creditLimit)) {
-          throw new BadRequestException(`Credit limit exceeded for ${party.name}`);
+      if (body.clientId) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`saleinv:${businessId}:${body.clientId}`}))`;
+        // Match only FINALISED sales (never a HELD placeholder) so completing a bill after a
+        // held one with the same key can't return the unpaid hold as if it were a real sale.
+        const existing = await tx.txn.findFirst({
+          where: { businessId, clientId: body.clientId, txnType: 'SALE_INVOICE', status: { not: 'HELD' } },
+        });
+        if (existing) return existing;
+      }
+
+      // Credit-limit check. Serialize per-party via a Postgres advisory lock so two concurrent
+      // sales for the same party can't both read a stale currentBalance and jointly exceed creditLimit.
+      if (body.partyId) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${body.partyId}))`;
+        const party = await tx.party.findFirst({ where: { id: body.partyId, businessId } });
+        if (party?.creditLimit != null) {
+          const paidAmount = (body.payments ?? []).filter((p) => p.paymentType !== 'DEBT').reduce((s, p) => s + p.amount, 0);
+          const balance = Number(body.total) - paidAmount;
+          if (Number(party.currentBalance) + balance > Number(party.creditLimit)) {
+            throw new BadRequestException(`Credit limit exceeded for ${party.name}`);
+          }
         }
       }
+
       return doCreate();
     });
   }

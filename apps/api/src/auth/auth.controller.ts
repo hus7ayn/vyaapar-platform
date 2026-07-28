@@ -6,7 +6,6 @@ import { Public } from '../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
 import {
   LoginDto,
-  SignupDto,
   RefreshTokenDto,
   OtpRequestDto,
   OtpVerifyDto,
@@ -20,11 +19,9 @@ import {
 export class AuthController {
   constructor(private auth: AuthService) {}
 
-  @Public()
-  @Post('signup')
-  signup(@Body() dto: SignupDto) {
-    return this.auth.signup(dto);
-  }
+  // Public self-service signup has been removed — accounts are created only by an admin from the
+  // Staff/Users panel (POST /users, guarded by USER_MANAGE). There is intentionally no public
+  // account-creation route.
 
   @Public()
   @Post('login')

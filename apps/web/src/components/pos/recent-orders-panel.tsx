@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, RefreshCcw, Search } from 'lucide-react';
+import { Clock, Printer, RefreshCcw, Search } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { printHtmlDocument } from '@/lib/print-html';
 import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -20,6 +22,23 @@ export function RecentOrdersPanel({ branchId }: { branchId?: string }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [returnForId, setReturnForId] = useState<string | null>(null);
+  const [reprintingId, setReprintingId] = useState<string | null>(null);
+
+  // Reprint an existing bill EXACTLY as it was: the server re-renders the receipt from the stored
+  // transaction, so bill number, items, prices, taxes, discounts, payment method and date/time
+  // all match the original. This never creates or modifies a sale (read-only GET).
+  const reprint = async (id: string) => {
+    setReprintingId(id);
+    try {
+      const res = await api<{ content: string }>(`/receipts/${id}/thermal`, { token, timeoutMs: 12_000 });
+      printHtmlDocument(res.content);
+    } catch (e) {
+      console.error('[POS] reprint failed', e);
+      toast.error('Could not reprint this receipt');
+    } finally {
+      setReprintingId(null);
+    }
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['recent-invoices', branchId, search],
@@ -73,6 +92,16 @@ export function RecentOrdersPanel({ branchId }: { branchId?: string }) {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="font-bold">{formatCurrency(Number(o.total))}</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1"
+                      disabled={reprintingId === o.id}
+                      onClick={() => reprint(o.id)}
+                      title="Reprint this receipt exactly as the original"
+                    >
+                      <Printer className="h-3.5 w-3.5" /> {reprintingId === o.id ? '…' : 'Reprint'}
+                    </Button>
                     {o.status !== 'REFUNDED' && (
                       <PermissionGate permission={Permission.POS_REFUND}>
                         <Button

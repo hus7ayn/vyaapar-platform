@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Store } from 'lucide-react';
+import { Plus, Store, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
@@ -68,6 +68,23 @@ export default function ShopsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api<{ success: boolean }>(`/branches/${id}`, { method: 'DELETE', token }),
+    onSuccess: (_res, id) => {
+      toast.success('Shop removed');
+      if (activeShopId === id) setActiveShopId(null);
+      queryClient.invalidateQueries();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const requestDelete = (shop: Shop) => {
+    if (shop.isDefault) { toast.error('The default shop cannot be deleted'); return; }
+    if (window.confirm(`Remove "${shop.name}"? It will disappear from the Shops list and Payroll. Existing transactions and payroll records are kept.`)) {
+      deleteMutation.mutate(shop.id);
+    }
+  };
+
   return (
     <div className="p-4 lg:p-6 space-y-8 max-w-4xl">
       {/* Shops */}
@@ -99,6 +116,8 @@ export default function ShopsPage() {
                 toast.success(`Switched to ${shop.name}`);
                 queryClient.invalidateQueries();
               }}
+              onDelete={() => requestDelete(shop)}
+              deleting={deleteMutation.isPending}
             />
           ))}
           {!shopsLoading && !(shops ?? []).length && (
@@ -136,11 +155,15 @@ function ShopCard({
   token,
   active,
   onSelect,
+  onDelete,
+  deleting,
 }: {
   shop: Shop;
   token?: string;
   active: boolean;
   onSelect: () => void;
+  onDelete: () => void;
+  deleting: boolean;
 }) {
   const { data: metrics } = useQuery({
     queryKey: ['shop-metrics', shop.id],
@@ -149,26 +172,39 @@ function ShopCard({
   });
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`text-left w-full rounded-lg border p-4 bg-white shadow-sm transition-colors hover:border-[hsl(348,85%,52%)] ${active ? 'ring-2 ring-[hsl(348,85%,52%)] border-[hsl(348,85%,52%)]' : ''}`}
+    <div
+      className={`relative w-full rounded-lg border p-4 bg-white shadow-sm transition-colors hover:border-[hsl(348,85%,52%)] ${active ? 'ring-2 ring-[hsl(348,85%,52%)] border-[hsl(348,85%,52%)]' : ''}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <div>
+        <button type="button" onClick={onSelect} className="text-left flex-1 min-w-0">
           <p className="font-semibold">{shop.name}</p>
           <p className="text-xs text-muted-foreground">{shop.code}{shop.isDefault ? ' · Default' : ''}</p>
           {shop.address && <p className="text-xs text-muted-foreground mt-1">{shop.address}</p>}
+        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {active && <span className="text-xs px-2 py-0.5 rounded-full bg-[hsl(348,85%,52%)] text-white">Active</span>}
+          {!shop.isDefault && (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={deleting}
+              title="Remove this shop"
+              className="text-muted-foreground hover:text-rose-600 disabled:opacity-50 p-1"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
-        {active && <span className="text-xs px-2 py-0.5 rounded-full bg-[hsl(348,85%,52%)] text-white">Active</span>}
       </div>
-      {metrics && (
-        <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
-          <span>Today sales: ₹{metrics.todaysSales.toFixed(2)}</span>
-          <span>Orders: {metrics.todaysOrders}</span>
-          <span>Low stock: {metrics.lowStockItems}</span>
-        </div>
-      )}
-    </button>
+      <button type="button" onClick={onSelect} className="block w-full text-left">
+        {metrics && (
+          <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
+            <span>Today sales: ₹{metrics.todaysSales.toFixed(2)}</span>
+            <span>Orders: {metrics.todaysOrders}</span>
+            <span>Low stock: {metrics.lowStockItems}</span>
+          </div>
+        )}
+      </button>
+    </div>
   );
 }

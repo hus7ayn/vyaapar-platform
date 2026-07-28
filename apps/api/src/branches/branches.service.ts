@@ -1,10 +1,23 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { bootstrapShopDefaults } from './shop-setup.util';
 
 @Injectable()
 export class BranchesService {
   constructor(private prisma: PrismaService) {}
+
+  // Soft-delete a shop: it disappears from every list/dropdown (all queries filter deletedAt:null,
+  // including the Payroll branch picker) while its historical transactions and payroll records stay
+  // intact. The default shop can't be removed so the business always has a home branch.
+  async remove(businessId: string, branchId: string) {
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: branchId, businessId, deletedAt: null },
+    });
+    if (!branch) throw new NotFoundException('Shop not found');
+    if (branch.isDefault) throw new BadRequestException('The default shop cannot be deleted');
+    await this.prisma.branch.update({ where: { id: branchId }, data: { deletedAt: new Date() } });
+    return { success: true, id: branchId };
+  }
 
   findAll(businessId: string, type?: string) {
     const where: any = { businessId, deletedAt: null };

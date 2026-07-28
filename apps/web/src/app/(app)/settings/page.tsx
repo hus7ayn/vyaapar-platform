@@ -1,11 +1,14 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Hash, Receipt, Users, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
+import { Permission } from '@nexus/shared';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
+import { PermissionGate } from '@/components/permission-gate';
 import { CloudInsightsSettings } from '@/components/settings/cloud-insights-settings';
 import { LabelDesignerCard } from '@/components/settings/label-designer-card';
 import { ThermalFormatCard } from '@/components/settings/thermal-format-card';
@@ -52,6 +55,18 @@ export default function SettingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const [bizName, setBizName] = useState('');
+  useEffect(() => { if (data?.business?.name != null) setBizName(data.business.name); }, [data?.business?.name]);
+
+  const updateBusiness = useMutation({
+    mutationFn: (name: string) => api('/businesses/me', { method: 'PATCH', token, body: JSON.stringify({ name }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['firm-settings'] });
+      toast.success('Business name updated — it will show on new printed receipts');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const updateNumbering = useMutation({
     mutationFn: (body: { txnType: string; prefix: string; nextNumber?: number }) =>
       api('/settings/numbering', { method: 'POST', token, body: JSON.stringify(body) }),
@@ -68,12 +83,37 @@ export default function SettingsPage() {
     <div className="p-4 lg:p-6 space-y-6 max-w-3xl">
       <VyaparPageHeader title="Settings" subtitle="Firm, invoice and transaction settings" />
 
-      <Card className="p-6 space-y-2">
+      <Card className="p-6 space-y-3">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Building2 className="h-5 w-5" />
           <span className="text-sm font-medium">Business</span>
         </div>
-        <p className="font-semibold text-lg">{data?.business?.name}</p>
+        <PermissionGate
+          permission={Permission.BUSINESS_MANAGE}
+          fallback={<p className="font-semibold text-lg">{data?.business?.name}</p>}
+        >
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Business name (shown on printed receipts)</label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="h-10 max-w-xs"
+                value={bizName}
+                onChange={(e) => setBizName(e.target.value)}
+                placeholder="Your shop / business name"
+              />
+              <Button
+                onClick={() => updateBusiness.mutate(bizName.trim())}
+                disabled={
+                  updateBusiness.isPending ||
+                  !bizName.trim() ||
+                  bizName.trim() === (data?.business?.name ?? '')
+                }
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </PermissionGate>
         <p className="text-muted-foreground">{data?.business?.email}</p>
         {data?.business?.gstNumber && <p className="text-sm">GST: {data.business.gstNumber}</p>}
       </Card>

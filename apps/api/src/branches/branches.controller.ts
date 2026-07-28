@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards, Param, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, UseGuards, Param, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Permission } from '@nexus/shared';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -37,5 +37,14 @@ export class BranchesController {
     @Param('id') branchId: string,
   ) {
     return this.branches.getBranchMetrics(businessId, branchId);
+  }
+
+  @Delete(':id')
+  @RequirePermissions(Permission.BRANCH_MANAGE)
+  remove(
+    @CurrentUser('businessId') businessId: string,
+    @Param('id') branchId: string,
+  ) {
+    return this.branches.remove(businessId, branchId);
   }
 }

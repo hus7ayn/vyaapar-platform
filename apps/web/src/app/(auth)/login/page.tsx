@@ -145,12 +145,6 @@ export default function LoginPage() {
                 Forgot password?
               </Link>
             </p>
-            <p>
-              New business?{' '}
-              <Link href="/signup" className="text-[hsl(348,85%,52%)] hover:underline font-medium">
-                Create account
-              </Link>
-            </p>
           </div>
         </div>
       </div>

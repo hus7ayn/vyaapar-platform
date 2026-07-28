@@ -102,18 +102,26 @@ export default function PosPage() {
   useEffect(() => { searchRef.current?.focus(); }, []);
 
   const printThermal = async (txnId: string) => {
+    // Runs AFTER the sale is committed and the UI has reset — never blocks checkout. A bounded
+    // timeout means a slow/cold receipt endpoint can't hang the print; on any failure we point
+    // the user to Recent Bills → Reprint rather than leaving them stuck.
     try {
-      const res = await api<{ content: string }>(`/receipts/${txnId}/thermal`, { token });
+      const res = await api<{ content: string }>(`/receipts/${txnId}/thermal`, { token, timeoutMs: 12_000 });
       printHtmlDocument(res.content);
-    } catch {
-      toast.error('Print failed');
+    } catch (e) {
+      console.error('[POS] thermal receipt print failed', e);
+      toast.error('Receipt could not be printed — open Recent Bills to reprint it');
     }
   };
 
   const checkout = useMutation({
     mutationFn: async ({ status, print }: { status: 'COMPLETED' | 'HELD'; print?: boolean }) => {
-      const idempotencyKey = checkoutIdRef.current ?? crypto.randomUUID();
-      checkoutIdRef.current = idempotencyKey;
+      // Only a COMPLETED checkout persists its idempotency key across retries (so a retry dedupes
+      // to the same bill). A HELD checkout uses a throwaway key so a later Complete can never
+      // reuse a hold's key and get the unpaid hold returned as if it were a finalised sale.
+      const idempotencyKey =
+        status === 'COMPLETED' ? (checkoutIdRef.current ?? crypto.randomUUID()) : crypto.randomUUID();
+      if (status === 'COMPLETED') checkoutIdRef.current = idempotencyKey;
 
       const total = getTotal();
       const payments =
@@ -181,10 +189,12 @@ export default function PosPage() {
         }
       }
 
-      if (print && status === 'COMPLETED') await printThermal(result.id);
+      // NOTE: printing is intentionally NOT done here — it happens in onSuccess AFTER the UI has
+      // reset, so a slow/blocked printer can never freeze the POS between the sale and the reset.
       return result;
     },
-    onSuccess: (data, { status }) => {
+    onSuccess: (data, { status, print }) => {
+      // Sale is committed — safe to release the idempotency key so the NEXT sale gets a fresh one.
       checkoutIdRef.current = null;
       qc.invalidateQueries({ queryKey: ['held-invoices'] });
       qc.invalidateQueries({ queryKey: ['recent-invoices'] });
@@ -200,14 +210,20 @@ export default function PosPage() {
         clearCart();
         usePosStore.getState().setSplitPayments([]);
         searchRef.current?.focus();
+        // Fire-and-forget: the POS is already responsive; the receipt prints in the background.
+        if (print && data?.id) void printThermal(data.id);
       } else {
         toast.success('Bill on hold');
         clearCart();
       }
     },
     onError: (e) => {
-      checkoutIdRef.current = null;
+      // Deliberately DO NOT reset checkoutIdRef here: if the request timed out but the sale
+      // actually committed server-side, keeping the same key means a retry hits the idempotency
+      // guard and returns the existing bill instead of creating a duplicate. It's reset only on
+      // success (above) or when the offline queue takes ownership (below).
       if (e.message === 'OFFLINE_QUEUED') {
+        checkoutIdRef.current = null;
         toast.info('Saved offline — will sync when online');
         clearCart();
       } else {
@@ -285,7 +301,7 @@ export default function PosPage() {
   // a row still finalizes a sale in two keystrokes, so a fast keyboard-driven
   // cashier barely notices the extra step.
   const confirmCheckout = useCallback(() => {
-    if (!pendingCheckout) return;
+    if (!pendingCheckout || checkout.isPending) return;
     checkout.mutate({ status: 'COMPLETED', print: pendingCheckout.print });
     setPendingCheckout(null);
   }, [pendingCheckout, checkout]);
@@ -396,7 +412,7 @@ export default function PosPage() {
             <Button variant="outline" className="flex-1" onClick={() => setPendingCheckout(null)}>
               Back (Esc)
             </Button>
-            <Button ref={confirmBtnRef} className="flex-1 font-bold" onClick={confirmCheckout}>
+            <Button ref={confirmBtnRef} className="flex-1 font-bold" disabled={checkout.isPending} onClick={confirmCheckout}>
               Confirm{pendingCheckout?.print ? ' & Print' : ''} (Enter)
             </Button>
           </div>
