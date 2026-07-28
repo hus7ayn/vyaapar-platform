@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 interface BankAccount {
   id: string;
   name: string;
-  accountType: 'CASH' | 'BANK';
+  accountType: 'CASH' | 'BANK' | 'UPI' | 'CARD';
   accountNumber?: string | null;
   bankName?: string | null;
   balance: string | number;
@@ -27,6 +27,8 @@ interface BankAccount {
 interface Summary {
   cashBalance: number;
   bankBalance: number;
+  upiBalance: number;
+  cardBalance: number;
   totalBalance: number;
   totalReceivable: number;
   totalPayable: number;
@@ -153,9 +155,11 @@ export default function CashBankPage() {
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <VyaparStatCard label="Cash in Hand" value={formatMoney(summary?.cashBalance ?? 0)} icon={<Wallet className="h-4 w-4 text-muted-foreground" />} />
-        <VyaparStatCard label="Bank Balance" value={formatMoney(summary?.bankBalance ?? 0)} icon={<Landmark className="h-4 w-4 text-muted-foreground" />} />
+        <VyaparStatCard label="Bank" value={formatMoney(summary?.bankBalance ?? 0)} icon={<Landmark className="h-4 w-4 text-muted-foreground" />} />
+        <VyaparStatCard label="UPI" value={formatMoney(summary?.upiBalance ?? 0)} icon={<Landmark className="h-4 w-4 text-muted-foreground" />} />
+        <VyaparStatCard label="Card" value={formatMoney(summary?.cardBalance ?? 0)} icon={<Landmark className="h-4 w-4 text-muted-foreground" />} />
         <VyaparStatCard label="Total Balance" value={formatMoney(summary?.totalBalance ?? 0)} icon={<Landmark className="h-4 w-4 text-muted-foreground" />} />
         <VyaparStatCard label="Loan Outstanding" value={formatMoney(summary?.loanBalance ?? 0)} icon={<ArrowLeftRight className="h-4 w-4 text-muted-foreground" />} />
       </div>
@@ -183,21 +187,32 @@ export default function CashBankPage() {
               <Plus className="h-4 w-4 mr-1" /> Add Account
             </Button>
           </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {accounts.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => { setSelectedAccountId(a.id); setTab('statement'); }}
-                className="text-left p-4 rounded-xl border bg-card hover:border-[hsl(348,85%,52%)] transition-colors"
-              >
-                <p className="text-xs text-muted-foreground uppercase">{a.accountType}</p>
-                <p className="font-semibold mt-1">{a.name}</p>
-                {a.bankName && <p className="text-xs text-muted-foreground">{a.bankName}</p>}
-                <p className="text-lg font-bold text-[hsl(348,85%,52%)] mt-2">{formatMoney(a.balance)}</p>
-              </button>
-            ))}
-          </div>
+          {(['CASH', 'BANK', 'UPI', 'CARD'] as const).map((type) => {
+            const group = accounts.filter((a) => a.accountType === type);
+            if (!group.length) return null;
+            const label = { CASH: 'Cash', BANK: 'Bank', UPI: 'UPI', CARD: 'Card' }[type];
+            return (
+              <div key={type} className="space-y-2">
+                <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wide">{label}</p>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {group.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => { setSelectedAccountId(a.id); setTab('statement'); }}
+                      className="text-left p-4 rounded-xl border bg-card hover:border-[hsl(348,85%,52%)] transition-colors"
+                    >
+                      <p className="text-xs text-muted-foreground uppercase">{a.accountType}</p>
+                      <p className="font-semibold mt-1">{a.name}</p>
+                      {a.bankName && <p className="text-xs text-muted-foreground">{a.bankName}</p>}
+                      <p className="text-lg font-bold text-[hsl(348,85%,52%)] mt-2">{formatMoney(a.balance)}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          {!accounts.length && <p className="text-sm text-muted-foreground">No accounts yet.</p>}
         </div>
       )}
 
@@ -289,6 +304,8 @@ export default function CashBankPage() {
             <select className="w-full h-10 rounded-lg border px-3" value={accountForm.accountType} onChange={(e) => setAccountForm({ ...accountForm, accountType: e.target.value })}>
               <option value="BANK">Bank</option>
               <option value="CASH">Cash</option>
+              <option value="UPI">UPI</option>
+              <option value="CARD">Card</option>
             </select>
             <Input placeholder="Bank name" value={accountForm.bankName} onChange={(e) => setAccountForm({ ...accountForm, bankName: e.target.value })} />
             <Input placeholder="Account number" value={accountForm.accountNumber} onChange={(e) => setAccountForm({ ...accountForm, accountNumber: e.target.value })} />

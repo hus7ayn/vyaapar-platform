@@ -15,7 +15,9 @@ interface SplitPaymentDialogProps {
 export function SplitPaymentDialog({ total, onConfirm, onClose }: SplitPaymentDialogProps) {
   const [payments, setPayments] = useState<SplitPayment[]>([
     { method: 'CASH', amount: 0 },
+    { method: 'BANK', amount: 0 },
     { method: 'UPI', amount: 0 },
+    { method: 'CARD', amount: 0 },
   ]);
 
   const paid = payments.reduce((s, p) => s + p.amount, 0);

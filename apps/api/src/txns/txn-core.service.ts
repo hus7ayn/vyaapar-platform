@@ -109,7 +109,13 @@ export class TxnCoreService {
 
   // ─── Totals computation ────────────────────────────────────────────────────
 
-  async buildLines(businessId: string, lines: TxnLineInput[], priceField: 'sale' | 'purchase', branchId?: string | null) {
+  async buildLines(
+    businessId: string,
+    lines: TxnLineInput[],
+    priceField: 'sale' | 'purchase',
+    branchId?: string | null,
+    enforceMinSalePrice = false,
+  ) {
     const itemIds = lines.map((l) => l.itemId).filter(Boolean) as string[];
     const items = itemIds.length
       ? await this.prisma.item.findMany({ where: { id: { in: itemIds }, businessId, ...(branchId ? { branchId } : {}) } })
@@ -127,6 +133,15 @@ export class TxnCoreService {
       if (qty.lte(0)) throw new BadRequestException('Quantity must be positive');
       const defaultPrice = item ? (priceField === 'sale' ? item.salePrice : item.purchasePrice) : D(0);
       const unitPrice = l.unitPrice != null ? D(l.unitPrice) : D(defaultPrice);
+      // The true cost basis is costPrice (falls back to purchasePrice for items that only track
+      // a purchase price). Used both for the below-cost guard and for the COGS snapshot below.
+      const itemCost = item ? (D(item.costPrice).gt(0) ? D(item.costPrice) : D(item.purchasePrice)) : D(0);
+      // A1: a sale line may never be priced below cost. Only blocks real sales (enforceMinSalePrice
+      // is true only for SALE_INVOICE), only when we actually know a positive cost and a positive
+      // price — free items / adjustments / cost-unknown items are left alone.
+      if (enforceMinSalePrice && item && itemCost.gt(0) && unitPrice.gt(0) && unitPrice.lt(itemCost)) {
+        throw new BadRequestException('Sale price cannot be less than the cost price.');
+      }
       const gross = unitPrice.mul(qty);
       const discPct = l.discountPercent != null ? D(l.discountPercent) : null;
       const discount = discPct ? gross.mul(discPct).div(100) : D(l.discountAmount ?? 0);
@@ -144,7 +159,7 @@ export class TxnCoreService {
         quantity: qty,
         unit: l.unit ?? item?.baseUnit ?? 'PCS',
         unitPrice,
-        costPrice: item ? item.purchasePrice : null,
+        costPrice: item ? itemCost : null,
         discountPercent: discPct,
         discountAmount: discount,
         taxRate,
@@ -202,6 +217,19 @@ export class TxnCoreService {
         ? D(line.quantity).mul(item.conversionRate)
         : D(line.quantity);
       const qty = lineQty.mul(direction);
+
+      // Block overselling: a forward stock-reducing txn (sale, purchase-return) may not drive a
+      // tracked item's stock below zero. Reversals (invert=true, e.g. deleting/undoing a txn) are
+      // always allowed so corrections never get stuck. Same-item multiple lines accumulate because
+      // each findUnique above reads this transaction's prior decrements.
+      if (!invert && qty.isNegative()) {
+        const available = D(item.currentStock);
+        if (available.add(qty).lt(0)) {
+          throw new BadRequestException(
+            `Insufficient stock for ${item.name}: only ${available.toString()} in stock`,
+          );
+        }
+      }
 
       await tx.item.update({
         where: { id: item.id },
@@ -343,7 +371,10 @@ export class TxnCoreService {
           }
           await tx.cheque.deleteMany({ where: { businessId, txnPayment: { txnId } } });
         } else {
-          const account = await this.resolveMoneyAccount(tx, businessId, branchId, p);
+          // Reversal must NOT create a new account — only undo against an existing one. (A legacy
+          // payment with a null bankAccountId maps by method; if that account doesn't exist we
+          // simply skip rather than spawn an empty account and push it negative.)
+          const account = await this.resolveMoneyAccount(tx, businessId, branchId, p, false);
           if (account) {
             await tx.bankAccount.update({
               where: { id: account.id },
@@ -382,17 +413,10 @@ export class TxnCoreService {
         continue;
       }
 
-      const payment = await tx.txnPayment.create({
-        data: {
-          txnId,
-          paymentType: p.paymentType,
-          bankAccountId: p.paymentType === 'CHEQUE' ? null : p.bankAccountId,
-          amount,
-          referenceNo: p.referenceNo,
-        },
-      });
-
       if (p.paymentType === 'CHEQUE') {
+        const payment = await tx.txnPayment.create({
+          data: { txnId, paymentType: p.paymentType, bankAccountId: null, amount, referenceNo: p.referenceNo },
+        });
         await tx.cheque.create({
           data: {
             businessId,
@@ -406,7 +430,20 @@ export class TxnCoreService {
           },
         });
       } else {
+        // Resolve the account FIRST, then persist its id onto the payment row so the account's
+        // Statement shows this payment (previously bankAccountId was left null for POS payments,
+        // so statements were empty while balances moved) and delete/restore reverses the exact
+        // same account.
         const account = await this.resolveMoneyAccount(tx, businessId, branchId, p);
+        await tx.txnPayment.create({
+          data: {
+            txnId,
+            paymentType: p.paymentType,
+            bankAccountId: account?.id ?? p.bankAccountId ?? null,
+            amount,
+            referenceNo: p.referenceNo,
+          },
+        });
         if (account) {
           await tx.bankAccount.update({
             where: { id: account.id },
@@ -417,27 +454,38 @@ export class TxnCoreService {
     }
   }
 
-  private async resolveMoneyAccount(tx: Tx, businessId: string, branchId: string | null | undefined, p: TxnPaymentInput) {
+  // Each tender lands in its OWN money account so Cash & Bank can show separate Cash/Bank/UPI/Card
+  // running totals + histories. WALLET is legacy — it settles into BANK. CHEQUE never reaches here.
+  private methodToAccountType(paymentType?: string): 'CASH' | 'BANK' | 'UPI' | 'CARD' {
+    switch (paymentType) {
+      case 'CASH': return 'CASH';
+      case 'UPI': return 'UPI';
+      case 'CARD': return 'CARD';
+      default: return 'BANK'; // BANK, WALLET (legacy), anything else
+    }
+  }
+
+  private static readonly ACCOUNT_TYPE_NAME: Record<string, string> = {
+    CASH: 'Cash In Hand', BANK: 'Bank', UPI: 'UPI', CARD: 'Card',
+  };
+
+  private async resolveMoneyAccount(tx: Tx, businessId: string, branchId: string | null | undefined, p: TxnPaymentInput, allowCreate = true) {
     const branchFilter = branchId ? { branchId } : {};
+    // An explicitly chosen account (back-office picker) always wins.
     if (p.bankAccountId) {
       return tx.bankAccount.findFirst({ where: { id: p.bankAccountId, businessId, ...branchFilter } });
     }
-    if (p.paymentType === 'CASH') {
-      let cash = await tx.bankAccount.findFirst({ where: { businessId, accountType: 'CASH', ...branchFilter } });
-      if (!cash && branchId) {
-        cash = await tx.bankAccount.create({
-          data: { businessId, branchId, name: 'Cash In Hand', accountType: 'CASH' },
-        });
-      }
-      if (!cash) {
-        cash = await tx.bankAccount.findFirst({ where: { businessId, accountType: 'CASH' } });
-      }
-      return cash;
+    const accountType = this.methodToAccountType(p.paymentType);
+    // Per-method account for this branch, else business-wide, else auto-create it so a payment is
+    // NEVER silently dropped (previously only CASH self-healed, so UPI/Card vanished from Cash & Bank).
+    let account = await tx.bankAccount.findFirst({ where: { businessId, accountType, ...branchFilter }, orderBy: { createdAt: 'asc' } });
+    if (!account) account = await tx.bankAccount.findFirst({ where: { businessId, accountType }, orderBy: { createdAt: 'asc' } });
+    if (!account && allowCreate && branchId) {
+      account = await tx.bankAccount.create({
+        data: { businessId, branchId, name: TxnCoreService.ACCOUNT_TYPE_NAME[accountType], accountType },
+      });
     }
-    return tx.bankAccount.findFirst({
-      where: { businessId, accountType: 'BANK', ...branchFilter },
-      orderBy: { createdAt: 'asc' },
-    });
+    return account;
   }
 
   /** Bill-wise allocation: apply payment amounts against specific invoices/bills. */
@@ -504,7 +552,7 @@ export class TxnCoreService {
     }
 
     const { built, subtotal, taxTotal } = hasLines
-      ? await this.buildLines(businessId, input.lines!, isSaleSide ? 'sale' : 'purchase', input.branchId)
+      ? await this.buildLines(businessId, input.lines!, isSaleSide ? 'sale' : 'purchase', input.branchId, txnType === 'SALE_INVOICE')
       : { built: [], subtotal: D(input.total ?? 0), taxTotal: D(0) };
 
     const { billDiscount, roundOff, total } = hasLines
@@ -520,7 +568,11 @@ export class TxnCoreService {
 
     if (total.lt(0)) throw new BadRequestException('Total cannot be negative');
 
-    const payments = (input.payments ?? []).filter((p) => D(p.amount).gt(0));
+    const isOrderLike = ['SALE_ORDER', 'PURCHASE_ORDER', 'ESTIMATE', 'DELIVERY_CHALLAN'].includes(txnType);
+    // Quotations, orders and delivery challans are NOT financial events — they must never post
+    // money to Cash & Bank or be marked paid. Drop any (phantom) payments the client may default
+    // for them, so paidAmount stays 0 and postEffects posts nothing to any account.
+    const payments = isOrderLike ? [] : (input.payments ?? []).filter((p) => D(p.amount).gt(0));
     if (isPaymentTxn) {
       const paymentsTotal = payments.reduce((s, p) => s.add(D(p.amount)), D(0));
       if (!paymentsTotal.equals(total)) throw new BadRequestException('Sum of payments must equal total');
@@ -530,8 +582,6 @@ export class TxnCoreService {
       : payments.filter((p) => p.paymentType !== 'DEBT').reduce((s, p) => s.add(D(p.amount)), D(0));
     if (!isPaymentTxn && paidAmount.gt(total)) throw new BadRequestException('Paid amount exceeds total');
     const balance = total.sub(paidAmount);
-
-    const isOrderLike = ['SALE_ORDER', 'PURCHASE_ORDER', 'ESTIMATE', 'DELIVERY_CHALLAN'].includes(txnType);
     const isHeld = input.status === 'HELD';
     const status = input.status ?? (
       isOrderLike ? 'ORDER_OPEN' : isPaymentTxn ? 'PAID' : balance.lte(0) ? 'PAID' : paidAmount.gt(0) ? 'PARTIAL' : 'OPEN'
@@ -669,6 +719,11 @@ export class TxnCoreService {
     };
     const page = Math.max(1, Number(q.page) || 1);
     const limit = Math.min(200, Number(q.limit) || 50);
+    // The money summary must only count REAL posted transactions — never parked (HELD) or
+    // cancelled bills — otherwise the POS "Today's Sales" header (which reads this summary) is
+    // inflated and disagrees with the dashboard/reports. The list `data` itself is unfiltered.
+    // If the caller explicitly asked for a status, respect it (e.g. the Held-bills view).
+    const summaryWhere = q.status ? where : { ...where, status: { notIn: ['HELD', 'CANCELLED'] } };
     const [data, totalCount, sums] = await Promise.all([
       this.prisma.txn.findMany({
         where,
@@ -678,7 +733,7 @@ export class TxnCoreService {
         take: limit,
       }),
       this.prisma.txn.count({ where }),
-      this.prisma.txn.aggregate({ where, _sum: { total: true, balance: true, paidAmount: true } }),
+      this.prisma.txn.aggregate({ where: summaryWhere, _sum: { total: true, balance: true, paidAmount: true } }),
     ]);
     return {
       data,
@@ -738,6 +793,12 @@ export class TxnCoreService {
     const txn = await this.getTxn(businessId, id);
     if (txn.deletedAt) throw new BadRequestException('Already deleted');
     if (txn.convertedTxns.length) throw new BadRequestException('Cannot delete: converted transactions exist');
+    // A separate Payment In/Out was recorded against this invoice/bill. Deleting it here would leave
+    // that payment (and its cash + party-balance effect) posted against a deleted document, drifting
+    // the ledger. Require the payment to be removed first so balances always stay reconciled.
+    if (txn.allocationsAsInvoice.length) {
+      throw new BadRequestException('Cannot delete: a payment is linked to this transaction. Delete or un-allocate that payment first.');
+    }
 
     return this.prisma.$transaction(async (tx) => {
       if (txn.status !== 'HELD') {

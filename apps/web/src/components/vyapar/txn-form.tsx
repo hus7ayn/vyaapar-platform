@@ -190,7 +190,9 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
   }, [lines, billDiscountPct, billDiscountType, shipping, roundOffEnabled]);
 
   const effectiveTotal = meta.hasLines ? totals.total : Number(amount) || 0;
-  const received = creditSale ? 0 : paidNow === '' ? effectiveTotal : Number(paidNow) || 0;
+  // Orders / quotations / delivery challans are not financial events — never treat them as paid
+  // (the backend also drops any payment for them). Only real invoices/bills default to "received".
+  const received = creditSale || meta.isOrder ? 0 : paidNow === '' ? effectiveTotal : Number(paidNow) || 0;
   const balance = Math.max(0, effectiveTotal - received);
 
   // ─── Save ──────────────────────────────────────────────────────────────────

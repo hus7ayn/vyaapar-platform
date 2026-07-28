@@ -25,6 +25,7 @@ interface DashboardData {
   monthSale: number;
   monthInvoices: number;
   monthExpense: number;
+  monthReturns?: number;
   monthSalary?: number;
   netRevenue?: number;
   totalReceivable: number;
@@ -167,11 +168,14 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border shadow-sm p-4 space-y-2 text-sm">
             <p className="font-semibold">This Month</p>
             <div className="flex justify-between"><span className="text-muted-foreground">Sale</span><span className="font-semibold">{formatMoney(data?.monthSale ?? 0)}</span></div>
+            {(data?.monthReturns ?? 0) > 0 && (
+              <div className="flex justify-between"><span className="text-muted-foreground">Sale Returns</span><span className="font-semibold text-red-600">{formatMoney(data!.monthReturns!)}</span></div>
+            )}
             <div className="flex justify-between"><span className="text-muted-foreground">Expenses</span><span className="font-semibold text-red-600">{formatMoney(data?.monthExpense ?? 0)}</span></div>
             {(data?.monthSalary ?? 0) > 0 && (
-              <div className="flex justify-between"><span className="text-muted-foreground">Staff Salary (paid)</span><span className="font-semibold text-red-600">{formatMoney(data!.monthSalary!)}</span></div>
+              <div className="flex justify-between pl-3 text-xs"><span className="text-muted-foreground">↳ incl. Staff Salary</span><span className="text-muted-foreground">{formatMoney(data!.monthSalary!)}</span></div>
             )}
-            <div className="flex justify-between border-t pt-2"><span className="text-muted-foreground font-medium">Net Revenue</span><span className="font-bold text-green-700">{formatMoney(data?.netRevenue ?? 0)}</span></div>
+            <div className="flex justify-between border-t pt-2"><span className="text-muted-foreground font-medium">Net (Sales &minus; Costs)</span><span className="font-bold text-green-700">{formatMoney(data?.netRevenue ?? 0)}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Open Orders</span><span className="font-semibold">{data?.openOrders ?? 0}</span></div>
           </div>
         </div>

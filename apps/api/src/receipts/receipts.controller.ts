@@ -14,8 +14,10 @@ import { ReceiptsService } from './receipts.service';
 export class ReceiptsController {
   constructor(private receipts: ReceiptsService) {}
 
+  // Printing a receipt is a business-scoped READ (businessId comes from the token, and the service
+  // only returns this business's txn). Sales, purchasing AND accounting staff all legitimately need
+  // to (re)print — so it's auth-only, not gated on POS_SELL (which 403'd purchasing/inventory roles).
   @Get(':orderId/thermal')
-  @RequirePermissions(Permission.POS_SELL)
   async thermal(
     @CurrentUser('businessId') businessId: string,
     @Param('orderId') orderId: string,
@@ -25,7 +27,6 @@ export class ReceiptsController {
   }
 
   @Get(':orderId/pdf')
-  @RequirePermissions(Permission.POS_SELL)
   async pdf(
     @CurrentUser('businessId') businessId: string,
     @Param('orderId') orderId: string,

@@ -23,6 +23,7 @@ import {
   Wrench,
   MonitorSmartphone,
   Briefcase,
+  Layers,
 } from 'lucide-react';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -64,23 +65,34 @@ const NAV: NavItem[] = [
   },
   { label: 'Items', icon: Package, href: '/items', match: (p) => p.startsWith('/items'), permission: Permission.INVENTORY_VIEW },
   {
-    label: 'Sale', icon: FileText, match: (p) => p.startsWith('/sale'), permission: Permission.POS_SELL, hideForRoles: ['BILLER'],
+    label: 'Sales', icon: FileText,
+    match: (p) => p.startsWith('/sale/invoices') || p.startsWith('/sale/payment-in') || p.startsWith('/sale/credit-notes'),
+    permission: Permission.POS_SELL, hideForRoles: ['BILLER'],
     children: [
-      { href: '/sale/invoices', label: 'Sale Invoices' },
-      { href: '/sale/estimates', label: 'Estimate / Quotation' },
+      { href: '/sale/invoices', label: 'Sale Invoice' },
       { href: '/sale/payment-in', label: 'Payment In' },
-      { href: '/sale/orders', label: 'Sale Order' },
-      { href: '/sale/challans', label: 'Delivery Challan' },
       { href: '/sale/credit-notes', label: 'Sale Return / Credit Note' },
     ],
   },
   {
-    label: 'Purchase', icon: ShoppingBag, match: (p) => p.startsWith('/purchase'), permission: Permission.INVENTORY_VIEW,
+    label: 'Purchase', icon: ShoppingBag,
+    match: (p) => p.startsWith('/purchase/bills') || p.startsWith('/purchase/payment-out') || p.startsWith('/purchase/debit-notes'),
+    permission: Permission.INVENTORY_VIEW,
     children: [
-      { href: '/purchase/bills', label: 'Purchase Bills' },
+      { href: '/purchase/bills', label: 'Purchase Bill' },
       { href: '/purchase/payment-out', label: 'Payment Out' },
-      { href: '/purchase/orders', label: 'Purchase Order' },
       { href: '/purchase/debit-notes', label: 'Purchase Return / Debit Note' },
+    ],
+  },
+  {
+    label: 'Advanced', icon: Layers,
+    match: (p) => p.startsWith('/sale/estimates') || p.startsWith('/sale/orders') || p.startsWith('/sale/challans') || p.startsWith('/purchase/orders'),
+    permission: Permission.POS_SELL, hideForRoles: ['BILLER'],
+    children: [
+      { href: '/sale/estimates', label: 'Quotations' },
+      { href: '/sale/orders', label: 'Sale Orders' },
+      { href: '/purchase/orders', label: 'Purchase Orders' },
+      { href: '/sale/challans', label: 'Delivery Challan' },
     ],
   },
   { label: 'Expenses', icon: Wallet, href: '/expenses', match: (p) => p.startsWith('/expenses'), permission: Permission.EXPENSE_VIEW },
@@ -123,7 +135,8 @@ export function Sidebar() {
   const visible = (item: { permission?: Permission | Permission[]; hideForRoles?: string[] }) =>
     (!item.permission || has(item.permission)) && !(user?.role && item.hideForRoles?.includes(user.role));
   const [expanded, setExpanded] = useState<string | null>(() => {
-    if (pathname.startsWith('/sale')) return 'Sale';
+    if (pathname.startsWith('/sale/estimates') || pathname.startsWith('/sale/orders') || pathname.startsWith('/sale/challans') || pathname.startsWith('/purchase/orders')) return 'Advanced';
+    if (pathname.startsWith('/sale')) return 'Sales';
     if (pathname.startsWith('/purchase')) return 'Purchase';
     if (pathname.startsWith('/cash-bank')) return 'Cash & Bank';
     return null;

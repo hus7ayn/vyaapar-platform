@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  Banknote, Smartphone, CreditCard, Clock, Wallet, Split, Printer,
+  Banknote, Smartphone, CreditCard, Clock, Landmark, Split, Printer,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,7 @@ const PAYMENT_METHODS = [
   { id: 'CASH', label: 'Cash', icon: Banknote },
   { id: 'UPI', label: 'UPI', icon: Smartphone },
   { id: 'CARD', label: 'Card', icon: CreditCard },
-  { id: 'WALLET', label: 'Wallet', icon: Wallet },
+  { id: 'BANK', label: 'Bank', icon: Landmark },
   { id: 'DEBT', label: 'Credit', icon: Clock },
 ] as const;
 

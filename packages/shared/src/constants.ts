@@ -12,7 +12,7 @@ export const PAYMENT_METHOD = {
   CASH: 'CASH',
   CARD: 'CARD',
   UPI: 'UPI',
-  WALLET: 'WALLET',
+  BANK: 'BANK',
   SPLIT: 'SPLIT',
 } as const;
 

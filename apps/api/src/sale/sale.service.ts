@@ -73,7 +73,9 @@ export class SaleService {
     const hasLines = !!body.lines?.length;
 
     const { built, subtotal, taxTotal } = hasLines
-      ? await this.core.buildLines(businessId, body.lines!, 'sale', txn.branchId)
+      // enforceMinSalePrice: resuming a held bill finalises a real sale, so the below-cost guard
+      // must apply here too (this is the main POS "Charge" path for parked bills).
+      ? await this.core.buildLines(businessId, body.lines!, 'sale', txn.branchId, true)
       : { built: null, subtotal: txn.subtotal, taxTotal: txn.taxAmount };
 
     const { billDiscount, roundOff, total } = hasLines
@@ -102,6 +104,11 @@ export class SaleService {
     }
 
     return this.core.prisma.$transaction(async (tx) => {
+      // Atomic claim: flip HELD -> (transient) OPEN under the row lock. A concurrent double-tap /
+      // retried resume blocks here, then finds status no longer HELD and aborts — so stock, ledger
+      // and cash are never posted twice. The real final status is set by the update below.
+      const claim = await tx.txn.updateMany({ where: { id, businessId, status: 'HELD' }, data: { status: 'OPEN', heldAt: null } });
+      if (claim.count === 0) throw new BadRequestException('This bill has already been resumed');
       if (hasLines) await tx.txnLine.deleteMany({ where: { txnId: id } });
       const updated = await tx.txn.update({
         where: { id },

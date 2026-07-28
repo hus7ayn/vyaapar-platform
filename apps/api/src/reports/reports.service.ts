@@ -36,9 +36,10 @@ export class ReportsService {
     const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
 
     const branchFilter = branchId ? { branchId } : {};
-    const [todaySales, monthSales, parties, accounts, items, openOrders, monthExpenses, monthPayroll, recentTxns] = await Promise.all([
+    const [todaySales, monthSales, monthReturns, parties, accounts, items, openOrders, monthExpenses, monthPayroll, recentTxns] = await Promise.all([
       this.prisma.txn.aggregate({ where: { ...this.txnWhere(businessId, 'SALE_INVOICE', undefined, undefined, branchId), date: { gte: today } }, _sum: { total: true }, _count: true }),
       this.prisma.txn.aggregate({ where: { ...this.txnWhere(businessId, 'SALE_INVOICE', undefined, undefined, branchId), date: { gte: monthStart } }, _sum: { total: true }, _count: true }),
+      this.prisma.txn.aggregate({ where: { ...this.txnWhere(businessId, 'CREDIT_NOTE', undefined, undefined, branchId), date: { gte: monthStart } }, _sum: { total: true } }),
       this.prisma.party.findMany({ where: { businessId, deletedAt: null, ...branchFilter } }),
       this.prisma.bankAccount.findMany({ where: { businessId, isActive: true, ...branchFilter } }),
       this.prisma.item.findMany({ where: { businessId, deletedAt: null, ...branchFilter } }),
@@ -83,7 +84,7 @@ export class ReportsService {
         if (i.minStock != null && qty <= num(i.minStock)) lowStockCount++;
       }
     } else {
-      stockValue = items.reduce((s, i) => s + num(i.currentStock) * num(i.purchasePrice || i.salePrice), 0);
+      stockValue = items.reduce((s, i) => s + num(i.currentStock) * num(i.costPrice || i.purchasePrice || i.salePrice), 0);
       lowStockCount = items.filter((i) => i.minStock != null && num(i.currentStock) <= num(i.minStock)).length;
     }
 
@@ -104,15 +105,20 @@ export class ReportsService {
     }
 
     const monthSaleAmt = num(monthSales._sum.total);
+    const monthReturnsAmt = num(monthReturns._sum.total);
     const monthExpenseAmt = num(monthExpenses._sum.total);
     const monthSalaryAmt = num(monthPayroll._sum.totalAmount);
 
     return {
       todaySale: num(todaySales._sum.total), todayInvoices: todaySales._count,
       monthSale: monthSaleAmt, monthInvoices: monthSales._count,
+      monthReturns: monthReturnsAmt,
       monthExpense: monthExpenseAmt,
       monthSalary: monthSalaryAmt,
-      netRevenue: monthSaleAmt - monthExpenseAmt,
+      // Net of sale-returns and expenses. NOTE: paying payroll already creates an EXPENSE txn, so
+      // monthExpense ALREADY includes staff salary — we must NOT subtract monthSalary again here or
+      // it double-counts. The figure is always <= Sale, so it never contradicts it. (COGS is in P&L.)
+      netRevenue: monthSaleAmt - monthReturnsAmt - monthExpenseAmt,
       totalReceivable, totalPayable,
       cashInHand, bankBalance,
       stockValue, lowStockCount, openOrders,
@@ -423,11 +429,12 @@ export class ReportsService {
     const grossProfit = grossSale - num(sales._sum.taxAmount) - cogs;
     const totalExpenses = num(expenses._sum.total);
 
+    // One clear vocabulary so no surface can show "Total Sale" exceeding "Total Revenue" on a
+    // different basis (the A2 bug): Gross Sales -> minus Returns -> Net Sales (== Revenue).
     return {
-      sale: num(sales._sum.total),
+      grossSales: num(sales._sum.total),
       saleReturns: num(saleReturns._sum.total),
-      netSale: grossSale,
-      totalRevenue: grossSale,
+      netSales: grossSale,
       purchase: num(purchases._sum.total),
       purchaseReturns: num(purchaseReturns._sum.total),
       cogs,
@@ -470,7 +477,7 @@ export class ReportsService {
         return s + qty * num(i.costPrice || i.purchasePrice || i.salePrice);
       }, 0);
     } else {
-      stockValue = items.reduce((s, i) => s + num(i.currentStock) * num(i.purchasePrice || i.salePrice), 0);
+      stockValue = items.reduce((s, i) => s + num(i.currentStock) * num(i.costPrice || i.purchasePrice || i.salePrice), 0);
     }
 
     const accountsList = [

@@ -18,8 +18,11 @@ export class CashBankService {
 
   async summary(businessId: string, branchId?: string) {
     const accounts = await this.listAccounts(businessId, branchId);
-    const cashBalance = accounts.filter((a) => a.accountType === 'CASH').reduce((s, a) => s + Number(a.balance), 0);
-    const bankBalance = accounts.filter((a) => a.accountType === 'BANK').reduce((s, a) => s + Number(a.balance), 0);
+    const sumType = (t: string) => accounts.filter((a) => a.accountType === t).reduce((s, a) => s + Number(a.balance), 0);
+    const cashBalance = sumType('CASH');
+    const bankBalance = sumType('BANK');
+    const upiBalance = sumType('UPI');
+    const cardBalance = sumType('CARD');
 
     const parties = await this.prisma.party.findMany({
       where: { businessId, deletedAt: null, ...branchWhere(branchId) },
@@ -42,7 +45,9 @@ export class CashBankService {
     return {
       cashBalance,
       bankBalance,
-      totalBalance: cashBalance + bankBalance,
+      upiBalance,
+      cardBalance,
+      totalBalance: cashBalance + bankBalance + upiBalance + cardBalance,
       accounts,
       totalReceivable,
       totalPayable,

@@ -34,7 +34,7 @@ const BarcodeScanner = dynamic(
   { ssr: false },
 );
 
-type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'WALLET' | 'DEBT';
+type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'BANK' | 'DEBT';
 
 export default function PosPage() {
   const token = useAuthStore((s) => s.accessToken)!;

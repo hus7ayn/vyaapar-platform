@@ -54,8 +54,13 @@ export class ReceiptsService {
       Number(txn.roundOff) !== 0 ? `<tr><td>Round off</td><td class="right">${money(txn.roundOff)}</td></tr>` : '',
     ].join('');
 
+    // Friendly labels instead of raw enums (so receipts never print "WALLET"/"DEBT"). WALLET is a
+    // retired method that now reads as Bank.
+    const payLabel = (m: string) => ({
+      CASH: 'Cash', BANK: 'Bank', UPI: 'UPI', CARD: 'Card', CHEQUE: 'Cheque', WALLET: 'Bank', DEBT: 'Credit (unpaid)',
+    }[m] ?? m);
     const paymentRows = txn.payments
-      .map((p) => `<tr><td>${esc(p.paymentType)}</td><td class="right">${money(p.amount)}</td></tr>`)
+      .map((p) => `<tr><td>${esc(payLabel(p.paymentType))}</td><td class="right">${money(p.amount)}</td></tr>`)
       .join('');
 
     // Format designer: an ordered list of blocks (known sections + user text lines), each
