@@ -105,6 +105,15 @@ export default function UsersPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const purgeOthers = useMutation({
+    mutationFn: () => api<{ removed: number }>('/users/purge-others', { method: 'POST', token, body: JSON.stringify({ confirm: true }) }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      toast.success(`Removed ${res.removed} account(s). Only your Super Admin account remains.`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const submit = () => {
     if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim()) {
       toast.error('First name, last name and email are required');
@@ -235,6 +244,31 @@ export default function UsersPage() {
           );
         })}
       </div>
+
+      {has(Permission.BUSINESS_MANAGE) && (
+        <Card className="p-4 space-y-3 border-rose-300">
+          <h2 className="font-semibold text-rose-700">Danger zone</h2>
+          <p className="text-sm text-muted-foreground">
+            Permanently delete <b>every other user account</b> in this business — all of their logins,
+            sessions and tokens. Only your Super Admin account will remain able to sign in. Existing
+            transactions are kept. <b>This cannot be undone.</b>
+          </p>
+          <Button
+            variant="outline"
+            className="text-rose-600 hover:text-rose-700 border-rose-300"
+            disabled={purgeOthers.isPending}
+            onClick={() => {
+              const others = (users ?? []).filter((u) => u.id !== user?.id).length;
+              if (others === 0) { toast.info('There are no other accounts to remove.'); return; }
+              if (!confirm(`Permanently remove ALL ${others} other user account(s)? Only your Super Admin account will remain. This cannot be undone.`)) return;
+              if (!confirm('Final confirmation: permanently delete all other accounts now?')) return;
+              purgeOthers.mutate();
+            }}
+          >
+            {purgeOthers.isPending ? 'Removing…' : 'Remove all other users'}
+          </Button>
+        </Card>
+      )}
     </div>
   );
 }

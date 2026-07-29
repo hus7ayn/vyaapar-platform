@@ -118,14 +118,58 @@ export class UsersService {
   async setActive(businessId: string, id: string, isActive: boolean, callerId: string) {
     if (id === callerId) throw new BadRequestException('You cannot change your own status');
     const target = await this.assertManageable(businessId, id);
-    // Disabling takes effect on the target's next request (jwt.strategy re-checks isActive).
-    return this.prisma.user.update({ where: { id: target.id }, data: { isActive }, select: this.staffSelect });
+    const updated = await this.prisma.user.update({ where: { id: target.id }, data: { isActive }, select: this.staffSelect });
+    // Disabling also revokes every session/refresh token immediately (jwt.strategy re-checks
+    // isActive per request, but killing the rows means no lingering token can even be refreshed).
+    if (!isActive) await this.prisma.session.deleteMany({ where: { userId: target.id } });
+    return updated;
   }
 
   async remove(businessId: string, id: string, callerId: string) {
     if (id === callerId) throw new BadRequestException('You cannot delete your own account');
     const target = await this.assertManageable(businessId, id);
-    await this.prisma.user.update({ where: { id: target.id }, data: { deletedAt: new Date(), isActive: false } });
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: target.id }, data: { deletedAt: new Date(), isActive: false } }),
+      // Revoke tokens and clear any pending OTP login codes so they can't authenticate at all.
+      this.prisma.session.deleteMany({ where: { userId: target.id } }),
+      this.prisma.otpCode.deleteMany({ where: { email: target.email } }),
+    ]);
     return { id: target.id, deleted: true };
+  }
+
+  /**
+   * Permanently remove EVERY user in the business except the caller (the Super Admin running it).
+   * Hard delete is safe here: sessions cascade-delete (onDelete: Cascade) and the only other FKs to
+   * User (txn.createdById, auditLog.userId, task assignees) are optional and set-null on delete, so
+   * no orphaned rows or FK violations, and transaction history is preserved (attribution nulled).
+   * Also clears email OTP codes so removed accounts have zero cached auth. Keeps ONLY the caller, so
+   * it can never lock the owner out. Gated to BUSINESS_MANAGE at the controller.
+   */
+  async purgeOthers(businessId: string, callerId: string) {
+    const caller = await this.prisma.user.findFirst({ where: { id: callerId, businessId, deletedAt: null } });
+    if (!caller) throw new NotFoundException('Your account was not found');
+
+    const others = await this.prisma.user.findMany({
+      where: { businessId, id: { not: callerId } },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true },
+    });
+
+    if (!others.length) {
+      return { removed: 0, kept: { id: caller.id, email: caller.email, role: caller.role }, removedAccounts: [] };
+    }
+
+    const emails = others.map((u) => u.email);
+    const removed = await this.prisma.$transaction(async (tx) => {
+      await tx.otpCode.deleteMany({ where: { email: { in: emails } } });
+      // sessions/tokens are removed by the ON DELETE CASCADE on Session.userId.
+      const del = await tx.user.deleteMany({ where: { businessId, id: { not: callerId } } });
+      return del.count;
+    });
+
+    return {
+      removed,
+      kept: { id: caller.id, email: caller.email, role: caller.role },
+      removedAccounts: others.map((u) => ({ email: u.email, name: `${u.firstName} ${u.lastName}`.trim(), role: u.role })),
+    };
   }
 }

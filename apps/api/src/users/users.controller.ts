@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Permission } from '@nexus/shared';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -24,6 +24,20 @@ export class UsersController {
   @RequirePermissions(Permission.USER_MANAGE)
   create(@CurrentUser('businessId') businessId: string, @CurrentUser('branchId') branchId: string | undefined, @Body() body: CreateUserDto) {
     return this.users.create(businessId, body, branchId);
+  }
+
+  // Permanently remove EVERY other user in the business, keeping only the Super Admin who calls
+  // this. BUSINESS_MANAGE-gated (owner only) + explicit confirm so it can't fire by accident, and
+  // it always keeps the caller so the owner can never be locked out. Declared before ':id' routes.
+  @Post('purge-others')
+  @RequirePermissions(Permission.BUSINESS_MANAGE)
+  purgeOthers(
+    @CurrentUser('businessId') businessId: string,
+    @CurrentUser('sub') callerId: string,
+    @Body() body: { confirm?: boolean },
+  ) {
+    if (!body?.confirm) throw new BadRequestException('Confirmation required to remove all other users');
+    return this.users.purgeOthers(businessId, callerId);
   }
 
   @Patch(':id')
