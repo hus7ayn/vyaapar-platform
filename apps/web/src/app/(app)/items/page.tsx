@@ -152,6 +152,13 @@ function isLowStock(item: Item) {
   return item.itemType === 'PRODUCT' && item.minStock != null && Number(item.currentStock) <= Number(item.minStock);
 }
 
+// A product with no cost basis (both cost price AND purchase price are 0) contributes ZERO COGS
+// when sold, so its profit shows as 100% and inflates the P&L. Flag these so the owner can fill
+// in a cost price and get accurate profit. (Services have no COGS, so they're never flagged.)
+function isMissingCost(item: Item) {
+  return item.itemType === 'PRODUCT' && Number(item.costPrice) <= 0 && Number(item.purchasePrice) <= 0;
+}
+
 export default function ItemsPage() {
   const queryClient = useQueryClient();
   const token = useAuthStore((s) => s.accessToken) ?? undefined;
@@ -425,7 +432,10 @@ export default function ItemsPage() {
               onClick={() => { setSelectedId(i.id); setDetailTab('transactions'); }}
             >
               <div className="min-w-0">
-                <p className="font-medium text-sm truncate">{i.name}</p>
+                <p className="font-medium text-sm truncate flex items-center gap-1.5">
+                  {i.name}
+                  {isMissingCost(i) && <span className="shrink-0 text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">NO COST</span>}
+                </p>
                 {i.itemType === 'PRODUCT' ? (
                   <p className={cn('text-xs', isLowStock(i) ? 'text-red-600 font-semibold' : 'text-muted-foreground')}>
                     Stock: {Number(i.currentStock)} {i.baseUnit}
@@ -449,6 +459,15 @@ export default function ItemsPage() {
               <VyaparStatCard label="Stock Value" value={formatMoney(summary?.stockValue ?? 0)} color="border-l-green-500" />
               <VyaparStatCard label="Low Stock" value={String(summary?.lowStockCount ?? 0)} color="border-l-amber-500" icon={<AlertTriangle className="h-4 w-4 text-amber-600" />} />
             </div>
+            {list.some(isMissingCost) && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>
+                  <b>{list.filter(isMissingCost).length} product(s) have no cost price.</b> Their profit shows as 100% (no cost of goods),
+                  which inflates your Profit &amp; Loss. Open each item marked <span className="text-[10px] px-1 py-0.5 rounded bg-amber-100 font-semibold">NO COST</span> and set its Cost Price to get accurate profit.
+                </span>
+              </div>
+            )}
             <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
               <div className="p-3 border-b">
                 <p className="font-semibold text-sm">All Items</p>
@@ -479,12 +498,17 @@ export default function ItemsPage() {
                     const cost = Number(i.costPrice) || Number(i.purchasePrice);
                     return (
                     <tr key={i.id} className="border-b last:border-0 hover:bg-red-50/40 cursor-pointer" onClick={() => setSelectedId(i.id)}>
-                      <td className="px-3 py-2 font-medium">{i.name}</td>
+                      <td className="px-3 py-2 font-medium">
+                        <span className="inline-flex items-center gap-1.5">
+                          {i.name}
+                          {isMissingCost(i) && <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold" title="No cost price set — this item's profit shows as 100% (no COGS). Set a cost price to fix.">NO COST</span>}
+                        </span>
+                      </td>
                       <td className="px-3 py-2">{i.sku || '—'}</td>
                       <td className="px-3 py-2">{i.size || '—'}</td>
                       <td className="px-3 py-2 font-mono text-xs">{i.barcode ?? '—'}</td>
                       <td className="px-3 py-2 text-right">{formatMoney(i.salePrice)}</td>
-                      <td className="px-3 py-2 text-right">{formatMoney(cost)}</td>
+                      <td className={cn('px-3 py-2 text-right', isMissingCost(i) && 'text-amber-700 font-semibold')}>{formatMoney(cost)}</td>
                       <td className="px-3 py-2 text-right">{formatMoney(i.purchasePrice)}</td>
                       <td className={cn('px-3 py-2 text-right', isLowStock(i) && 'text-red-600 font-semibold')}>
                         {i.itemType === 'PRODUCT' ? `${Number(i.currentStock)} ${i.baseUnit}` : '—'}
