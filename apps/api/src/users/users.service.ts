@@ -125,14 +125,52 @@ export class UsersService {
     return updated;
   }
 
+  /**
+   * The Super Admin sets a staff member's password. Staff have no self-service reset, so this is
+   * their only route back in — see docs/plans/account-email-recovery.
+   */
+  async setPassword(
+    businessId: string,
+    targetUserId: string,
+    caller: { id: string; role: string },
+    newPassword: string,
+  ) {
+    const callerIsOwner =
+      caller.role === SystemRole.SUPER_ADMIN
+      || (ROLE_PERMISSIONS[caller.role] ?? []).includes(Permission.BUSINESS_MANAGE);
+    if (!callerIsOwner) {
+      throw new ForbiddenException("Only a Super Admin can set another user's password");
+    }
+    if (targetUserId === caller.id) {
+      throw new BadRequestException('Use Change password to change your own password');
+    }
+    // Same business, not deleted, and never another owner — one owner can't seize another's account.
+    const target = await this.assertManageable(businessId, targetUserId);
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: target.id },
+        data: { passwordHash, failedAttempts: 0, isLocked: false },
+      }),
+      // Signed out everywhere: the old password has to stop working the moment it's replaced.
+      this.prisma.session.deleteMany({ where: { userId: target.id } }),
+      this.prisma.otpCode.deleteMany({ where: { userId: target.id } }),
+    ]);
+
+    return { id: target.id, message: 'Password updated' };
+  }
+
   async remove(businessId: string, id: string, callerId: string) {
     if (id === callerId) throw new BadRequestException('You cannot delete your own account');
     const target = await this.assertManageable(businessId, id);
     await this.prisma.$transaction([
       this.prisma.user.update({ where: { id: target.id }, data: { deletedAt: new Date(), isActive: false } }),
-      // Revoke tokens and clear any pending OTP login codes so they can't authenticate at all.
+      // Revoke tokens and clear any pending reset codes so they can't authenticate at all.
+      // Keyed by userId, not email: the same address can own an account in another business
+      // and deleting by email would cancel that account's codes too.
       this.prisma.session.deleteMany({ where: { userId: target.id } }),
-      this.prisma.otpCode.deleteMany({ where: { email: target.email } }),
+      this.prisma.otpCode.deleteMany({ where: { userId: target.id } }),
     ]);
     return { id: target.id, deleted: true };
   }
@@ -158,9 +196,11 @@ export class UsersService {
       return { removed: 0, kept: { id: caller.id, email: caller.email, role: caller.role }, removedAccounts: [] };
     }
 
-    const emails = others.map((u) => u.email);
+    // By id, not email: an address here may also own an account in another business, whose
+    // pending codes are none of this purge's business.
+    const removedIds = others.map((u) => u.id);
     const removed = await this.prisma.$transaction(async (tx) => {
-      await tx.otpCode.deleteMany({ where: { email: { in: emails } } });
+      await tx.otpCode.deleteMany({ where: { userId: { in: removedIds } } });
       // sessions/tokens are removed by the ON DELETE CASCADE on Session.userId.
       const del = await tx.user.deleteMany({ where: { businessId, id: { not: callerId } } });
       return del.count;

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Trash2, RefreshCcw, Eye, FileOutput } from 'lucide-react';
+import { Plus, Search, Trash2, RefreshCcw, Eye, FileOutput, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
@@ -35,6 +35,11 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
   const [viewTxn, setViewTxn] = useState<Txn | null>(null);
   const [returnForId, setReturnForId] = useState<string | null>(null);
 
+  // ISO day strings compare correctly as plain strings, so this needs no Date parsing.
+  const invalidRange = Boolean(from && to && from > to);
+  const hasFilters = Boolean(search || from || to);
+  const clearFilters = () => { setSearch(''); setFrom(''); setTo(''); };
+
   const qs = new URLSearchParams();
   if (search) qs.set('search', search);
   if (from) qs.set('from', from);
@@ -43,7 +48,8 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
   const { data, isLoading } = useQuery({
     queryKey: ['txns', txnType, search, from, to],
     queryFn: () => api<ListResponse>(`${meta.listEndpoint}${meta.listEndpoint.includes('?') ? '&' : '?'}${qs.toString()}`, { token }),
-    enabled: !!token,
+    // Don't ask the server for a range that can't contain anything.
+    enabled: !!token && !invalidRange,
   });
 
   const deleteMutation = useMutation({
@@ -84,14 +90,36 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
       </div>
 
       <div className="bg-white rounded-lg border shadow-sm">
-        <div className="p-3 border-b flex flex-wrap gap-2 items-center">
-          <div className="relative flex-1 min-w-48">
-            <Search className="h-4 w-4 absolute left-3 top-3 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Search number or party…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <div className="p-3 border-b space-y-2">
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="relative flex-1 min-w-48">
+              <Search className="h-4 w-4 absolute left-3 top-3 text-muted-foreground" />
+              <Input className="pl-9 pr-9" placeholder="Search number or party…" value={search} onChange={(e) => setSearch(e.target.value)} />
+              {search && (
+                <button
+                  type="button"
+                  title="Clear search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+                  onClick={() => setSearch('')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <Input type="date" className={cn('w-40', invalidRange && 'border-amber-500')} value={from} onChange={(e) => setFrom(e.target.value)} />
+            <span className="text-muted-foreground text-sm">to</span>
+            <Input type="date" className={cn('w-40', invalidRange && 'border-amber-500')} value={to} onChange={(e) => setTo(e.target.value)} />
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                <X className="h-4 w-4 mr-1" /> Clear
+              </Button>
+            )}
           </div>
-          <Input type="date" className="w-40" value={from} onChange={(e) => setFrom(e.target.value)} />
-          <span className="text-muted-foreground text-sm">to</span>
-          <Input type="date" className="w-40" value={to} onChange={(e) => setTo(e.target.value)} />
+          {invalidRange && (
+            <p className="text-xs font-medium text-amber-700">
+              Invalid date range — the “From” date is after the “To” date.
+            </p>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -109,15 +137,29 @@ export function TxnListPage({ txnType }: { txnType: TxnType }) {
             </tr>
           </thead>
           <tbody>
-            {isLoading && (
-              <tr><td colSpan={8} className="text-center py-10 text-muted-foreground">Loading…</td></tr>
-            )}
-            {!isLoading && txns.length === 0 && (
+            {invalidRange && (
               <tr><td colSpan={8} className="text-center py-10 text-muted-foreground">
-                No {meta.labelPlural.toLowerCase()} yet. <Link className="text-red-600 underline" href={`${meta.listPath}/new`}>Create one</Link>
+                Fix the date range to see results.
               </td></tr>
             )}
-            {txns.map((t) => {
+            {!invalidRange && isLoading && (
+              <tr><td colSpan={8} className="text-center py-10 text-muted-foreground">Loading…</td></tr>
+            )}
+            {!invalidRange && !isLoading && txns.length === 0 && (
+              <tr><td colSpan={8} className="text-center py-10 text-muted-foreground">
+                {hasFilters ? (
+                  <>
+                    No {meta.labelPlural.toLowerCase()} found for this filter.{' '}
+                    <button type="button" className="text-red-600 underline" onClick={clearFilters}>Clear filters</button>
+                  </>
+                ) : (
+                  <>
+                    No {meta.labelPlural.toLowerCase()} yet. <Link className="text-red-600 underline" href={`${meta.listPath}/new`}>Create one</Link>
+                  </>
+                )}
+              </td></tr>
+            )}
+            {!invalidRange && txns.map((t) => {
               const status = TXN_STATUS_LABELS[t.status] ?? { label: t.status, className: 'bg-gray-100 text-gray-600' };
               return (
                 <tr key={t.id} className="border-b last:border-0 hover:bg-red-50/40">

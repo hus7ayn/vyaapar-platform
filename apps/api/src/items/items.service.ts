@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveBranchWarehouse } from '../inventory/warehouse.util';
@@ -9,7 +9,6 @@ export interface ItemInput {
   name: string;
   itemType?: string;
   sku?: string;
-  barcode?: string;
   size?: string;
   hsnCode?: string;
   categoryId?: string;
@@ -175,22 +174,16 @@ export class ItemsService {
       if (!isService) {
         if (body.openingStock === undefined || body.openingStock === null)
           throw new BadRequestException('Opening stock (no. of products) is required');
-        // Barcode is NO LONGER required — it is auto-generated below when left blank.
+        // Barcode is never asked for — the server always generates it (see create() below).
       }
     }
     const sku = body.sku?.trim() || `ITM-${Date.now().toString(36).toUpperCase()}`;
     const openingStock = new Prisma.Decimal(body.openingStock ?? 0);
     const costPrice = body.costPrice ?? body.purchasePrice ?? 0;
 
-    // Barcode: auto-generate a unique one from the product details when none is supplied;
-    // if the user supplied one, validate it's unique within the business.
-    let barcode = body.barcode?.trim() || null;
-    if (barcode) {
-      const clash = await this.prisma.item.findFirst({ where: { businessId, barcode, deletedAt: null } });
-      if (clash) throw new ConflictException('An item with this barcode already exists.');
-    } else {
-      barcode = await this.generateUniqueBarcode(businessId, { sku, id: sku }, Number(costPrice));
-    }
+    // Barcode is system-owned and never taken from the client: its last 5 digits encode the cost
+    // price, so a hand-typed value decodes to the wrong cost on every scan.
+    const barcode = await this.generateUniqueBarcode(businessId, { sku, id: sku }, Number(costPrice));
     const resolvedBranch =
       branchId
       ?? (await this.prisma.branch.findFirst({ where: { businessId, isDefault: true, deletedAt: null } }))?.id
@@ -251,22 +244,31 @@ export class ItemsService {
   }
 
   async update(businessId: string, id: string, body: Partial<ItemInput> & { isActive?: boolean }) {
-    await this.get(businessId, id);
-    // Keep an edited barcode unique within the business (empty clears it to null).
-    if (body.barcode !== undefined && body.barcode?.trim()) {
-      const clash = await this.prisma.item.findFirst({
-        where: { businessId, barcode: body.barcode.trim(), deletedAt: null, id: { not: id } },
-        select: { id: true },
-      });
-      if (clash) throw new ConflictException('An item with this barcode already exists.');
-    }
+    const existing = await this.get(businessId, id);
+    // The barcode encodes the cost price in its last 5 digits, so a cost change has to be mirrored
+    // into it — otherwise every later scan decodes the superseded cost. The 8-digit prefix is
+    // preserved so the item keeps the identity already printed on its shelf tags.
+    const nextCost = body.costPrice ?? body.purchasePrice;
+    const currentCost = Number(existing.costPrice) || Number(existing.purchasePrice) || 0;
+    const rebuiltBarcode =
+      nextCost !== undefined && Number(nextCost) !== currentCost
+        ? await this.generateUniqueBarcode(
+            businessId,
+            { sku: body.sku ?? existing.sku, id: existing.id },
+            Number(nextCost),
+            {
+              excludeItemId: existing.id,
+              existingPrefix: existing.barcode?.replace(/\D/g, '').slice(0, 8),
+            },
+          )
+        : undefined;
     const item = await this.prisma.item.update({
       where: { id },
       data: {
         ...(body.name !== undefined && { name: body.name }),
         ...(body.itemType !== undefined && { itemType: body.itemType }),
         ...(body.sku !== undefined && { sku: body.sku }),
-        ...(body.barcode !== undefined && { barcode: body.barcode?.trim() || null }),
+        ...(rebuiltBarcode && { barcode: rebuiltBarcode }),
         ...(body.size !== undefined && { size: body.size?.trim() || null }),
         ...(body.hsnCode !== undefined && { hsnCode: body.hsnCode }),
         ...(body.categoryId !== undefined && { categoryId: body.categoryId }),

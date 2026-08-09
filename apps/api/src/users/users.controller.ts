@@ -5,7 +5,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { UsersService } from './users.service';
-import { CreateUserDto } from './dto/create-user.dto';
+import { CreateUserDto, SetUserPasswordDto } from './dto/create-user.dto';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -70,6 +70,20 @@ export class UsersController {
     @Param('id') id: string,
   ) {
     return this.users.approve(businessId, id, approverId);
+  }
+
+  // The other half of account recovery: staff have no self-service reset, so the Super Admin
+  // sets their password here. See docs/plans/account-email-recovery.
+  @Post(':id/set-password')
+  @RequirePermissions(Permission.USER_MANAGE)
+  setPassword(
+    @CurrentUser('businessId') businessId: string,
+    @CurrentUser('sub') callerId: string,
+    @CurrentUser('role') callerRole: string,
+    @Param('id') id: string,
+    @Body() body: SetUserPasswordDto,
+  ) {
+    return this.users.setPassword(businessId, id, { id: callerId, role: callerRole }, body.newPassword);
   }
 
   @Delete(':id')

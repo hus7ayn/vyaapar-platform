@@ -30,6 +30,16 @@ const approx = (a, b, msg) => {
   if (Math.abs(Number(a) - Number(b)) > 0.01) throw new Error(`${msg}: expected ${b}, got ${a}`);
 };
 
+/** Asserts a call is rejected. Passing where we expect a refusal is the failure. */
+async function mustFail(msg, fn) {
+  try {
+    await fn();
+  } catch {
+    return;
+  }
+  throw new Error(`${msg}: expected this to be rejected, but it succeeded`);
+}
+
 async function main() {
   console.log('🔍 Vyapar-Parity E2E Smoke Test\n');
 
@@ -152,7 +162,8 @@ async function main() {
   await req('/expenses', {
     method: 'POST',
     ...hdr,
-    body: { branchId, expenseCategoryId: cats[0].id, amount: 250, description: 'Smoke expense' },
+    // partyName is mandatory — an expense must record who it was paid to.
+    body: { branchId, expenseCategoryId: cats[0].id, amount: 250, partyName: 'Smoke Vendor', description: 'Smoke expense' },
   });
   console.log('✅ Expense recorded');
 
@@ -197,6 +208,70 @@ async function main() {
   const itemFinal = await req(`/items/${item.id}`, hdr);
   approx(itemFinal.currentStock, 53, 'stock after deleting credit note (reverses +1)');
   console.log('✅ Recycle bin delete reversed stock effect');
+
+  // ── Account recovery ──
+  // Only a Super Admin (code role ADMIN) can reset itself by email. Everyone else is reset by
+  // the owner. The give-away would be forgot-password replying differently per address, so the
+  // check is that all three replies are byte-identical.
+  const ownerReply = await req('/auth/forgot-password', {
+    method: 'POST',
+    body: { email: 'admin@grandplaza.demo' },
+  });
+  const billerReply = await req('/auth/forgot-password', {
+    method: 'POST',
+    body: { email: 'cashier@grandplaza.demo' },
+  });
+  const unknownReply = await req('/auth/forgot-password', {
+    method: 'POST',
+    body: { email: `nobody-${stamp}@example.com` },
+  });
+  if (ownerReply.message !== billerReply.message || ownerReply.message !== unknownReply.message) {
+    throw new Error('forgot-password reply differs per address — that enumerates accounts');
+  }
+  if (/@/.test(ownerReply.message)) {
+    throw new Error('forgot-password reply echoes an address back');
+  }
+  console.log('✅ Forgot-password: one reply for owner, biller and unknown address alike');
+
+  await mustFail('reset with a bogus code', () =>
+    req('/auth/reset-password', {
+      method: 'POST',
+      body: { email: 'admin@grandplaza.demo', code: '000000', newPassword: 'Rotated@2026x' },
+    }),
+  );
+  console.log('✅ Reset rejects a code it never issued');
+
+  // The owner sets a staff password — the only route back in for someone with no self-reset.
+  const users = await req('/users', hdr);
+  const cashier = users.find((u) => u.email === 'cashier@grandplaza.demo');
+  if (!cashier) throw new Error('cashier@grandplaza.demo missing — run seed');
+
+  const rotated = `Rotated@${stamp}A1`;
+  await req(`/users/${cashier.id}/set-password`, {
+    method: 'POST',
+    ...hdr,
+    body: { newPassword: rotated },
+  });
+  const asCashier = await req('/auth/login', {
+    method: 'POST',
+    body: { email: 'cashier@grandplaza.demo', password: rotated },
+  });
+  if (!asCashier.accessToken) throw new Error('cashier could not sign in with the new password');
+  await mustFail('login with the superseded password', () =>
+    req('/auth/login', {
+      method: 'POST',
+      body: { email: 'cashier@grandplaza.demo', password: 'Demo@123456' },
+    }),
+  );
+  console.log('✅ Owner set a staff password; the old one stopped working');
+
+  // Put the demo password back so this script stays re-runnable.
+  await req(`/users/${cashier.id}/set-password`, {
+    method: 'POST',
+    ...hdr,
+    body: { newPassword: 'Demo@123456' },
+  });
+  console.log('✅ Restored the demo cashier password');
 
   console.log('\n🎉 All smoke tests passed!');
 }

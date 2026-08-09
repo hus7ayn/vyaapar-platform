@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from 'express';
@@ -7,8 +8,7 @@ import { AuthService } from './auth.service';
 import {
   LoginDto,
   RefreshTokenDto,
-  OtpRequestDto,
-  OtpVerifyDto,
+  ConfirmEmailDto,
   ForgotPasswordDto,
   ResetPasswordDto,
   ChangePasswordDto,
@@ -35,28 +35,42 @@ export class AuthController {
     return this.auth.refresh(dto.refreshToken);
   }
 
-  @Public()
-  @Post('otp/request')
-  requestOtp(@Body() dto: OtpRequestDto) {
-    return this.auth.requestOtp(dto);
-  }
+  // There is deliberately no otp/request or otp/verify route. They used to mint a full session
+  // for ANY role straight from an emailed code — a passwordless login nothing in the product
+  // asked for. forgot-password below is the only way to obtain a code, and it can only be
+  // spent on a password reset.
 
   @Public()
-  @Post('otp/verify')
-  verifyOtp(@Body() dto: OtpVerifyDto) {
-    return this.auth.verifyOtp(dto);
-  }
-
-  @Public()
+  @Throttle({ default: { limit: 5, ttl: 3600_000 } }) // tight: this one sends mail to a real inbox
   @Post('forgot-password')
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.auth.requestOtp({ email: dto.email });
+    return this.auth.forgotPassword(dto.email);
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 3600_000 } }) // enough retries for a mistyped code, not for guessing
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.auth.resetPassword(dto.email, dto.roleKey, dto.newPassword);
+    return this.auth.resetPasswordWithCode(dto.email, dto.code, dto.newPassword);
+  }
+
+  @ApiBearerAuth()
+  @Get('verify-email/status')
+  verificationStatus(@CurrentUser('sub') userId: string) {
+    return this.auth.verificationStatus(userId);
+  }
+
+  @ApiBearerAuth()
+  @Throttle({ default: { limit: 5, ttl: 3600_000 } })
+  @Post('verify-email/resend')
+  resendVerification(@CurrentUser('sub') userId: string) {
+    return this.auth.resendVerificationEmail(userId);
+  }
+
+  @Public()
+  @Post('verify-email/confirm')
+  confirmEmail(@Body() dto: ConfirmEmailDto) {
+    return this.auth.confirmEmail(dto.token);
   }
 
   @ApiBearerAuth()

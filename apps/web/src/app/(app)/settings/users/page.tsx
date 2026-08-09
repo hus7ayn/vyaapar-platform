@@ -66,6 +66,10 @@ export default function UsersPage() {
     branchId: user?.branchId ?? '',
   });
 
+  const [passwordFor, setPasswordFor] = useState<UserRow | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordError, setNewPasswordError] = useState('');
+
   const { data: users } = useQuery({
     queryKey: ['users'],
     queryFn: () => api<UserRow[]>('/users', { token }),
@@ -104,6 +108,30 @@ export default function UsersPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('Account approved'); },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  // Staff have no self-service reset, so this is their only route back in.
+  const setPassword = useMutation({
+    mutationFn: (v: { id: string; newPassword: string }) =>
+      api(`/users/${v.id}/set-password`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ newPassword: v.newPassword }),
+      }),
+    onSuccess: () => {
+      setPasswordFor(null);
+      setNewPassword('');
+      setNewPasswordError('');
+      toast.success('Password set — tell them in person, they are signed out everywhere');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const submitNewPassword = () => {
+    if (!isStrongPassword(newPassword)) { setNewPasswordError(PASSWORD_POLICY_MESSAGE); return; }
+    if (!passwordFor) return;
+    setNewPasswordError('');
+    setPassword.mutate({ id: passwordFor.id, newPassword });
+  };
 
   const purgeOthers = useMutation({
     mutationFn: () => api<{ removed: number }>('/users/purge-others', { method: 'POST', token, body: JSON.stringify({ confirm: true }) }),
@@ -225,6 +253,12 @@ export default function UsersPage() {
                   )}
                   <Button
                     variant="outline" size="sm"
+                    onClick={() => { setPasswordFor(u); setNewPassword(''); setNewPasswordError(''); }}
+                  >
+                    Set password
+                  </Button>
+                  <Button
+                    variant="outline" size="sm"
                     disabled={setStatus.isPending}
                     onClick={() => setStatus.mutate({ id: u.id, isActive: !u.isActive })}
                   >
@@ -244,6 +278,48 @@ export default function UsersPage() {
           );
         })}
       </div>
+
+      {passwordFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-sm p-6 space-y-3">
+            <div>
+              <h2 className="font-semibold">Set a new password</h2>
+              <p className="text-sm text-muted-foreground">
+                For {passwordFor.firstName} {passwordFor.lastName} · {passwordFor.email}
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">New password</label>
+              <PasswordInput
+                autoFocus
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="New password"
+              />
+              {newPasswordError ? (
+                <p className="text-xs text-destructive">{newPasswordError}</p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">{PASSWORD_POLICY_MESSAGE}</p>
+              )}
+            </div>
+
+            <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-[11px] text-amber-900">
+              Tell them this password in person — we won&apos;t email it. They&apos;ll be signed out
+              on every device and must use the new one next time.
+            </p>
+
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setPasswordFor(null)}>
+                Cancel
+              </Button>
+              <Button className="flex-1" disabled={setPassword.isPending} onClick={submitNewPassword}>
+                {setPassword.isPending ? 'Setting…' : 'Set password'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {has(Permission.BUSINESS_MANAGE) && (
         <Card className="p-4 space-y-3 border-rose-300">

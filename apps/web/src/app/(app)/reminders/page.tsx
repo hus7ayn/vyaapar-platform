@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell, Send } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,7 +10,12 @@ import { formatCurrency } from '@/lib/utils';
 import { VyaparPageHeader } from '@/components/vyapar/page-header';
 import { VyaparActionButton } from '@/components/vyapar/action-button';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+const today = () => isoDay(new Date());
+const inAWeek = () => isoDay(new Date(Date.now() + 7 * 86400000));
 
 type Reminder = {
   id: string;
@@ -25,6 +31,7 @@ export default function RemindersPage() {
   const branchId = useAuthStore((s) => s.activeShopId) ?? undefined;
   const qc = useQueryClient();
   const apiOpts = { token, branchId };
+  const [remindOn, setRemindOn] = useState(inAWeek());
 
   const { data: reminders, isLoading } = useQuery({
     queryKey: ['payment-reminders', branchId],
@@ -33,10 +40,26 @@ export default function RemindersPage() {
   });
 
   const generate = useMutation({
-    mutationFn: () => api('/payment-reminders/generate', { method: 'POST', ...apiOpts }),
+    mutationFn: () =>
+      api('/payment-reminders/generate', { method: 'POST', ...apiOpts, body: JSON.stringify({ remindOn }) }),
+    onSuccess: (created) => {
+      qc.invalidateQueries({ queryKey: ['payment-reminders'] });
+      const count = Array.isArray(created) ? created.length : 0;
+      toast.success(
+        count === 0
+          ? 'Every party with dues already has a pending reminder'
+          : `${count} reminder${count === 1 ? '' : 's'} set for ${new Date(remindOn).toLocaleDateString()}`,
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const reschedule = useMutation({
+    mutationFn: ({ id, date }: { id: string; date: string }) =>
+      api(`/payment-reminders/${id}`, { method: 'PATCH', ...apiOpts, body: JSON.stringify({ remindOn: date }) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['payment-reminders'] });
-      toast.success('Reminders generated from outstanding dues');
+      toast.success('Reminder date updated');
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -58,11 +81,23 @@ export default function RemindersPage() {
         title="Payment Reminders"
         subtitle="Send reminders to parties with outstanding balance"
         action={
-          <VyaparActionButton
-            onClick={() => generate.mutate()}
-            label="Generate Reminders"
-            color="bg-[hsl(25,95%,53%)]"
-          />
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="text-[10px] font-medium text-muted-foreground block mb-1">Remind on</label>
+              <Input
+                type="date"
+                className="h-9 w-40"
+                min={today()}
+                value={remindOn}
+                onChange={(e) => setRemindOn(e.target.value)}
+              />
+            </div>
+            <VyaparActionButton
+              onClick={() => generate.mutate()}
+              label="Generate Reminders"
+              color="bg-[hsl(25,95%,53%)]"
+            />
+          </div>
         }
       />
 
@@ -79,11 +114,25 @@ export default function RemindersPage() {
             <div key={r.id} className="p-4 flex justify-between items-center gap-4">
               <div>
                 <p className="font-semibold">{r.party.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  Due {new Date(r.dueDate).toLocaleDateString()}
-                  {r.party.phone ? ` · ${r.party.phone}` : ''}
-                  {r.channel ? ` · ${r.channel}` : ''}
-                </p>
+                <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                  {r.status === 'PENDING' ? (
+                    <label className="flex items-center gap-1.5">
+                      Remind on
+                      <Input
+                        type="date"
+                        className="h-7 w-36 text-xs"
+                        min={today()}
+                        value={r.dueDate.slice(0, 10)}
+                        disabled={reschedule.isPending}
+                        onChange={(e) => e.target.value && reschedule.mutate({ id: r.id, date: e.target.value })}
+                      />
+                    </label>
+                  ) : (
+                    <span>Due {new Date(r.dueDate).toLocaleDateString()}</span>
+                  )}
+                  {r.party.phone ? <span>· {r.party.phone}</span> : null}
+                  {r.channel ? <span>· {r.channel}</span> : null}
+                </div>
               </div>
               <div className="flex items-center gap-3">
                 <span className={cn(

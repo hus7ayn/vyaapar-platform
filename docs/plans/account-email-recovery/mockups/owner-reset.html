@@ -1,0 +1,88 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mockup — Super Admin sets a staff password</title>
+<style>
+  :root { --brand: hsl(348, 85%, 52%); --ink: #1b1b1f; --muted: #6b7280; --line: #e5e7eb;
+          --warnbg: #fffbeb; --warnline: #fcd34d; --warnink: #92400e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+         color: var(--ink); background: #f5f6f8; padding: 26px; }
+  h1 { font-size: 21px; margin: 0 0 3px; }
+  .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 18px; }
+  table { width: 100%; max-width: 800px; border-collapse: collapse; background: #fff;
+          border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  th { text-align: left; font-size: 11px; letter-spacing: .04em; color: var(--muted);
+       background: #fafafa; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  td { padding: 12px 14px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  tr:last-child td { border-bottom: 0; }
+  .role { font-size: 12px; color: var(--muted); }
+  .link { color: var(--brand); font-weight: 600; cursor: pointer; }
+  .self { color: var(--muted); font-size: 13px; }
+  .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: grid;
+              place-items: center; padding: 20px; }
+  .modal { width: 100%; max-width: 400px; background: #fff; border-radius: 12px; padding: 24px;
+           box-shadow: 0 12px 34px rgba(0,0,0,.22); }
+  .modal h2 { font-size: 17px; margin: 0 0 5px; }
+  .modal p.who { color: var(--muted); font-size: 13.5px; margin: 0 0 18px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+  .pwrow { display: flex; gap: 8px; }
+  input { flex: 1; height: 42px; padding: 0 12px; border: 1px solid var(--line);
+          border-radius: 8px; font-size: 15px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .gen { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 0 13px;
+         font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 7px; }
+  .warn { margin-top: 15px; background: var(--warnbg); border: 1px solid var(--warnline);
+          color: var(--warnink); border-radius: 8px; padding: 11px 13px; font-size: 12.5px; }
+  .actions { display: flex; gap: 9px; margin-top: 20px; }
+  .actions button { flex: 1; height: 42px; border-radius: 8px; font-size: 14.5px;
+                    font-weight: 700; cursor: pointer; }
+  .ghost { border: 1px solid var(--line); background: #fff; color: var(--ink); }
+  .primary { border: 0; background: var(--brand); color: #fff; }
+</style>
+
+<h1>Users</h1>
+<p class="sub">People who can sign in to Grand Plaza.</p>
+
+<table>
+  <tr><th>NAME</th><th>EMAIL</th><th>ROLE</th><th>LAST SIGNED IN</th><th></th></tr>
+  <tr>
+    <td>Rakesh Gupta</td><td>owner@grandplaza.demo</td>
+    <td>Super Admin</td><td>Today, 9:12 am</td>
+    <td><span class="self">That's you — change your own password in Settings</span></td>
+  </tr>
+  <tr>
+    <td>Priya Sharma</td><td>cashier@grandplaza.demo</td>
+    <td>Biller — Shop</td><td>Today, 8:47 am</td>
+    <td><span class="link">Set password</span></td>
+  </tr>
+  <tr>
+    <td>Imran Khan</td><td>imran@grandplazaa.demo</td>
+    <td>Biller — Shop</td><td>3 days ago</td>
+    <td><span class="link">Set password</span></td>
+  </tr>
+</table>
+
+<div class="backdrop">
+  <div class="modal">
+    <h2>Set a new password</h2>
+    <p class="who">For <strong>Imran Khan</strong> · Biller — Shop</p>
+
+    <label for="np">New password</label>
+    <div class="pwrow">
+      <input id="np" type="text" value="Shop@Counter7">
+      <button class="gen">Suggest</button>
+    </div>
+    <p class="hint">At least 8 characters, with a capital letter, a number and a symbol.</p>
+
+    <div class="warn">
+      Tell Imran this password in person — we won't email it to him. He'll be signed out on every
+      device and must use the new one next time.
+    </div>
+
+    <div class="actions">
+      <button class="ghost">Cancel</button>
+      <button class="primary">Set password</button>
+    </div>
+  </div>
+</div>

@@ -137,6 +137,9 @@ model User {
   approvedById  String?   @map("approved_by_id")
   approvedAt    DateTime? @map("approved_at")
   isLocked      Boolean   @default(false) @map("is_locked")
+  // Null = the address has never been proven to reach this person. Only ever set for roles that
+  // can recover themselves (ADMIN / SUPER_ADMIN) — nothing is emailed to anyone else.
+  emailVerifiedAt DateTime? @map("email_verified_at")
   failedAttempts Int      @default(0) @map("failed_attempts")
   lastLoginAt   DateTime? @map("last_login_at")
   createdAt     DateTime  @default(now()) @map("created_at")
@@ -150,9 +153,14 @@ model User {
   auditLogs    AuditLog[]
   housekeeping HousekeepingTask[] @relation("AssignedHousekeeping")
   serviceRequests ServiceRequest[] @relation("AssignedService")
+  otpCodes           OtpCode[]
+  verificationTokens EmailVerificationToken[]
 
   @@unique([businessId, email])
   @@index([businessId])
+  // Forgot-password looks an address up across every business, since the same one can own
+  // accounts in more than one.
+  @@index([email])
   @@map("users")
 }
 
@@ -173,14 +181,37 @@ model Session {
 
 model OtpCode {
   id        String   @id @default(uuid())
+  // Bound to an account, not just an address: one email can own accounts in two businesses, so
+  // an address alone cannot say which password a code is allowed to change.
+  userId    String   @map("user_id")
   email     String
   code      String
+  purpose   String   @default("PASSWORD_RESET")
   expiresAt DateTime @map("expires_at")
   used      Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at")
 
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([email])
+  @@index([userId])
   @@map("otp_codes")
+}
+
+// A confirmation link is a long random secret with a 24-hour life, not a 6-digit code, so it
+// doesn't belong in OtpCode. Only the hash is stored — a leaked row must not be a working link.
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
 }
 
 // ─── Parties ───────────────────────────────────────────────────────────────

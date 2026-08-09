@@ -14,6 +14,8 @@ export interface PosProduct {
   taxRate: number;
   hsnCode?: string;
   unit: string;
+  itemType: 'PRODUCT' | 'SERVICE';
+  /** Undefined for anything that doesn't hold stock (services) — meaning "no quantity limit". */
   stockQty?: number;
   minStock?: number;
   salePriceTaxInclusive: boolean;
@@ -31,6 +33,8 @@ interface PosCatalogResponse {
     taxRate: number | string;
     hsnCode?: string | null;
     baseUnit?: string;
+    itemType?: string;
+    trackStock?: boolean;
     currentStock?: number | string;
     minStock?: number | string | null;
     salePriceTaxInclusive?: boolean;
@@ -54,6 +58,10 @@ export function usePosCatalog(token: string, branchId?: string) {
         const salePrice = Number(i.salePrice);
         const taxRate = Number(i.taxRate);
         const taxInclusive = i.salePriceTaxInclusive ?? false;
+        const itemType = i.itemType === 'SERVICE' ? 'SERVICE' : 'PRODUCT';
+        // Services hold no stock, so their currentStock sits at 0 forever. Leaving stockQty
+        // undefined for them keeps every stock check in the POS from treating them as sold out.
+        const holdsStock = itemType !== 'SERVICE' && (i.trackStock ?? true);
         return {
           id: i.id,
           name: i.name,
@@ -64,8 +72,9 @@ export function usePosCatalog(token: string, branchId?: string) {
           taxRate,
           hsnCode: i.hsnCode ?? undefined,
           unit: i.baseUnit ?? 'PCS',
-          stockQty: i.currentStock != null ? Number(i.currentStock) : undefined,
-          minStock: i.minStock != null ? Number(i.minStock) : undefined,
+          itemType,
+          stockQty: holdsStock && i.currentStock != null ? Number(i.currentStock) : undefined,
+          minStock: holdsStock && i.minStock != null ? Number(i.minStock) : undefined,
           salePriceTaxInclusive: taxInclusive,
           category: i.category ?? undefined,
         };

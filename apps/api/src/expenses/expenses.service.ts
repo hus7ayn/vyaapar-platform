@@ -37,6 +37,11 @@ export class ExpensesService {
     branchId?: string,
   ) {
     if (!body.expenseCategoryId) throw new BadRequestException('Expense category is required');
+    // Every expense must name a payee — either a saved party or a typed-in name — so the books
+    // always show who the money went to.
+    if (!body.partyId && !body.partyName?.trim()) {
+      throw new BadRequestException('Party name is required — record who this expense was paid to');
+    }
     const total = body.lines?.length ? undefined : (body.amount ?? body.total);
     if (!body.lines?.length && (!total || total <= 0)) throw new BadRequestException('Expense amount required');
 

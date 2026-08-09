@@ -1,0 +1,82 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mockup — Recovery address confirmation email</title>
+<style>
+  :root { --brand: hsl(348, 85%, 52%); --ink: #1b1b1f; --muted: #6b7280; --line: #e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 30px 18px; font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+         color: var(--ink); background: #eceef1; }
+  .client { max-width: 600px; margin: 0 auto 26px; }
+  .cap { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+         color: var(--muted); margin-bottom: 9px; }
+  .meta { background: #fff; border: 1px solid var(--line); border-radius: 10px 10px 0 0;
+          padding: 13px 20px; font-size: 12.5px; color: var(--muted); }
+  .meta .subj { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 3px; }
+  .mail { background: #fff; border: 1px solid var(--line); border-top: 0;
+          border-radius: 0 0 10px 10px; padding: 32px 34px; }
+  .brand { font-weight: 800; font-size: 21px; color: var(--brand); margin-bottom: 26px; }
+  h1 { font-size: 20px; margin: 0 0 14px; }
+  p { margin: 0 0 15px; font-size: 14.5px; }
+  .cta { display: inline-block; background: var(--brand); color: #fff; text-decoration: none;
+         font-weight: 700; font-size: 15px; padding: 13px 28px; border-radius: 8px; margin: 8px 0 18px; }
+  .fallback { font-size: 12.5px; color: var(--muted); word-break: break-all;
+              background: #f9fafb; border: 1px solid var(--line); border-radius: 7px; padding: 11px 13px; }
+  .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 34px;
+          font-weight: 800; letter-spacing: .16em; text-align: center; padding: 18px;
+          background: #f9fafb; border: 1px solid var(--line); border-radius: 9px; margin: 4px 0 18px; }
+  .foot { margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--line);
+          font-size: 12.5px; color: var(--muted); }
+</style>
+
+<div class="client">
+  <div class="cap">Email 1 — sent once, to confirm the recovery address</div>
+  <div class="meta">
+    <div class="subj">Confirm your recovery email for Grand Plaza</div>
+    Vyaapar &lt;no-reply@vyaapar.app&gt; → owner@grandplaza.demo
+  </div>
+  <div class="mail">
+    <div class="brand">Vyaapar</div>
+    <h1>Hello Rakesh,</h1>
+    <p>
+      You're the Super Admin for <strong>Grand Plaza</strong>. This inbox is the only thing that
+      can unlock your account if you ever forget your password — so let's make sure it reaches you.
+    </p>
+
+    <a class="cta" href="#">Confirm this address</a>
+
+    <p class="fallback">
+      Or paste this into your browser:<br>
+      https://grandplaza.vyaapar.app/verify-email?token=8f3c1a9e-4b27-4d5a-9c88-2e71fbb0d413
+    </p>
+
+    <p>This link works for 24 hours. Vyaapar keeps working normally in the meantime.</p>
+
+    <div class="foot">
+      Didn't expect this? Someone may have typed your address by mistake. Ignore this email and
+      nothing will change.
+    </div>
+  </div>
+</div>
+
+<div class="client">
+  <div class="cap">Email 2 — sent every time a reset is requested</div>
+  <div class="meta">
+    <div class="subj">Your Vyaapar reset code: 418290</div>
+    Vyaapar &lt;no-reply@vyaapar.app&gt; → owner@grandplaza.demo
+  </div>
+  <div class="mail">
+    <div class="brand">Vyaapar</div>
+    <h1>Your reset code</h1>
+    <p>Enter this on the reset screen to choose a new password:</p>
+
+    <div class="code">418290</div>
+
+    <p>It expires in 10 minutes and can be used once.</p>
+
+    <div class="foot">
+      Didn't ask for this? Someone typed your address on the login screen. Your password has not
+      changed and nothing happens unless this code is used — but if it keeps arriving, change
+      your password.
+    </div>
+  </div>
+</div>

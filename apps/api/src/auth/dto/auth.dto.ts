@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
+import { IsEmail, IsString, Matches, MinLength, IsOptional } from 'class-validator';
 import { IsStrongPassword } from '../../common/validators/is-strong-password.decorator';
 
 export class LoginDto {
@@ -65,13 +65,19 @@ export class ResetPasswordDto {
   @IsEmail()
   email: string;
 
-  // Role-specific reset key (Super Admin / Admin / Biller key) — replaces email OTP.
-  @IsString()
-  roleKey: string;
+  // The six-digit code emailed by /auth/forgot-password.
+  @Matches(/^\d{6}$/, { message: 'Enter the six-digit code from your email' })
+  code: string;
 
   @IsString()
   @IsStrongPassword()
   newPassword: string;
+}
+
+export class ConfirmEmailDto {
+  @IsString()
+  @MinLength(32)
+  token: string;
 }
 
 export class ChangePasswordDto {

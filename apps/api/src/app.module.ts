@@ -4,6 +4,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { MailModule } from './mail/mail.module';
 import { BusinessesModule } from './businesses/businesses.module';
 import { BranchesModule } from './branches/branches.module';
 import { UsersModule } from './users/users.module';
@@ -41,6 +42,7 @@ import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter'
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     PrismaModule,
+    MailModule,
     AuthModule,
     BusinessesModule,
     BranchesModule,

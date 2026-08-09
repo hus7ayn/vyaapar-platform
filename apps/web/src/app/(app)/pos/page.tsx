@@ -271,7 +271,7 @@ export default function PosPage() {
       }
       try {
         const item = await api<{
-          id: string; name: string; sku: string; barcode?: string;
+          id: string; name: string; sku: string; barcode?: string; itemType?: string;
           salePrice: number | string; taxRate: number | string; hsnCode?: string; baseUnit?: string;
         }>(`/items/barcode/${encodeURIComponent(trimmed)}`, { token, branchId, timeoutMs: 8_000 });
         addProduct({
@@ -283,6 +283,7 @@ export default function PosPage() {
           taxRate: Number(item.taxRate),
           hsnCode: item.hsnCode,
           unit: item.baseUnit ?? 'PCS',
+          itemType: item.itemType === 'SERVICE' ? 'SERVICE' : 'PRODUCT',
           salePriceTaxInclusive: false,
         });
       } catch {
@@ -515,12 +516,14 @@ export default function PosPage() {
                               {formatCurrency(p.retailPrice)}
                               <span className="text-[10px] font-normal text-muted-foreground">/{p.unit}</span>
                             </p>
-                            {p.stockQty != null && (
+                            {p.stockQty != null ? (
                               <p className={cn('text-[10px] mt-0.5 flex items-center gap-0.5', lowStock ? 'text-orange-600' : 'text-muted-foreground')}>
                                 {lowStock && <AlertTriangle className="h-3 w-3" />}
                                 Stock: {p.stockQty}
                               </p>
-                            )}
+                            ) : p.itemType === 'SERVICE' ? (
+                              <p className="text-[10px] mt-0.5 text-muted-foreground">Service</p>
+                            ) : null}
                           </button>
                         );
                       })}

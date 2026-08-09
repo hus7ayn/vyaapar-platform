@@ -22,3 +22,9 @@ export class CreateUserDto {
   @IsString()
   branchId?: string;
 }
+
+export class SetUserPasswordDto {
+  @IsString()
+  @IsStrongPassword()
+  newPassword: string;
+}

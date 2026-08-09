@@ -1,9 +1,10 @@
-import { Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Permission } from '@nexus/shared';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { GenerateRemindersDto, RescheduleReminderDto } from './dto/reminders.dto';
 import { RemindersService } from './reminders.service';
 
 @ApiTags('payment-reminders')
@@ -27,8 +28,19 @@ export class RemindersController {
   generate(
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('branchId') branchId: string | undefined,
+    @Body() dto: GenerateRemindersDto,
   ) {
-    return this.reminders.generate(businessId, branchId);
+    return this.reminders.generate(businessId, branchId, dto?.remindOn);
+  }
+
+  @Patch(':id')
+  @RequirePermissions(Permission.EXPENSE_MANAGE)
+  reschedule(
+    @CurrentUser('businessId') businessId: string,
+    @Param('id') id: string,
+    @Body() dto: RescheduleReminderDto,
+  ) {
+    return this.reminders.reschedule(businessId, id, dto.remindOn);
   }
 
   @Post(':id/send')

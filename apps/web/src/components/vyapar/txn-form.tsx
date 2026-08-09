@@ -52,13 +52,21 @@ interface FormLine {
   quantity: string;
   unit: string;
   unitPrice: string;
-  discountPercent: string;
+  /** Raw discount input — read as a percentage or a rupee amount depending on discountType. */
+  discountValue: string;
+  discountType: 'PCT' | 'AMT';
   taxRate: string;
+}
+
+/** Discount on one line, in rupees. A rupee discount can never exceed the line's gross. */
+function lineDiscount(l: FormLine, gross: number): number {
+  const value = Number(l.discountValue) || 0;
+  return l.discountType === 'AMT' ? Math.min(value, gross) : gross * (value / 100);
 }
 
 let lineKey = 1;
 const emptyLine = (): FormLine => ({
-  key: lineKey++, name: '', quantity: '1', unit: 'PCS', unitPrice: '', discountPercent: '', taxRate: '0',
+  key: lineKey++, name: '', quantity: '1', unit: 'PCS', unitPrice: '', discountValue: '', discountType: 'PCT', taxRate: '0',
 });
 
 export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: Txn }) {
@@ -85,7 +93,8 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
           quantity: String(l.quantity),
           unit: l.unit,
           unitPrice: String(l.unitPrice),
-          discountPercent: l.discountPercent ? String(l.discountPercent) : '',
+          discountValue: l.discountPercent ? String(l.discountPercent) : (Number(l.discountAmount) ? String(l.discountAmount) : ''),
+          discountType: (l.discountPercent ? 'PCT' : Number(l.discountAmount) ? 'AMT' : 'PCT') as 'PCT' | 'AMT',
           taxRate: String(l.taxRate),
         }))
       : [emptyLine()],
@@ -174,7 +183,7 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
       const qty = Number(l.quantity) || 0;
       const price = Number(l.unitPrice) || 0;
       const gross = qty * price;
-      const disc = gross * ((Number(l.discountPercent) || 0) / 100);
+      const disc = lineDiscount(l, gross);
       itemDiscount += disc;
       const taxable = gross - disc;
       subtotal += taxable;
@@ -229,7 +238,12 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
             quantity: Number(l.quantity),
             unit: l.unit,
             unitPrice: Number(l.unitPrice) || 0,
-            discountPercent: l.discountPercent ? Number(l.discountPercent) : undefined,
+            // Send EITHER a percentage OR a rupee amount — txn-core reads discountAmount only
+            // when discountPercent is absent.
+            discountPercent: l.discountType === 'PCT' && l.discountValue ? Number(l.discountValue) : undefined,
+            discountAmount: l.discountType === 'AMT' && l.discountValue
+              ? Math.min(Number(l.discountValue), (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0))
+              : undefined,
             taxRate: Number(l.taxRate) || 0,
           }));
         // Bill-level discount: send EITHER a percentage OR a fixed amount (never both, so the
@@ -265,6 +279,8 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
   const validate = () => {
     if (isPayment && !partyId && txnType === 'PAYMENT_IN') { toast.error('Select a party'); return false; }
     if (isExpense && !expenseCategoryId) { toast.error('Select an expense category'); return false; }
+    // An expense without a payee can't be traced back to anyone when the books are reviewed.
+    if (isExpense && !partyId && !partySearch.trim()) { toast.error('Enter who this expense was paid to'); return false; }
     if (meta.hasLines && !lines.some((l) => (l.itemId || l.name) && Number(l.quantity) > 0)) {
       toast.error('Add at least one item'); return false;
     }
@@ -296,10 +312,12 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
       {/* Party + dates */}
       <div className="bg-white rounded-lg border shadow-sm p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="relative md:col-span-1">
-          <label className="text-xs font-semibold text-muted-foreground">{meta.partyLabel}</label>
+          <label className="text-xs font-semibold text-muted-foreground">
+            {meta.partyLabel}{isExpense && <span className="text-red-600"> *</span>}
+          </label>
           <Input
             value={partySearch}
-            placeholder={`Search ${meta.partyLabel.toLowerCase()}…`}
+            placeholder={isExpense ? 'Who was this paid to?' : `Search ${meta.partyLabel.toLowerCase()}…`}
             onChange={(e) => { setPartySearch(e.target.value); setPartyId(undefined); setPartyOpen(true); }}
             onFocus={() => setPartyOpen(true)}
             onBlur={() => setTimeout(() => setPartyOpen(false), 150)}
@@ -390,7 +408,7 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
                 <th className="px-2 py-2 text-right w-20">QTY</th>
                 <th className="px-2 py-2 text-left w-20">UNIT</th>
                 <th className="px-2 py-2 text-right w-28">PRICE/UNIT</th>
-                <th className="px-2 py-2 text-right w-20">DISC %</th>
+                <th className="px-2 py-2 text-right w-32">DISCOUNT</th>
                 <th className="px-2 py-2 text-right w-20">TAX %</th>
                 <th className="px-2 py-2 text-right w-28">AMOUNT</th>
                 <th className="w-10" />
@@ -400,7 +418,7 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
               {lines.map((l, idx) => {
                 const qty = Number(l.quantity) || 0;
                 const gross = qty * (Number(l.unitPrice) || 0);
-                const disc = gross * ((Number(l.discountPercent) || 0) / 100);
+                const disc = lineDiscount(l, gross);
                 const lineTotal = (gross - disc) * (1 + (Number(l.taxRate) || 0) / 100);
                 return (
                   <tr key={l.key} className="border-t align-top">
@@ -446,7 +464,26 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
                       <Input className="h-9 text-right" type="number" min="0" step="0.01" value={l.unitPrice} onChange={(e) => updateLine(l.key, { unitPrice: e.target.value })} />
                     </td>
                     <td className="px-2 py-1.5">
-                      <Input className="h-9 text-right" type="number" min="0" max="100" value={l.discountPercent} onChange={(e) => updateLine(l.key, { discountPercent: e.target.value })} />
+                      <div className="flex items-stretch">
+                        <Input
+                          className="h-9 text-right rounded-r-none"
+                          type="number"
+                          min="0"
+                          max={l.discountType === 'PCT' ? 100 : undefined}
+                          step="0.01"
+                          placeholder={l.discountType === 'PCT' ? '%' : '₹'}
+                          value={l.discountValue}
+                          onChange={(e) => updateLine(l.key, { discountValue: e.target.value })}
+                        />
+                        <button
+                          type="button"
+                          title={l.discountType === 'PCT' ? 'Switch to a discount in ₹' : 'Switch to a discount in %'}
+                          className="shrink-0 w-9 rounded-r-md border border-l-0 bg-muted/60 text-xs font-semibold hover:bg-muted"
+                          onClick={() => updateLine(l.key, { discountType: l.discountType === 'PCT' ? 'AMT' : 'PCT' })}
+                        >
+                          {l.discountType === 'PCT' ? '%' : '₹'}
+                        </button>
+                      </div>
                     </td>
                     <td className="px-2 py-1.5">
                       <Input className="h-9 text-right" type="number" min="0" value={l.taxRate} onChange={(e) => updateLine(l.key, { taxRate: e.target.value })} />
