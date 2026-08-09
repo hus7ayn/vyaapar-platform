@@ -182,8 +182,10 @@ model Session {
 model OtpCode {
   id        String   @id @default(uuid())
   // Bound to an account, not just an address: one email can own accounts in two businesses, so
-  // an address alone cannot say which password a code is allowed to change.
-  userId    String   @map("user_id")
+  // an address alone cannot say which password a code is allowed to change. Nullable only so the
+  // column can be added to a table that already holds legacy rows via `prisma db push`; every code
+  // the app creates sets it, and the reset query requires a related user, so a NULL row is inert.
+  userId    String?  @map("user_id")
   email     String
   code      String
   purpose   String   @default("PASSWORD_RESET")
@@ -191,7 +193,7 @@ model OtpCode {
   used      Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([email])
   @@index([userId])

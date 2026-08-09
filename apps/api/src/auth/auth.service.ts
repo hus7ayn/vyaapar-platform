@@ -93,17 +93,21 @@ export class AuthService {
       include: { user: { include: { business: true } } },
     });
     // One message for wrong, expired and already-spent alike — none of them should tell an
-    // attacker which of the three it was.
-    if (!otp) throw new UnauthorizedException('Invalid or expired code');
+    // attacker which of the three it was. (otp.user is nullable in the type because the FK column
+    // is nullable, but the query filters on the relation, so a matched row always has a user.)
+    if (!otp || !otp.user) throw new UnauthorizedException('Invalid or expired code');
 
     // Checked before the code is spent, so a disabled account doesn't burn its own code.
     this.assertLoginAllowed(otp.user);
 
     const passwordHash = await bcrypt.hash(newPassword, 12);
+    // otp.user is guaranteed non-null here (the query filters on the `user` relation), so use its
+    // id rather than the now-nullable otp.userId column.
+    const targetUserId = otp.user.id;
     await this.prisma.$transaction([
       this.prisma.otpCode.update({ where: { id: otp.id }, data: { used: true } }),
       this.prisma.user.update({
-        where: { id: otp.userId },
+        where: { id: targetUserId },
         data: {
           passwordHash,
           failedAttempts: 0,
@@ -112,7 +116,7 @@ export class AuthService {
           emailVerifiedAt: otp.user.emailVerifiedAt ?? new Date(),
         },
       }),
-      this.prisma.session.deleteMany({ where: { userId: otp.userId } }),
+      this.prisma.session.deleteMany({ where: { userId: targetUserId } }),
     ]);
 
     return this.issueTokens(
