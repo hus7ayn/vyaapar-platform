@@ -11,9 +11,10 @@ import { toast } from 'sonner';
 import { isStrongPassword, PASSWORD_POLICY_MESSAGE } from '@nexus/shared';
 
 /**
- * Two steps: ask for a code, then spend it. Only a Super Admin can recover this way — staff are
- * reset by their Super Admin from the Users screen. The server's reply to step one is deliberately
- * identical whatever address is typed, so this screen can't be used to find out who is who.
+ * Two steps: ask for a code, then spend it. Any registered user can recover their own account by
+ * email (staff with no email can still be reset by their Super Admin from the Users screen). The
+ * server's reply to step one is deliberately identical whatever address is typed, so this screen
+ * can't be used to find out who is who.
  */
 export default function ForgotPasswordPage() {
   const [step, setStep] = useState<'request' | 'code'>('request');
@@ -90,9 +91,9 @@ export default function ForgotPasswordPage() {
                 {loading ? 'Sending…' : 'Send me a code'}
               </Button>
               <p className="rounded-lg border bg-muted/40 p-3 text-[11px] text-muted-foreground">
-                <strong className="text-foreground">Working the counter?</strong> Only the shop&apos;s
-                Super Admin can reset their own password by email. Ask them to set a new one for you
-                from the Users screen — it takes seconds and works even with the internet down.
+                Enter the email registered on your account and we&apos;ll send a 6-digit code to reset
+                your password. No email on your account? Ask your Super Admin to set a new one for you
+                from the Users screen.
               </p>
             </form>
           ) : (

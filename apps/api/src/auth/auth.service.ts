@@ -25,8 +25,8 @@ export const SELF_RESET_ROLES: readonly string[] = [SystemRole.ADMIN, SystemRole
  * and a successful send, so the endpoint can't be used to discover which accounts exist.
  */
 export const GENERIC_RESET_REPLY =
-  'If that address can recover its own account, a six-digit code is on its way. '
-  + 'Otherwise, ask your Super Admin to set a new password for you.';
+  'If that email is registered, a six-digit reset code is on its way. '
+  + 'Enter it on the next screen to set a new password.';
 
 const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES) || 10;
 
@@ -49,8 +49,13 @@ export class AuthService {
    * The reply never varies, so this can't be used to discover which accounts exist.
    */
   async forgotPassword(email: string): Promise<{ message: string }> {
+    // Every registered user can recover their own account by email — a standard forgot-password
+    // flow for all roles (biller, cashier, accountant, admin…), not just the owner. One code is
+    // created per account on this address, since the same email can own accounts in more than one
+    // business. (An admin can still set a staff password manually from the Users screen as a
+    // fallback for accounts with no/incorrect email.)
     const users = await this.prisma.user.findMany({
-      where: { email, deletedAt: null, role: { in: [...SELF_RESET_ROLES] } },
+      where: { email, deletedAt: null },
       include: { business: true },
     });
 
