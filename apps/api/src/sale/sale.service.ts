@@ -12,48 +12,54 @@ export class SaleService {
   // ─── Sale Invoices (also powers POS) ───────────────────────────────────────
 
   async createInvoice(businessId: string, userId: string, body: SaleBody) {
-    const doCreate = async () => {
-      const txn = await this.core.createTxn(businessId, userId, { ...body, txnType: 'SALE_INVOICE' });
-      this.events.emitOrderUpdate(businessId, txn.branchId ?? '', txn);
-      return txn;
-    };
+    const create = (tx?: Prisma.TransactionClient) =>
+      this.core.createTxn(businessId, userId, { ...body, txnType: 'SALE_INVOICE' }, tx);
 
-    // No clientId and no party → nothing to guard, create directly.
-    if (!body.clientId && !body.partyId) return doCreate();
+    // No clientId and no party → nothing to guard, create directly (createTxn owns the transaction).
+    let txn;
+    if (!body.clientId && !body.partyId) {
+      txn = await create();
+    } else {
+      // Idempotency + credit check + the create ALL run in ONE advisory-locked transaction on ONE
+      // connection: createTxn writes on this same `tx` (see its `existingTx` param) instead of
+      // opening a nested transaction that would need a second pooled connection — which, under the
+      // POS's burst of concurrent requests, could not always be acquired and timed the sale out
+      // ("A database error occurred"). The advisory lock is held until this transaction commits, so
+      // a second request with the same clientId blocks, then sees the first invoice and returns it
+      // instead of creating a duplicate — safe under a retried/double-submitted checkout, with no
+      // reliance on a unique index (which a bulk `prisma db push` could fail to add on live data).
+      txn = await this.core.prisma.$transaction(async (tx) => {
+        if (body.clientId) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`saleinv:${businessId}:${body.clientId}`}))`;
+          // Match only FINALISED sales (never a HELD placeholder) so completing a bill after a
+          // held one with the same key can't return the unpaid hold as if it were a real sale.
+          const existing = await tx.txn.findFirst({
+            where: { businessId, clientId: body.clientId, txnType: 'SALE_INVOICE', status: { not: 'HELD' } },
+          });
+          if (existing) return existing;
+        }
 
-    // Wrap the idempotency check + create in ONE advisory-locked transaction. The xact lock is
-    // held until this outer transaction commits — which happens AFTER createTxn's own inner insert
-    // has committed — so a second request carrying the same clientId blocks here, then sees the
-    // first invoice below and returns it instead of creating a duplicate. This makes a
-    // retried/double-submitted/timed-out checkout safe even under a slow server, atomically, with
-    // no reliance on a unique index (which a bulk `prisma db push` could fail to add on live data).
-    return this.core.prisma.$transaction(async (tx) => {
-      if (body.clientId) {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`saleinv:${businessId}:${body.clientId}`}))`;
-        // Match only FINALISED sales (never a HELD placeholder) so completing a bill after a
-        // held one with the same key can't return the unpaid hold as if it were a real sale.
-        const existing = await tx.txn.findFirst({
-          where: { businessId, clientId: body.clientId, txnType: 'SALE_INVOICE', status: { not: 'HELD' } },
-        });
-        if (existing) return existing;
-      }
-
-      // Credit-limit check. Serialize per-party via a Postgres advisory lock so two concurrent
-      // sales for the same party can't both read a stale currentBalance and jointly exceed creditLimit.
-      if (body.partyId) {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${body.partyId}))`;
-        const party = await tx.party.findFirst({ where: { id: body.partyId, businessId } });
-        if (party?.creditLimit != null) {
-          const paidAmount = (body.payments ?? []).filter((p) => p.paymentType !== 'DEBT').reduce((s, p) => s + p.amount, 0);
-          const balance = Number(body.total) - paidAmount;
-          if (Number(party.currentBalance) + balance > Number(party.creditLimit)) {
-            throw new BadRequestException(`Credit limit exceeded for ${party.name}`);
+        // Credit-limit check. Serialize per-party via a Postgres advisory lock so two concurrent
+        // sales for the same party can't both read a stale currentBalance and jointly exceed creditLimit.
+        if (body.partyId) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${body.partyId}))`;
+          const party = await tx.party.findFirst({ where: { id: body.partyId, businessId } });
+          if (party?.creditLimit != null) {
+            const paidAmount = (body.payments ?? []).filter((p) => p.paymentType !== 'DEBT').reduce((s, p) => s + p.amount, 0);
+            const balance = Number(body.total) - paidAmount;
+            if (Number(party.currentBalance) + balance > Number(party.creditLimit)) {
+              throw new BadRequestException(`Credit limit exceeded for ${party.name}`);
+            }
           }
         }
-      }
 
-      return doCreate();
-    });
+        return create(tx);
+      }, { maxWait: 15000, timeout: 30000 });
+    }
+
+    // Emit AFTER the transaction commits so subscribers never read the row before it exists.
+    this.events.emitOrderUpdate(businessId, txn.branchId ?? '', txn);
+    return txn;
   }
 
   listInvoices(businessId: string, q: Record<string, string>) {

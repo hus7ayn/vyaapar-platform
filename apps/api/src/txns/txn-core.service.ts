@@ -535,7 +535,7 @@ export class TxnCoreService {
 
   // ─── Create ────────────────────────────────────────────────────────────────
 
-  async createTxn(businessId: string, userId: string | null, input: CreateTxnInput) {
+  async createTxn(businessId: string, userId: string | null, input: CreateTxnInput, existingTx?: Tx) {
     const txnType = input.txnType;
     const isSaleSide = ['SALE_INVOICE', 'CREDIT_NOTE', 'SALE_ORDER', 'DELIVERY_CHALLAN', 'ESTIMATE'].includes(txnType);
     const isPaymentTxn = txnType === 'PAYMENT_IN' || txnType === 'PAYMENT_OUT';
@@ -589,7 +589,7 @@ export class TxnCoreService {
 
     const date = input.date ? new Date(input.date) : new Date();
 
-    return this.prisma.$transaction(async (tx) => {
+    const run = async (tx: Tx) => {
       const { prefix, txnNumber } = await this.nextNumber(tx, businessId, txnType, input.branchId);
 
       const txn = await tx.txn.create({
@@ -634,7 +634,15 @@ export class TxnCoreService {
       }
 
       return txn;
-    });
+    };
+
+    // When the caller already holds a transaction (e.g. the POS idempotency lock in
+    // createInvoice), run on it — no nested $transaction, which would need a second pooled
+    // connection and could time out / exhaust the pool under load. Otherwise own the transaction,
+    // with generous timeouts so a slow moment never aborts a sale/purchase mid-write.
+    return existingTx
+      ? run(existingTx)
+      : this.prisma.$transaction(run, { maxWait: 15000, timeout: 30000 });
   }
 
   /** Apply all side effects of an already-created txn record. */
