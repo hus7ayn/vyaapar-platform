@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["bom1"],
+  "regions": ["iad1"],
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
   "buildCommand": "cd ../.. && pnpm --filter @nexus/shared build && pnpm --filter @nexus/api exec prisma generate && pnpm --filter @nexus/api exec prisma db push --skip-generate && pnpm --filter @nexus/api build",
   "rewrites": [
