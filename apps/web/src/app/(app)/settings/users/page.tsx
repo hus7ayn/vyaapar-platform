@@ -21,6 +21,10 @@ interface UserRow {
   role: string;
   isActive: boolean;
   isApproved: boolean;
+  // Set after too many wrong passwords. Shown here because it is otherwise invisible: the
+  // account looks perfectly healthy in this list while the person is being turned away.
+  isLocked: boolean;
+  failedAttempts: number;
 }
 
 interface BranchRow {
@@ -106,6 +110,13 @@ export default function UsersPage() {
   const approve = useMutation({
     mutationFn: (id: string) => api(`/users/${id}/approve`, { method: 'PATCH', token }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('Account approved'); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Five wrong passwords lock an account. This clears the counter without touching the password.
+  const unlock = useMutation({
+    mutationFn: (id: string) => api(`/users/${id}/unlock`, { method: 'PATCH', token }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('Account unlocked — they can sign in again'); },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -216,8 +227,10 @@ export default function UsersPage() {
         <p className="text-xs text-muted-foreground">
           {PASSWORD_POLICY_MESSAGE}.
         </p>
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-          New Admin &amp; Biller accounts start <strong>pending</strong> — a Super Admin must approve them before they can sign in.
+        <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+          The account works <strong>immediately</strong> — tell them this email and password and they can sign in
+          straight away. Give each person their <strong>own</strong> email address: sharing one with another
+          account makes sign-in ambiguous for both.
         </p>
         <Button onClick={submit} disabled={!form.branchId || create.isPending}>Create user</Button>
       </Card>
@@ -231,10 +244,16 @@ export default function UsersPage() {
               <p className="font-medium flex items-center gap-2 flex-wrap">
                 {u.firstName} {u.lastName}
                 {!u.isApproved && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">PENDING APPROVAL</span>}
-                {!u.isActive && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-semibold">DISABLED</span>}
+                {!u.isActive && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-semibold">DISABLED — CANNOT SIGN IN</span>}
+                {u.isLocked && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-semibold">LOCKED — TOO MANY FAILED SIGN-INS</span>}
                 {isSelf && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">You</span>}
               </p>
               <p className="text-sm text-muted-foreground truncate">{u.email}</p>
+              {u.isLocked && (
+                <p className="text-xs text-rose-700">
+                  {u.failedAttempts} failed attempt{u.failedAttempts === 1 ? '' : 's'} — press Unlock, or set a new password for them.
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm px-3 py-1 rounded-full bg-secondary">
@@ -249,6 +268,15 @@ export default function UsersPage() {
                       onClick={() => approve.mutate(u.id)}
                     >
                       Approve
+                    </Button>
+                  )}
+                  {u.isLocked && (
+                    <Button
+                      size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                      disabled={unlock.isPending}
+                      onClick={() => unlock.mutate(u.id)}
+                    >
+                      Unlock
                     </Button>
                   )}
                   <Button

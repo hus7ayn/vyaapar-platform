@@ -131,8 +131,10 @@ model User {
   role          String
   permissions   String[]  @default([])
   isActive      Boolean   @default(true) @map("is_active")
-  // Super Admin approval gate. Defaults true so every EXISTING user + business owner stays
-  // approved; new staff (Admin/Biller/…) are created with isApproved=false = pending access.
+  // Approval gate, kept for accounts that arrive by some future self-signup route. Staff added
+  // from the Users screen are created approved: an admin with USER_MANAGE typing in their name
+  // and password IS the approval, and forcing a second click only ever produced new accounts
+  // that could not sign in. Defaults true so no existing row is ever locked out by this column.
   isApproved    Boolean   @default(true) @map("is_approved")
   approvedById  String?   @map("approved_by_id")
   approvedAt    DateTime? @map("approved_at")

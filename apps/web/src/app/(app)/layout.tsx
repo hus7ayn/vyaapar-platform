@@ -58,13 +58,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!accessToken) return null;
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen w-full">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* min-w-0 keeps a wide table inside a page from stretching this column past the
+          viewport — the overflow then stays inside <main> (or the table's own
+          overflow-x-auto wrapper) instead of scrolling the whole page sideways. */}
+      <div className="flex-1 flex flex-col min-w-0 max-w-full">
         <DesktopAppBanner />
         <ConnectionBanner />
         <TopBar />
-        <main className="flex-1 overflow-auto pb-20 lg:pb-0">{children}</main>
+        <main className="flex-1 min-w-0 overflow-auto pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-0">
+          {children}
+        </main>
       </div>
       <MobileNav />
     </div>

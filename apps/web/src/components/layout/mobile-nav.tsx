@@ -30,7 +30,7 @@ export function MobileNav() {
           const active = item.match(pathname);
           const Icon = item.icon;
           return (
-            <Link key={item.label} href={item.href} className={cn('flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold min-w-[52px] shrink-0', active ? 'text-[hsl(348,85%,52%)]' : 'text-muted-foreground')}>
+            <Link key={item.label} href={item.href} className={cn('flex flex-col items-center gap-0.5 px-1.5 py-1 text-[10px] font-semibold min-w-[44px] shrink-0', active ? 'text-[hsl(348,85%,52%)]' : 'text-muted-foreground')}>
               <div className={cn('p-1 rounded-lg', active && 'bg-[hsl(348,85%,96%)]')}>
                 <Icon className="h-5 w-5" />
               </div>

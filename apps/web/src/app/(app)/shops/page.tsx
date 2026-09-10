@@ -89,7 +89,7 @@ export default function ShopsPage() {
     <div className="p-4 lg:p-6 space-y-8 max-w-4xl">
       {/* Shops */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold flex items-center gap-2">
               <Store className="h-5 w-5 text-[hsl(348,85%,52%)]" /> Shops

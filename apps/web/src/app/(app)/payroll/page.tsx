@@ -312,9 +312,9 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
             Staff, runs &amp; payslips are scoped to the selected shop below — each shop stays separate
           </p>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex min-w-0 gap-2 items-center">
           <select
-            className="h-10 rounded-lg border px-3 text-sm bg-background"
+            className="h-10 min-w-0 flex-1 sm:flex-none rounded-lg border px-3 text-sm bg-background"
             value={entityId}
             onChange={(e) => setEntityId(e.target.value)}
             title="Payroll entity"
@@ -348,12 +348,13 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
 
       {tab === 'staff' && (
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap justify-between items-center gap-2">
             <p className="text-sm text-muted-foreground">Staff for the selected shop</p>
             <Button onClick={() => setEmpOpen(true)}><Plus className="h-4 w-4 mr-1" /> Add Staff</Button>
           </div>
           <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[720px]">
               <thead>
                 <tr className="text-xs text-muted-foreground border-b bg-slate-50">
                   <th className="px-3 py-2 text-left">ID</th>
@@ -385,6 +386,7 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -428,7 +430,8 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
                     </div>
                   </div>
                 </div>
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[720px]">
                   <thead>
                     <tr className="text-xs text-muted-foreground border-b">
                       <th className="py-1 text-left">Staff</th>
@@ -471,6 +474,7 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             ))}
             {!(payrolls ?? []).length && (

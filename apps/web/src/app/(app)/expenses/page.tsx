@@ -59,7 +59,8 @@ export default function ExpensesPage() {
       </div>
 
       <div className="rounded-xl border overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
           <thead className="bg-muted/50">
             <tr>
               <th className="text-left p-3">#</th>
@@ -103,6 +104,7 @@ export default function ExpensesPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

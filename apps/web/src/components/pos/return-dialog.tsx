@@ -64,12 +64,32 @@ export function ReturnDialog({
     return s + (Number(l.total ?? 0) * qtyOf(l)) / purchased;
   }, 0);
 
+  // What each item on THIS invoice was actually sold for — the historical unit price net of the
+  // line discount that was given at the till, plus the tax rate charged at the time. An exchange
+  // must be priced off this, never off the catalogue's current salePrice, so a price the shop
+  // changed later (or a discount already granted) can't silently re-price the swap. Mirrors
+  // SaleService.exchangeInvoice, which builds the replacement lines the same way.
+  const soldAs = new Map<string, { unitPrice: number; taxRate: number }>();
+  for (const l of lines) {
+    const itemId = l.itemId ?? undefined;
+    if (!itemId || soldAs.has(itemId)) continue;
+    const soldQty = purchasedOf(l) || 1;
+    soldAs.set(itemId, {
+      unitPrice: Number(l.unitPrice) - Number(l.discountAmount ?? 0) / soldQty,
+      taxRate: Number(l.taxRate) || 0,
+    });
+  }
+  /** Exchange price for an item: what it was sold for on this bill, else its current sale price. */
+  const priceOf = (it: CatalogItem) =>
+    soldAs.get(it.id) ?? { unitPrice: Number(it.salePrice), taxRate: Number(it.taxRate) || 0 };
+
   const catalogItems = catalog ?? [];
   const replacementRows = Object.entries(replacements).filter(([, q]) => q > 0);
   const newTotal = replacementRows.reduce((sum, [itemId, qty]) => {
     const it = catalogItems.find((c) => c.id === itemId);
     if (!it) return sum;
-    return sum + Number(it.salePrice) * qty * (1 + Number(it.taxRate) / 100);
+    const { unitPrice, taxRate } = priceOf(it);
+    return sum + unitPrice * qty * (1 + taxRate / 100);
   }, 0);
   const diff = newTotal - returnedTotal;
 
@@ -131,7 +151,9 @@ export function ReturnDialog({
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{l.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {purchased} {l.unit} × {formatCurrency(Number(l.unitPrice))}
+                        {/* The price the customer was actually charged per unit (net of the line
+                            discount on this bill) — not the item's list price. */}
+                        {purchased} {l.unit} × {formatCurrency(Number(l.unitPrice) - Number(l.discountAmount ?? 0) / (purchased || 1))}
                         {alreadyReturned > 0 ? ` · ${alreadyReturned} returned` : ''}
                         {remaining === 0 ? ' · fully returned' : ` · ${remaining} returnable`}
                       </p>
@@ -202,24 +224,30 @@ export function ReturnDialog({
                           value={qty}
                           onChange={(e) => setReplacements((r) => ({ ...r, [itemId]: Math.max(0, Number(e.target.value)) }))}
                         />
-                        <span className="w-20 text-right">{formatCurrency(Number(it?.salePrice ?? 0) * qty)}</span>
+                        <span className="w-20 text-right">{formatCurrency(it ? priceOf(it).unitPrice * qty : 0)}</span>
                       </div>
                     );
                   })}
                 </div>
               )}
               {!catalog && <p className="text-center text-muted-foreground">Loading catalog…</p>}
-              {filtered.map((it) => (
-                <button
-                  key={it.id}
-                  type="button"
-                  className="w-full flex items-center justify-between p-2 rounded-lg border hover:bg-accent text-left"
-                  onClick={() => setReplacements((r) => ({ ...r, [it.id]: (r[it.id] ?? 0) + 1 }))}
-                >
-                  <span className="text-sm truncate">{it.name}</span>
-                  <span className="text-sm font-medium">{formatCurrency(Number(it.salePrice))}</span>
-                </button>
-              ))}
+              {filtered.map((it) => {
+                const sold = soldAs.get(it.id);
+                return (
+                  <button
+                    key={it.id}
+                    type="button"
+                    className="w-full flex items-center justify-between gap-2 p-2 rounded-lg border hover:bg-accent text-left"
+                    onClick={() => setReplacements((r) => ({ ...r, [it.id]: (r[it.id] ?? 0) + 1 }))}
+                  >
+                    <span className="text-sm truncate">{it.name}</span>
+                    <span className="text-sm font-medium shrink-0 text-right">
+                      {formatCurrency(priceOf(it).unitPrice)}
+                      {sold && <span className="block text-[10px] font-normal text-muted-foreground">as sold on this bill</span>}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             <div className="p-4 border-t space-y-2">
               <div className="flex justify-between text-xs text-muted-foreground">

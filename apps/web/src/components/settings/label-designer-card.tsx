@@ -22,6 +22,10 @@ import {
 } from '@/lib/label-config';
 
 const round = (v: number) => Math.round(v * 2) / 2; // snap to 0.5mm
+
+// 8-digit identity prefix + cost in paise (₹1250.00 → 125000), i.e. the 14-digit shape a
+// four-figure item now produces. See apps/api/src/items/barcode.util.ts.
+const SAMPLE_BARCODE = '89012345125000';
 type Sel = { kind: 'field'; id: LabelField } | { kind: 'custom'; id: string };
 type DragState = {
   sel: Sel;
@@ -117,10 +121,12 @@ export function LabelDesignerCard() {
     if (!token) { toast.error('Please sign in to test print'); return; }
     setTesting(true);
     try {
-      const { dataUrl } = await api<{ dataUrl: string }>(`/items/barcode-image?text=8901234567890`, { token });
+      // A 4-figure sample price (and the matching 14-digit barcode a ₹1250 cost now produces) so
+      // the layout is proved against the WIDEST realistic text, not a 2-digit one that always fits.
+      const { dataUrl } = await api<{ dataUrl: string }>(`/items/barcode-image?text=${SAMPLE_BARCODE}`, { token });
       const sample: TagSpec = {
-        dataUrl, barcode: '8901234567890', name: 'Sample Item', price: 99, qty: 1,
-        mrp: 120, category: 'Category', sku: 'SKU-001', size: 'M', colour: 'Blue',
+        dataUrl, barcode: SAMPLE_BARCODE, name: 'Sample Item', price: 1250, qty: 1,
+        mrp: 1499, category: 'Category', sku: 'SKU-001', size: 'M', colour: 'Blue',
       };
       printBarcodeTags([sample], config);
     } catch {
@@ -135,13 +141,13 @@ export function LabelDesignerCard() {
   const sampleText = (f: LabelField): string => {
     switch (f) {
       case 'name': return 'Item Name';
-      case 'price': return '₹99.00';
-      case 'mrp': return 'MRP ₹120';
+      case 'price': return '₹1250.00';
+      case 'mrp': return 'MRP ₹1499.00';
       case 'category': return 'Category';
       case 'size': return 'M';
       case 'colour': return 'Blue';
       case 'sku': return 'SKU-001';
-      case 'barcodeNumber': return '8901234567890';
+      case 'barcodeNumber': return SAMPLE_BARCODE;
       default: return f;
     }
   };

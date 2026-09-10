@@ -81,7 +81,7 @@ export default function ChequesPage() {
         }
       />
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {['OPEN', 'SETTLED', 'BOUNCED'].map((s) => (
           <button
             key={s}
@@ -98,7 +98,8 @@ export default function ChequesPage() {
       </div>
 
       <div className="rounded-xl border overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[680px]">
           <thead className="bg-muted/50">
             <tr>
               <th className="text-left p-3">Cheque #</th>
@@ -138,6 +139,7 @@ export default function ChequesPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

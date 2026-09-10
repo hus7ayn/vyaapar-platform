@@ -98,6 +98,32 @@ export default function PosPage() {
     [filterProducts, search, categoryFilter],
   );
 
+  // The bill total the pending split was entered against. Every store slice that feeds getTotal()
+  // is subscribed above, so this recomputes on any cart/discount/charge change.
+  const billTotal = getTotal();
+  const [splitFor, setSplitFor] = useState<number | null>(null);
+
+  const clearSplit = useCallback(() => {
+    usePosStore.getState().setSplitPayments([]);
+    setSplitFor(null);
+  }, []);
+
+  // Emptying the bill must also forget its split, or the next customer's sale inherits it.
+  const resetBill = useCallback(() => {
+    clearCart();
+    clearSplit();
+  }, [clearCart, clearSplit]);
+
+  // A split belongs to one exact bill. The moment the bill changes underneath it the amounts are
+  // stale, so drop them rather than let them silently short-pay (or over-pay, which the API
+  // rejects) whatever is rung up next.
+  useEffect(() => {
+    if (splitFor !== null && Math.abs(splitFor - billTotal) > 0.01) {
+      clearSplit();
+      toast.info('Bill changed — split payment cleared');
+    }
+  }, [billTotal, splitFor, clearSplit]);
+
   useEffect(() => startSyncInterval(token, clientId.current), [token]);
   useEffect(() => { searchRef.current?.focus(); }, []);
 
@@ -124,6 +150,15 @@ export default function PosPage() {
       if (status === 'COMPLETED') checkoutIdRef.current = idempotencyKey;
 
       const total = getTotal();
+      // A split is only ever valid for the exact bill it was entered against. If the cart or a
+      // discount moved after the split was confirmed, the amounts no longer add up — the API then
+      // either rejects the sale ("Paid amount exceeds total") or, worse, books it as PARTIAL with a
+      // phantom receivable. Refuse loudly instead of sending a payments array that doesn't balance.
+      const splitSum = splitPayments.reduce((s, p) => s + p.amount, 0);
+      if (status === 'COMPLETED' && splitPayments.length > 0 && Math.abs(splitSum - total) > 0.01) {
+        throw new Error('Bill total changed since the split was entered — please redo the split');
+      }
+
       const payments =
         status === 'COMPLETED'
           ? splitPayments.length > 0
@@ -134,6 +169,21 @@ export default function PosPage() {
       if (status === 'COMPLETED' && payments.some((p) => p.paymentType === 'DEBT') && !customerId) {
         throw new Error('Select a party for credit sale');
       }
+
+      // Exactly ONE bill discount reaches the API. computeTotals() treats discountPercent as
+      // authoritative whenever it is present, so the POS's old habit of always sending it (as 0)
+      // alongside a ₹ amount made the server silently drop the ₹ discount and short-pay the bill.
+      // A flat ₹ discount is therefore sent as its equivalent percentage of the subtotal, which is
+      // precisely how the POS itself applies it — so the server's total matches the screen exactly.
+      const subtotal = getSubtotal();
+      const billDiscountPercent =
+        discountPercent > 0
+          ? discountPercent
+          : secondaryDiscountAmount > 0 && subtotal > 0
+            // Capped at 100%: the POS floors its own taxable amount at zero, so a discount larger
+            // than the goods value must reach the API as "everything off", not a negative total.
+            ? Math.min(100, (secondaryDiscountAmount / subtotal) * 100)
+            : undefined;
 
       const payload = {
         branchId,
@@ -149,8 +199,8 @@ export default function PosPage() {
           hsnCode: c.hsnCode,
         })),
         payments,
-        discountPercent,
-        discountAmount: secondaryDiscountAmount,
+        discountPercent: billDiscountPercent,
+        discountAmount: undefined,
         additionalCharges: additionalCharges > 0 ? [{ name: 'Additional', amount: additionalCharges }] : undefined,
         roundOffEnabled: roundOff,
         pointsRedeemed: usePosStore.getState().pointsRedeemed,
@@ -208,13 +258,14 @@ export default function PosPage() {
           setShowReceipt(true);
         }
         clearCart();
-        usePosStore.getState().setSplitPayments([]);
+        clearSplit();
         searchRef.current?.focus();
         // Fire-and-forget: the POS is already responsive; the receipt prints in the background.
         if (print && data?.id) void printThermal(data.id);
       } else {
         toast.success('Bill on hold');
         clearCart();
+        clearSplit();
       }
     },
     onError: (e) => {
@@ -226,6 +277,7 @@ export default function PosPage() {
         checkoutIdRef.current = null;
         toast.info('Saved offline — will sync when online');
         clearCart();
+        clearSplit();
       } else {
         toast.error(e instanceof Error ? e.message : 'Checkout failed');
       }
@@ -313,6 +365,10 @@ export default function PosPage() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // While a modal owns the screen it also owns the keyboard. Otherwise F2/Alt+D yanked focus
+      // out of the split amount the cashier was typing, and Escape reset the search box instead of
+      // closing the dialog in front of them.
+      if (showSplit || editLine) return;
       if (e.altKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         searchRef.current?.focus();
@@ -330,7 +386,7 @@ export default function PosPage() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [cart.length, checkout, pendingCheckout, confirmCheckout]);
+  }, [cart.length, checkout, pendingCheckout, confirmCheckout, showSplit, editLine]);
 
   const gridCols = 4;
   const rowCount = Math.ceil(products.length / gridCols) || 0;
@@ -346,24 +402,34 @@ export default function PosPage() {
   return (
     <div className="h-full flex flex-col bg-[hsl(0,0%,96%)]">
       {/* Vyapar POS top bar */}
-      <div className="shrink-0 bg-[hsl(348,85%,52%)] text-white px-4 py-2 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-white text-[hsl(348,85%,52%)] font-extrabold flex items-center justify-center text-lg">M</div>
-          <div>
+      {/* The action cluster on the right must never be squeezed off the bar: the branding block on
+          the left is the only part allowed to shrink/truncate, every action is shrink-0 with an
+          explicit background AND text colour (this bar sets text-white, so a button that only
+          paints a light background renders invisible), and the row wraps rather than pushing the
+          buttons past the right edge on a narrow screen. */}
+      <div className="shrink-0 bg-[hsl(348,85%,52%)] text-white px-4 py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="h-9 w-9 shrink-0 rounded-lg bg-white text-[hsl(348,85%,52%)] font-extrabold flex items-center justify-center text-lg">M</div>
+          <div className="min-w-0">
             <p className="font-bold text-sm leading-tight">MSW POS</p>
-            <p className="text-[10px] text-white/80">{firm?.name ?? 'Billing'} · Tax Invoice</p>
+            <p className="text-[10px] text-white/80 truncate">{firm?.name ?? 'Billing'} · Tax Invoice</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="text-right hidden sm:block mr-1">
+        <div className="flex items-center gap-2 shrink-0 ml-auto">
+          <div className="text-right hidden md:block mr-1 shrink-0">
             <p className="text-[10px] text-white/80 leading-none">Today&apos;s Sales</p>
             <p className="font-bold text-sm leading-tight">{formatCurrency(todaySales?.summary.totalAmount ?? 0)}</p>
           </div>
           <HeldOrdersPanel branchId={branchId} />
           <RecentOrdersPanel branchId={branchId} />
           {cart.length > 0 && (
-            <Button size="sm" variant="secondary" className="h-8 bg-white/90 text-xs" onClick={() => checkout.mutate({ status: 'HELD' })}>
-              <Pause className="h-3.5 w-3.5 mr-1" /> Hold
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-9 shrink-0 gap-1.5 bg-white/95 text-[hsl(348,85%,52%)] hover:bg-white font-semibold"
+              onClick={() => checkout.mutate({ status: 'HELD' })}
+            >
+              <Pause className="h-3.5 w-3.5" /> Hold
             </Button>
           )}
         </div>
@@ -372,10 +438,14 @@ export default function PosPage() {
       {showScanner && <BarcodeScanner onScan={handleBarcode} onClose={() => setShowScanner(false)} />}
       {showSplit && (
         <SplitPaymentDialog
-          total={getTotal()}
+          total={billTotal}
+          initial={splitPayments}
           onClose={() => setShowSplit(false)}
           onConfirm={(payments) => {
             usePosStore.getState().setSplitPayments(payments);
+            // Remember which bill these amounts belong to so a later cart/discount edit invalidates
+            // them instead of silently posting a payment that no longer matches the total.
+            setSplitFor(billTotal);
             setShowSplit(false);
             setPendingCheckout({ print: false });
           }}
@@ -408,6 +478,24 @@ export default function PosPage() {
               <span>Grand Total</span>
               <span>{formatCurrency(getTotal())}</span>
             </div>
+          </div>
+          <div className="text-sm border-t pt-2">
+            {splitPayments.length > 0 ? (
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Split Payment</p>
+                {splitPayments.map((p) => (
+                  <div key={p.method} className="flex justify-between">
+                    <span className="text-muted-foreground">{p.method}</span>
+                    <span>{formatCurrency(p.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Payment</span>
+                <span>{paymentMethod}</span>
+              </div>
+            )}
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="outline" className="flex-1" onClick={() => setPendingCheckout(null)}>
@@ -543,7 +631,7 @@ export default function PosPage() {
               <p className="text-[10px] text-muted-foreground">Add party for credit / GST invoice</p>
             </div>
             {cart.length > 0 && (
-              <button type="button" onClick={clearCart} className="text-muted-foreground hover:text-destructive p-1">
+              <button type="button" onClick={resetBill} className="text-muted-foreground hover:text-destructive p-1">
                 <X className="h-4 w-4" />
               </button>
             )}
@@ -561,9 +649,11 @@ export default function PosPage() {
             onSplit={() => setShowSplit(true)}
             onSave={handleSave}
             onHold={() => checkout.mutate({ status: 'HELD' })}
-            onClear={clearCart}
+            onClear={resetBill}
             isPending={checkout.isPending}
             hasCart={cart.length > 0}
+            splitPayments={splitPayments}
+            onClearSplit={clearSplit}
           />
         </div>
       </div>

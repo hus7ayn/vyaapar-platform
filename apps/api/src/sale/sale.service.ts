@@ -308,15 +308,37 @@ export class SaleService {
       where: { id: { in: body.replacements.map((r) => r.itemId) }, businessId },
     });
     const itemMap = new Map(items.map((i) => [i.id, i]));
+
+    // An exchange has to honour what the customer ACTUALLY paid on the original bill, not the
+    // item's current catalogue price: a price the shop changed afterwards (or a discount given at
+    // the till) must never silently re-price the swap. So for any replacement that already appears
+    // on the invoice being exchanged we reuse that line's stored unitPrice, per-unit discount and
+    // taxRate; a genuinely different product has no history here and falls back to its sale price.
+    // Carrying the discount as a line discount (rather than folding it into unitPrice) keeps
+    // buildLines' below-cost guard comparing the same price a normal sale would use.
+    const soldAs = new Map<string, { unitPrice: number; discountPerUnit: number; taxRate: number }>();
+    for (const l of txn.lines) {
+      if (!l.itemId || soldAs.has(l.itemId)) continue;
+      const soldQty = Number(l.quantity) || 1;
+      soldAs.set(l.itemId, {
+        unitPrice: Number(l.unitPrice),
+        discountPerUnit: Number(l.discountAmount ?? 0) / soldQty,
+        taxRate: Number(l.taxRate),
+      });
+    }
+
     let total = 0;
     const lines = body.replacements.map((r) => {
       const item = itemMap.get(r.itemId);
       if (!item) throw new BadRequestException('Replacement item not found');
-      const unitPrice = Number(item.salePrice);
-      const taxRate = Number(item.taxRate);
+      const sold = soldAs.get(r.itemId);
+      const unitPrice = sold ? sold.unitPrice : Number(item.salePrice);
+      const taxRate = sold ? sold.taxRate : Number(item.taxRate);
       const qty = Number(r.quantity) || 1;
-      total += unitPrice * qty * (1 + taxRate / 100);
-      return { itemId: item.id, name: item.name, quantity: qty, unit: item.baseUnit, unitPrice, taxRate };
+      const discountAmount = sold ? sold.discountPerUnit * qty : 0;
+      const taxable = unitPrice * qty - discountAmount;
+      total += taxable * (1 + taxRate / 100);
+      return { itemId: item.id, name: item.name, quantity: qty, unit: item.baseUnit, unitPrice, discountAmount, taxRate };
     });
     // Floor so the CASH payment never exceeds createTxn's computed total (no paidAmount>total error).
     const paid = Math.floor(total * 100) / 100;

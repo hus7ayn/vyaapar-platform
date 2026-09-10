@@ -81,7 +81,7 @@ export default function RemindersPage() {
         title="Payment Reminders"
         subtitle="Send reminders to parties with outstanding balance"
         action={
-          <div className="flex items-end gap-2">
+          <div className="flex flex-wrap items-end gap-2">
             <div>
               <label className="text-[10px] font-medium text-muted-foreground block mb-1">Remind on</label>
               <Input
@@ -111,8 +111,8 @@ export default function RemindersPage() {
           </div>
         ) : (
           list.map((r) => (
-            <div key={r.id} className="p-4 flex justify-between items-center gap-4">
-              <div>
+            <div key={r.id} className="p-4 flex flex-wrap justify-between items-center gap-3">
+              <div className="min-w-0">
                 <p className="font-semibold">{r.party.name}</p>
                 <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
                   {r.status === 'PENDING' ? (

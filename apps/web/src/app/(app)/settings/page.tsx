@@ -238,8 +238,8 @@ export default function SettingsPage() {
       <CloudInsightsSettings />
 
       <Link href="/settings/users">
-        <Card className="p-6 flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer">
-          <div className="flex items-center gap-3">
+        <Card className="p-4 sm:p-6 flex flex-wrap items-center justify-between gap-3 hover:shadow-md transition-shadow cursor-pointer">
+          <div className="flex min-w-0 items-center gap-3">
             <Users className="h-8 w-8 text-primary" />
             <div>
               <p className="font-semibold">Staff management</p>
@@ -251,8 +251,8 @@ export default function SettingsPage() {
       </Link>
 
       <Link href="/settings/account">
-        <Card className="p-6 flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer">
-          <div className="flex items-center gap-3">
+        <Card className="p-4 sm:p-6 flex flex-wrap items-center justify-between gap-3 hover:shadow-md transition-shadow cursor-pointer">
+          <div className="flex min-w-0 items-center gap-3">
             <KeyRound className="h-8 w-8 text-primary" />
             <div>
               <p className="font-semibold">Change password</p>

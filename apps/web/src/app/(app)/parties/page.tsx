@@ -312,9 +312,9 @@ export default function PartiesPage() {
   const fieldCls = 'h-10 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
   return (
-    <div className="p-4 lg:p-6 flex gap-4 items-start">
-      {/* LEFT pane */}
-      <div className="w-80 shrink-0 bg-white rounded-lg border shadow-sm flex flex-col max-h-[calc(100vh-7rem)]">
+    <div className="p-4 lg:p-6 flex flex-col lg:flex-row gap-4 items-stretch lg:items-start">
+      {/* LEFT pane — full width on phones, fixed rail from lg up */}
+      <div className="w-full lg:w-80 lg:shrink-0 bg-white rounded-lg border shadow-sm flex flex-col max-h-[60vh] lg:max-h-[calc(100vh-7rem)]">
         <div className="p-3 border-b space-y-2">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-bold">Parties</h1>
@@ -379,7 +379,8 @@ export default function PartiesPage() {
               <div className="p-3 border-b">
                 <p className="font-semibold text-sm">All Parties</p>
               </div>
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[620px]">
                 <thead>
                   <tr className="text-xs text-muted-foreground border-b bg-slate-50">
                     <th className="px-3 py-2 text-left">NAME</th>
@@ -411,6 +412,7 @@ export default function PartiesPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </>
         )}
@@ -461,7 +463,7 @@ export default function PartiesPage() {
             </div>
 
             <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-              <div className="border-b flex">
+              <div className="border-b flex overflow-x-auto">
                 {([
                   { value: 'transactions', label: 'Transactions' },
                   { value: 'ledger', label: 'Ledger Statement' },
@@ -482,7 +484,8 @@ export default function PartiesPage() {
               </div>
 
               {detailTab === 'transactions' && (
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[680px]">
                   <thead>
                     <tr className="text-xs text-muted-foreground border-b bg-slate-50">
                       <th className="px-3 py-2 text-left">DATE</th>
@@ -522,16 +525,18 @@ export default function PartiesPage() {
                     })}
                   </tbody>
                 </table>
+                </div>
               )}
 
               {detailTab === 'ledger' && (
                 <div>
-                  <div className="p-3 border-b flex items-center gap-2">
+                  <div className="p-3 border-b flex flex-wrap items-center gap-2">
                     <Input type="date" className="w-40" value={ledgerFrom} onChange={(e) => setLedgerFrom(e.target.value)} />
                     <span className="text-muted-foreground text-sm">to</span>
                     <Input type="date" className="w-40" value={ledgerTo} onChange={(e) => setLedgerTo(e.target.value)} />
                   </div>
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[640px]">
                     <thead>
                       <tr className="text-xs text-muted-foreground border-b bg-slate-50">
                         <th className="px-3 py-2 text-left">DATE</th>
@@ -570,6 +575,7 @@ export default function PartiesPage() {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
             </div>

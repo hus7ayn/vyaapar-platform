@@ -48,14 +48,19 @@ export function HeldOrdersPanel({ branchId }: { branchId?: string }) {
 
   if (!held.length) return null;
 
+  // Rendered inside the red POS top bar, which sets `text-white` on everything below it. The
+  // default `outline` button only paints a (near-white) background and inherits its text colour,
+  // so these chips used to be white-on-white — present, clickable, but invisible. Paint both the
+  // background AND the text explicitly. The strip is width-capped and scrolls on its own so a
+  // pile of held bills can never push Recent Bills / Hold off the right edge of the bar.
   return (
-    <div className="flex gap-2 overflow-x-auto p-2">
+    <div className="flex gap-1.5 overflow-x-auto scrollbar-hide min-w-0 max-w-[38vw] lg:max-w-[26rem]">
       {held.map((order) => (
         <Button
           key={order.id}
-          variant="outline"
+          variant="secondary"
           size="sm"
-          className="shrink-0 gap-1"
+          className="shrink-0 gap-1 h-9 bg-white/95 text-[hsl(348,85%,52%)] hover:bg-white font-semibold"
           onClick={() => resume(order)}
         >
           <Clock className="h-3.5 w-3.5" />

@@ -34,4 +34,20 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
+
+  /* Media never forces the page wider than the phone screen. */
+  img,
+  video,
+  canvas {
+    max-width: 100%;
+  }
+}
+
+@layer utilities {
+  /* Clearance for the iOS home indicator under the fixed mobile bottom nav
+     (components/layout/mobile-nav.tsx). Needs `viewportFit: 'cover'` in the
+     root layout's viewport export for env() to resolve to a non-zero value. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }

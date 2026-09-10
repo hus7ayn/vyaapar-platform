@@ -204,7 +204,8 @@ export default function UtilitiesPage() {
       <section className="p-4 rounded-xl border space-y-3">
         <h2 className="font-semibold flex items-center gap-2"><Trash2 className="h-5 w-5" /> Recycle Bin</h2>
         <div className="rounded-lg border overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[560px]">
             <thead className="bg-muted/50">
               <tr>
                 <th className="text-left p-2">#</th>
@@ -233,6 +234,7 @@ export default function UtilitiesPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </section>
 

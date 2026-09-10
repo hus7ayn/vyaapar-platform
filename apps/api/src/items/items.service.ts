@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveBranchWarehouse } from '../inventory/warehouse.util';
-import { buildItemBarcode, decodeCostFromBarcode } from './barcode.util';
+import { BARCODE_PREFIX_LEN, buildItemBarcode, decodeCostFromBarcode } from './barcode.util';
 import { EventsGateway } from '../events/events.gateway';
 
 export interface ItemInput {
@@ -181,7 +181,7 @@ export class ItemsService {
     const openingStock = new Prisma.Decimal(body.openingStock ?? 0);
     const costPrice = body.costPrice ?? body.purchasePrice ?? 0;
 
-    // Barcode is system-owned and never taken from the client: its last 5 digits encode the cost
+    // Barcode is system-owned and never taken from the client: its trailing digits encode the cost
     // price, so a hand-typed value decodes to the wrong cost on every scan.
     const barcode = await this.generateUniqueBarcode(businessId, { sku, id: sku }, Number(costPrice));
     const resolvedBranch =
@@ -245,7 +245,7 @@ export class ItemsService {
 
   async update(businessId: string, id: string, body: Partial<ItemInput> & { isActive?: boolean }) {
     const existing = await this.get(businessId, id);
-    // The barcode encodes the cost price in its last 5 digits, so a cost change has to be mirrored
+    // The barcode encodes the cost price in its trailing digits, so a cost change has to be mirrored
     // into it — otherwise every later scan decodes the superseded cost. The 8-digit prefix is
     // preserved so the item keeps the identity already printed on its shelf tags.
     const nextCost = body.costPrice ?? body.purchasePrice;
@@ -258,7 +258,7 @@ export class ItemsService {
             Number(nextCost),
             {
               excludeItemId: existing.id,
-              existingPrefix: existing.barcode?.replace(/\D/g, '').slice(0, 8),
+              existingPrefix: existing.barcode?.replace(/\D/g, '').slice(0, BARCODE_PREFIX_LEN),
             },
           )
         : undefined;
@@ -417,17 +417,27 @@ export class ItemsService {
     return buildItemBarcode({ sku: seed.id.replace(/\D/g, '') || seed.id, id: seed.id }, cost);
   }
 
+  // Generate (no barcode yet) or Regenerate (rebuild the cost suffix from the item's CURRENT cost,
+  // keeping the 8-digit identity prefix so tags already on the shelf still point at this item).
+  // Regenerating an item whose barcode is already in sync produces the identical value, so report
+  // whether anything actually changed — writing the same row and returning it made the UI's
+  // Regenerate button look like it did nothing at all.
   async assignBarcode(businessId: string, itemId: string) {
     const item = await this.get(businessId, itemId);
     const cost = Number(item.costPrice) || Number(item.purchasePrice) || 0;
-    const existingPrefix = item.barcode?.replace(/\D/g, '').slice(0, 8);
+    const existingPrefix = item.barcode?.replace(/\D/g, '').slice(0, BARCODE_PREFIX_LEN);
     const barcode = await this.generateUniqueBarcode(
       businessId,
       { sku: item.sku, id: item.id },
       cost,
       { excludeItemId: item.id, existingPrefix },
     );
-    return this.prisma.item.update({ where: { id: itemId }, data: { barcode } });
+    if (barcode === item.barcode) {
+      return { ...item, barcode, changed: false, previousBarcode: item.barcode ?? null };
+    }
+    const updated = await this.prisma.item.update({ where: { id: itemId }, data: { barcode } });
+    this.events.emitInventoryUpdate(businessId, { itemId });
+    return { ...updated, changed: true, previousBarcode: item.barcode ?? null };
   }
 
   async bulkGenerateBarcodes(businessId: string, branchId?: string) {

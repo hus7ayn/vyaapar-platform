@@ -185,8 +185,10 @@ export default function ReportsPage() {
   }, [data]);
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)]">
-      <aside className="w-full lg:w-56 border-r bg-card shrink-0 overflow-y-auto">
+    // Height is only pinned from lg up, where the two panes scroll independently. On phones a
+    // fixed height would squeeze the report pane to nothing under the tall category rail.
+    <div className="flex flex-col lg:flex-row lg:h-[calc(100vh-4rem)]">
+      <aside className="w-full lg:w-56 border-b lg:border-b-0 lg:border-r bg-card lg:shrink-0 lg:overflow-y-auto">
         <div className="p-3 border-b">
           <p className="text-xs font-bold text-muted-foreground uppercase">Categories</p>
         </div>

@@ -1,7 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import {
-  Banknote, Smartphone, CreditCard, Clock, Landmark, Split, Printer,
+  Banknote, Smartphone, CreditCard, Clock, Landmark, Split, Printer, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,9 @@ interface Props {
   onClear: () => void;
   isPending: boolean;
   hasCart: boolean;
+  /** Active split tender, if any — while set it replaces the single Payment Mode above. */
+  splitPayments: { method: string; amount: number }[];
+  onClearSplit: () => void;
 }
 
 export function PosBillFooter({
@@ -40,6 +44,8 @@ export function PosBillFooter({
   onClear,
   isPending,
   hasCart,
+  splitPayments,
+  onClearSplit,
 }: Props) {
   const getSubtotal = usePosStore((s) => s.getSubtotal);
   const getTaxableAmount = usePosStore((s) => s.getTaxableAmount);
@@ -64,20 +70,81 @@ export function PosBillFooter({
   const roundAmt = getRoundOffAmount();
   const tax = getTax();
 
+  // ONE bill discount at a time. The store still keeps the two values apart (percent vs flat ₹)
+  // because that is what the API takes, but the UI only ever exposes a single field plus a unit
+  // toggle, and switching the unit zeroes the other value — so a % and a ₹ discount can never
+  // both be folded into discountAmount (which is what used to double-discount a bill).
+  // Whichever value actually carries a discount decides the unit shown (a resumed held bill, for
+  // instance, always comes back as a flat ₹ amount); the local preference only matters at zero.
+  const [preferredMode, setPreferredMode] = useState<'PERCENT' | 'AMOUNT'>('PERCENT');
+  const discountMode: 'PERCENT' | 'AMOUNT' =
+    discountPercent > 0 ? 'PERCENT' : secondaryDiscountAmount > 0 ? 'AMOUNT' : preferredMode;
+
+  // Self-heal a cart persisted before the two fields became exclusive: both could be non-zero at
+  // once and the store added them together. Keep the percentage and drop the stranded flat amount.
+  useEffect(() => {
+    if (discountPercent > 0 && secondaryDiscountAmount > 0) setSecondaryDiscountAmount(0);
+  }, [discountPercent, secondaryDiscountAmount, setSecondaryDiscountAmount]);
+
+  const switchDiscountMode = (mode: 'PERCENT' | 'AMOUNT') => {
+    if (mode === discountMode) return;
+    // Clear BOTH before switching: whichever value was typed under the old unit is meaningless
+    // under the new one, and leaving it behind is exactly how both discounts used to apply.
+    setDiscountPercent(0);
+    setSecondaryDiscountAmount(0);
+    setPreferredMode(mode);
+  };
+
+  const onDiscountInput = (raw: string) => {
+    const value = Math.max(0, parseFloat(raw) || 0);
+    if (discountMode === 'PERCENT') {
+      setSecondaryDiscountAmount(0);
+      setDiscountPercent(Math.min(100, value));
+    } else {
+      setDiscountPercent(0);
+      // A flat discount can never exceed the goods value, otherwise the bill total goes negative.
+      setSecondaryDiscountAmount(Math.min(getSubtotal(), value));
+    }
+  };
+
+  const discountValue = discountMode === 'PERCENT' ? discountPercent : secondaryDiscountAmount;
+  const splitTotal = splitPayments.reduce((s, p) => s + p.amount, 0);
+
   return (
     <div className="border-t bg-white shrink-0">
       <div className="px-3 py-2 grid grid-cols-3 gap-2 text-[11px]">
-        <div className="flex items-center gap-1">
-          <span className="text-muted-foreground shrink-0">Disc %</span>
-          <Input type="number" min={0} max={100} className="h-7 text-xs" value={discountPercent || ''} onChange={(e) => setDiscountPercent(parseFloat(e.target.value) || 0)} />
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-muted-foreground shrink-0">Disc ₹</span>
-          <Input type="number" min={0} className="h-7 text-xs" value={secondaryDiscountAmount || ''} onChange={(e) => setSecondaryDiscountAmount(parseFloat(e.target.value) || 0)} />
+        <div className="col-span-2 flex items-center gap-1">
+          <span className="text-muted-foreground shrink-0">Discount</span>
+          <div className="flex rounded-md border overflow-hidden shrink-0">
+            {(['PERCENT', 'AMOUNT'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => switchDiscountMode(mode)}
+                className={cn(
+                  'h-7 w-7 text-xs font-bold transition-colors',
+                  discountMode === mode
+                    ? 'bg-[hsl(348,85%,52%)] text-white'
+                    : 'bg-background text-muted-foreground hover:bg-muted',
+                )}
+              >
+                {mode === 'PERCENT' ? '%' : '₹'}
+              </button>
+            ))}
+          </div>
+          <Input
+            type="number"
+            min={0}
+            {...(discountMode === 'PERCENT' ? { max: 100 } : {})}
+            className="h-7 text-xs"
+            placeholder={discountMode === 'PERCENT' ? '0 %' : '0 ₹'}
+            value={discountValue || ''}
+            onChange={(e) => onDiscountInput(e.target.value)}
+          />
         </div>
         <div className="flex items-center gap-1">
           <span className="text-muted-foreground shrink-0">Extra ₹</span>
-          <Input type="number" min={0} className="h-7 text-xs" value={additionalCharges || ''} onChange={(e) => setAdditionalCharges(parseFloat(e.target.value) || 0)} />
+          <Input type="number" min={0} className="h-7 text-xs" value={additionalCharges || ''} onChange={(e) => setAdditionalCharges(Math.max(0, parseFloat(e.target.value) || 0))} />
         </div>
       </div>
 
@@ -119,27 +186,52 @@ export function PosBillFooter({
         </div>
       </div>
 
-      <div className="px-3 py-2 border-t">
-        <p className="text-[10px] font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">Payment Mode</p>
-        <div className="grid grid-cols-5 gap-1">
-          {PAYMENT_METHODS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onPaymentMethod(id)}
-              className={cn(
-                'flex flex-col items-center gap-0.5 py-1.5 rounded-md border text-[9px] font-semibold transition-colors',
-                paymentMethod === id
-                  ? 'border-[hsl(348,85%,52%)] bg-[hsl(348,85%,52%)]/10 text-[hsl(348,85%,52%)]'
-                  : 'bg-background hover:bg-muted/50',
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
+      {/* A confirmed split REPLACES the single payment mode — showing both would leave the cashier
+          guessing which one the bill will actually use. */}
+      {splitPayments.length > 0 ? (
+        <div className="px-3 py-2 border-t">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Split Payment</p>
+            <button type="button" onClick={onClearSplit} className="text-[10px] text-muted-foreground hover:text-destructive flex items-center gap-0.5">
+              <X className="h-3 w-3" /> Remove
             </button>
-          ))}
+          </div>
+          <div className="rounded-md border bg-[hsl(348,30%,98%)] px-2 py-1.5 space-y-0.5 text-[11px]">
+            {splitPayments.map((p) => (
+              <div key={p.method} className="flex justify-between">
+                <span className="text-muted-foreground">{p.method}</span>
+                <span className="font-semibold">{formatCurrency(p.amount)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between border-t border-dashed pt-0.5 font-bold text-[hsl(348,85%,52%)]">
+              <span>Tendered</span>
+              <span>{formatCurrency(splitTotal)}</span>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="px-3 py-2 border-t">
+          <p className="text-[10px] font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">Payment Mode</p>
+          <div className="grid grid-cols-5 gap-1">
+            {PAYMENT_METHODS.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onPaymentMethod(id)}
+                className={cn(
+                  'flex flex-col items-center gap-0.5 py-1.5 rounded-md border text-[9px] font-semibold transition-colors',
+                  paymentMethod === id
+                    ? 'border-[hsl(348,85%,52%)] bg-[hsl(348,85%,52%)]/10 text-[hsl(348,85%,52%)]'
+                    : 'bg-background hover:bg-muted/50',
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="p-3 grid grid-cols-4 gap-2 border-t bg-muted/10">
         <Button variant="outline" size="sm" className="h-10 text-xs" disabled={!hasCart} onClick={onClear}>
@@ -149,7 +241,13 @@ export function PosBillFooter({
           Hold Bill
         </Button>
         <PermissionGate permission={Permission.POS_SELL}>
-          <Button variant="outline" size="sm" className="h-10 text-xs" disabled={!hasCart} onClick={onSplit}>
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn('h-10 text-xs', splitPayments.length > 0 && 'border-[hsl(348,85%,52%)] text-[hsl(348,85%,52%)] font-semibold')}
+            disabled={!hasCart}
+            onClick={onSplit}
+          >
             <Split className="h-3.5 w-3.5 mr-1" /> Split
           </Button>
         </PermissionGate>

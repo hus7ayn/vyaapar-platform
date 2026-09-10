@@ -31,7 +31,11 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-card p-6 shadow-lg rounded-xl',
+        // w-[calc(100%-2rem)] keeps a 1rem gutter on a phone (plain w-full ran edge-to-edge), and
+        // max-h/overflow-y makes a tall dialog scroll inside itself — without it the action buttons
+        // at the bottom fell off-screen with no way to reach them. dvh, not vh, so mobile browser
+        // chrome doesn't hide the footer. Call sites can still override via className (twMerge).
+        'fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[90dvh] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 border bg-card p-6 shadow-lg rounded-xl',
         className,
       )}
       {...props}

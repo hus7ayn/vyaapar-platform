@@ -62,16 +62,16 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">Home</h1>
           <p className="text-sm text-muted-foreground">Business overview</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {shortcuts.slice(0, 2).map((s) => {
             const Icon = s.icon;
             return (
-              <Link key={s.label} href={s.href} className={cn('flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow', s.color)}>
+              <Link key={s.label} href={s.href} className={cn('flex items-center gap-2 rounded-lg px-3 sm:px-4 py-2 text-sm font-semibold text-white shadow', s.color)}>
                 <Icon className="h-4 w-4" /> {s.label}
               </Link>
             );
@@ -120,7 +120,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Sale graph */}
         <div className="lg:col-span-2 bg-white rounded-xl border shadow-sm p-4">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
             <div>
               <p className="font-semibold flex items-center gap-2"><TrendingUp className="h-4 w-4 text-red-600" /> Sales — Last 7 Days</p>
               <p className="text-xs text-muted-foreground">
@@ -183,11 +183,12 @@ export default function DashboardPage() {
 
       {/* Recent transactions */}
       <div className="bg-white rounded-xl border shadow-sm">
-        <div className="p-4 border-b flex items-center justify-between">
+        <div className="p-4 border-b flex flex-wrap items-center justify-between gap-2">
           <p className="font-semibold">Recent Transactions</p>
           <Link href="/reports" className="text-xs text-red-600 font-semibold hover:underline">All Transactions →</Link>
         </div>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
           <thead>
             <tr className="text-xs text-muted-foreground bg-slate-50">
               <th className="px-4 py-2 text-left">TYPE</th>
@@ -219,6 +220,7 @@ export default function DashboardPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

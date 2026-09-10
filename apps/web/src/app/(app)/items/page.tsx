@@ -88,12 +88,17 @@ interface Category {
   slug: string;
 }
 
+// Mirrors apps/api/src/items/barcode.util.ts: an 8-digit identity prefix followed by the cost
+// price in paise. The suffix is at least 5 digits but GROWS past that for ₹1000+, so cost is
+// everything after the prefix — reading a fixed last-5 would report ₹999.99 for a ₹1500 item.
+const BARCODE_PREFIX_LEN = 8;
+
 function decodeBarcodeCost(barcode?: string | null): number | null {
   if (!barcode) return null;
   const digits = barcode.replace(/\D/g, '');
-  if (digits.length < 5) return null;
-  const paise = Number(digits.slice(-5));
-  return Number.isNaN(paise) ? null : paise / 100;
+  if (digits.length <= BARCODE_PREFIX_LEN) return null;
+  const paise = Number(digits.slice(BARCODE_PREFIX_LEN));
+  return Number.isFinite(paise) ? paise / 100 : null;
 }
 
 interface ItemForm {
@@ -297,10 +302,22 @@ export default function ItemsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Generate / Regenerate: rebuilds the barcode's cost suffix from the item's CURRENT cost price
+  // while keeping the printed 8-digit identity prefix. When it is already in sync the value is
+  // unchanged by design, so report that instead of a bare "assigned" toast — otherwise the button
+  // reads as broken.
   const barcodeMutation = useMutation({
-    mutationFn: () => api(`/items/${selectedId}/assign-barcode`, { method: 'POST', token, body: JSON.stringify({}) }),
-    onSuccess: () => {
-      toast.success('Barcode assigned');
+    mutationFn: () =>
+      api<{ barcode: string | null; changed: boolean; previousBarcode: string | null }>(
+        `/items/${selectedId}/assign-barcode`,
+        { method: 'POST', token, body: JSON.stringify({}) },
+      ),
+    onSuccess: (res) => {
+      if (res.changed) {
+        toast.success(res.previousBarcode ? `Barcode updated to ${res.barcode}` : `Barcode assigned: ${res.barcode}`);
+      } else {
+        toast.info('Barcode already matches the current cost price — nothing to change.');
+      }
       invalidateItems();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -978,6 +995,10 @@ function BarcodeTagPanel({
   });
 
   const decoded = decodeBarcodeCost(barcode);
+  const costPaise = Number.isFinite(costPrice) ? Math.round(costPrice * 100) : null;
+  const expectedSuffix = String(costPaise ?? 0).padStart(5, '0');
+  // Round both sides to paise before comparing — cost comes back as a Decimal string.
+  const staleSuffix = decoded != null && costPaise != null && Math.round(decoded * 100) !== costPaise;
 
   return (
     <div className="bg-white rounded-lg border shadow-sm p-4">
@@ -987,10 +1008,17 @@ function BarcodeTagPanel({
             <Barcode className="h-4 w-4" /> Barcode Tag
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            Last 5 digits encode cost price in paise
+            Digits after the first 8 encode cost price in paise
             {decoded != null && <> · decoded: <span className="font-medium">{formatMoney(decoded)}</span></>}
-            {decoded == null && costPrice > 0 && <> · expected suffix: <span className="font-mono">{String(Math.round(costPrice * 100)).padStart(5, '0')}</span></>}
+            {decoded == null && costPrice > 0 && <> · expected suffix: <span className="font-mono">{expectedSuffix}</span></>}
           </p>
+          {/* A stale suffix (e.g. an old label clamped at 99999 = ₹999.99) is only fixed by
+              Regenerate, so point the user at the button rather than leaving them to guess. */}
+          {staleSuffix && (
+            <p className="text-xs text-amber-600 mt-1">
+              Encoded cost {formatMoney(decoded!)} doesn&apos;t match this item&apos;s cost price {formatMoney(costPrice)} — click Regenerate, then reprint the tags.
+            </p>
+          )}
           <div className="flex items-center gap-2 mt-2">
             {barcode ? (
               <p className="font-mono text-sm tracking-wider">{barcode}</p>
@@ -1001,7 +1029,17 @@ function BarcodeTagPanel({
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={onEdit}>Edit Item</Button>
-          <Button variant="outline" size="sm" disabled={generating} onClick={onGenerate}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={generating}
+            onClick={onGenerate}
+            title={
+              barcode
+                ? "Rebuild this barcode's cost digits from the item's current cost price (the identity prefix is kept)"
+                : 'Assign a barcode to this item'
+            }
+          >
             <Barcode className="h-3 w-3 mr-1" /> {barcode ? 'Regenerate' : 'Generate'}
           </Button>
         </div>

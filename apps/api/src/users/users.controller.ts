@@ -22,8 +22,14 @@ export class UsersController {
 
   @Post()
   @RequirePermissions(Permission.USER_MANAGE)
-  create(@CurrentUser('businessId') businessId: string, @CurrentUser('branchId') branchId: string | undefined, @Body() body: CreateUserDto) {
-    return this.users.create(businessId, body, branchId);
+  create(
+    @CurrentUser('businessId') businessId: string,
+    @CurrentUser('branchId') branchId: string | undefined,
+    @CurrentUser('sub') callerId: string,
+    @Body() body: CreateUserDto,
+  ) {
+    // callerId is recorded as the approver: creating the account is the approval.
+    return this.users.create(businessId, body, branchId, callerId);
   }
 
   // Permanently remove EVERY other user in the business, keeping only the Super Admin who calls
@@ -70,6 +76,15 @@ export class UsersController {
     @Param('id') id: string,
   ) {
     return this.users.approve(businessId, id, approverId);
+  }
+
+  // Clearing a lockout is USER_MANAGE, same as enabling/disabling — it grants no access on its
+  // own (the password is untouched), so it does not need the stricter owner-only gate that
+  // set-password below does.
+  @Patch(':id/unlock')
+  @RequirePermissions(Permission.USER_MANAGE)
+  unlock(@CurrentUser('businessId') businessId: string, @Param('id') id: string) {
+    return this.users.unlock(businessId, id);
   }
 
   // The other half of account recovery: staff have no self-service reset, so the Super Admin

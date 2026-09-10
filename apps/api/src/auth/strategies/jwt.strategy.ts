@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { JwtPayload, ROLE_PERMISSIONS } from '@nexus/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { LOGIN_ERRORS, loginRefusalReason } from '../login-refusal';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -15,11 +16,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload): Promise<JwtPayload> {
+    // Fetch on identity alone, then judge the state separately — the account-state filters used
+    // to live in the WHERE clause, so a deactivated, unapproved or locked user was
+    // indistinguishable from a deleted one and every case came back as a blank 401. The same
+    // gate as login now decides, so the reason survives into the response and the logs.
     const user = await this.prisma.user.findFirst({
-      where: { id: payload.sub, isActive: true, isApproved: true, deletedAt: null },
+      where: { id: payload.sub, deletedAt: null },
       include: { business: true },
     });
-    if (!user || user.isLocked || !user.business.isActive) throw new UnauthorizedException();
+    if (!user) throw new UnauthorizedException(LOGIN_ERRORS.INVALID);
+    const refusal = loginRefusalReason(user);
+    if (refusal) throw new UnauthorizedException(refusal);
     return {
       sub: user.id,
       email: user.email,

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { Permission, ROLE_PERMISSIONS, SystemRole } from '@nexus/shared';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,25 +19,27 @@ export class UsersService {
   findAll(businessId: string, branchId?: string) {
     return this.prisma.user.findMany({
       where: { businessId, deletedAt: null, ...(branchId ? { branchId } : {}) },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        isActive: true,
-        isApproved: true,
-        approvedAt: true,
-        branchId: true,
-        lastLoginAt: true,
-      },
+      select: this.staffSelect,
     });
   }
 
+  /**
+   * An admin adds a staff member from the Users screen. The account must be usable the moment
+   * this returns — the admin sets the password here and reads it out to the person in front of
+   * them, so anything that leaves the row unusable turns into "I added a user and they can't
+   * log in".
+   *
+   * Every state flag is therefore written EXPLICITLY rather than left to a schema default:
+   * defaults are invisible at the call site, and this row is exactly the one that must not be
+   * wrong. `isApproved` in particular used to be forced to false here, which meant every new
+   * staff account was born unable to sign in — the admin who created it was the approval, so
+   * that step only ever produced a support call.
+   */
   async create(
     businessId: string,
     data: CreateUserDto,
     callerBranchId?: string,
+    callerId?: string,
   ) {
     if (!STAFF_ASSIGNABLE_ROLES.includes(data.role)) {
       throw new BadRequestException('Invalid role');
@@ -53,7 +55,57 @@ export class UsersService {
     if (!targetBranchId) throw new BadRequestException('This role must be assigned to a specific shop/branch');
     const branch = await this.prisma.branch.findFirst({ where: { id: targetBranchId, businessId } });
     if (!branch) throw new NotFoundException('Branch not found');
+
+    // The address is only unique WITHIN a business, and a soft-deleted row still occupies that
+    // slot — so re-adding someone who was removed used to fail on a raw unique-constraint error.
+    // Case-insensitive, because login matches that way too and two rows differing only in case
+    // would leave one of them permanently unreachable.
+    const clashing = await this.prisma.user.findFirst({
+      where: { businessId, email: { equals: data.email, mode: 'insensitive' } },
+    });
+    if (clashing && !clashing.deletedAt) {
+      throw new ConflictException('Someone in this business already uses that email address');
+    }
+    // A removed OWNER account is never quietly reused as a staff row: reviving it here would
+    // hand a shop admin a way to resurrect an account somebody deliberately took away.
+    if (
+      clashing
+      && (clashing.role === SystemRole.SUPER_ADMIN
+        || (ROLE_PERMISSIONS[clashing.role] ?? []).includes(Permission.BUSINESS_MANAGE))
+    ) {
+      throw new ConflictException('That email address belonged to an owner account — use a different one');
+    }
+
     const passwordHash = await bcrypt.hash(data.password, 12);
+    // An admin with USER_MANAGE created this account; that IS the approval, so record it as one.
+    const state = {
+      isActive: true,
+      isApproved: true,
+      approvedAt: new Date(),
+      ...(callerId ? { approvedById: callerId } : {}),
+      // Nothing about a brand-new account is locked out or mid-way through a lockout.
+      isLocked: false,
+      failedAttempts: 0,
+      deletedAt: null,
+    };
+
+    if (clashing) {
+      // Removed before, added again: revive the existing row rather than orphaning the address.
+      return this.prisma.user.update({
+        where: { id: clashing.id },
+        data: {
+          passwordHash,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          role: data.role,
+          branchId: targetBranchId,
+          permissions,
+          ...state,
+        },
+        select: this.staffSelect,
+      });
+    }
+
     return this.prisma.user.create({
       data: {
         businessId,
@@ -64,14 +116,18 @@ export class UsersService {
         role: data.role,
         branchId: targetBranchId,
         permissions,
-        // New staff start PENDING — a Super Admin must approve before they can access.
-        isApproved: false,
+        ...state,
       },
+      // Never the whole row: it carries passwordHash, which has no business leaving the server.
+      select: this.staffSelect,
     });
   }
 
+  // isLocked / failedAttempts are included so the Users screen can SHOW a lockout. Without them
+  // an account locked by failed sign-ins looked completely healthy in the list while the person
+  // was being turned away at the login form.
   private readonly staffSelect = {
-    id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, isApproved: true, approvedAt: true, branchId: true, lastLoginAt: true,
+    id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, isApproved: true, approvedAt: true, isLocked: true, failedAttempts: true, branchId: true, lastLoginAt: true,
   } as const;
 
   // Super Admin approves a pending staff account so it can sign in. Gated to owners
@@ -81,6 +137,23 @@ export class UsersService {
     return this.prisma.user.update({
       where: { id: target.id },
       data: { isApproved: true, approvedAt: new Date(), approvedById: approverId },
+      select: this.staffSelect,
+    });
+  }
+
+  /**
+   * Clears a lockout. Five wrong passwords lock an account, and until now nothing in the product
+   * could undo that except setting a new password — so a staff member who fat-fingered their way
+   * to five was simply stuck, and the owner had no button to press.
+   *
+   * This does not hand out access: the password is untouched, and every other gate (deactivated,
+   * unapproved, soft-deleted, suspended business) still applies. It only resets the counter.
+   */
+  async unlock(businessId: string, id: string) {
+    const target = await this.assertManageable(businessId, id);
+    return this.prisma.user.update({
+      where: { id: target.id },
+      data: { isLocked: false, failedAttempts: 0 },
       select: this.staffSelect,
     });
   }

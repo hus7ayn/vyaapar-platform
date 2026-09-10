@@ -164,14 +164,14 @@ export default function CashBankPage() {
         <VyaparStatCard label="Loan Outstanding" value={formatMoney(summary?.loanBalance ?? 0)} icon={<ArrowLeftRight className="h-4 w-4 text-muted-foreground" />} />
       </div>
 
-      <div className="flex gap-2 border-b">
+      <div className="flex gap-2 border-b overflow-x-auto">
         {(['accounts', 'transfers', 'statement'] as const).map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
             className={cn(
-              'px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize',
+              'shrink-0 px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize',
               tab === t ? 'border-[hsl(348,85%,52%)] text-[hsl(348,85%,52%)]' : 'border-transparent text-muted-foreground',
             )}
           >
@@ -224,7 +224,8 @@ export default function CashBankPage() {
             </Button>
           </div>
           <div className="rounded-xl border overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[560px]">
               <thead className="bg-muted/50">
                 <tr>
                   <th className="text-left p-3">Date</th>
@@ -247,6 +248,7 @@ export default function CashBankPage() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -269,7 +271,8 @@ export default function CashBankPage() {
                 <p className="font-semibold">{statement.account.name}</p>
                 <p className="text-sm text-muted-foreground">Balance: {formatMoney(statement.account.balance)}</p>
               </div>
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[640px]">
                 <thead className="bg-muted/50">
                   <tr>
                     <th className="text-left p-3">Date</th>
@@ -291,6 +294,7 @@ export default function CashBankPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>

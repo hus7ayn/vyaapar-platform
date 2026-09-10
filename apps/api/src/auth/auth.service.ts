@@ -12,6 +12,19 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { resetCodeEmail, verifyAddressEmail } from '../mail/templates';
 import { LoginDto, SignupDto } from './dto/auth.dto';
+import {
+  LOGIN_ERRORS,
+  LoginGateUser,
+  MAX_FAILED_ATTEMPTS,
+  loginRefusalReason,
+} from './login-refusal';
+
+/**
+ * How many accounts on one address a single sign-in will check the password against. An address
+ * is only unique per business, so a handful is realistic; the cap keeps one request from turning
+ * into an unbounded pile of (deliberately slow) bcrypt comparisons.
+ */
+const MAX_LOGIN_CANDIDATES = 5;
 
 /**
  * Roles with nobody above them, so the system itself has to let them back in. Note the naming:
@@ -55,7 +68,9 @@ export class AuthService {
     // business. (An admin can still set a staff password manually from the Users screen as a
     // fallback for accounts with no/incorrect email.)
     const users = await this.prisma.user.findMany({
-      where: { email, deletedAt: null },
+      // Case-insensitive, like login: nobody remembers how the address was capitalised when the
+      // account was made, and a reset that silently matches nothing looks identical to success.
+      where: { email: { equals: email, mode: 'insensitive' }, deletedAt: null },
       include: { business: true },
     });
 
@@ -92,7 +107,7 @@ export class AuthService {
         used: false,
         purpose: OTP_PURPOSE_RESET,
         expiresAt: { gt: new Date() },
-        user: { email, deletedAt: null },
+        user: { email: { equals: email, mode: 'insensitive' }, deletedAt: null },
       },
       orderBy: { createdAt: 'desc' },
       include: { user: { include: { business: true } } },
@@ -103,7 +118,11 @@ export class AuthService {
     if (!otp || !otp.user) throw new UnauthorizedException('Invalid or expired code');
 
     // Checked before the code is spent, so a disabled account doesn't burn its own code.
-    this.assertLoginAllowed(otp.user);
+    // A LOCKED account is deliberately allowed through: a lockout means "too many wrong
+    // passwords", and proving control of the mailbox is exactly how it is meant to be cleared.
+    // Refusing here left a business owner — who has nobody above them to unlock it — with no
+    // route back into their own account at all. The update below clears the lock.
+    this.assertLoginAllowed(otp.user, { ignoreLock: true });
 
     const passwordHash = await bcrypt.hash(newPassword, 12);
     // otp.user is guaranteed non-null here (the query filters on the `user` relation), so use its
@@ -229,7 +248,7 @@ export class AuthService {
 
   async signup(dto: SignupDto) {
     const existing = await this.prisma.user.findFirst({
-      where: { email: dto.email },
+      where: { email: { equals: dto.email, mode: 'insensitive' } },
     });
     if (existing) throw new ConflictException('Email already registered');
 
@@ -299,29 +318,62 @@ export class AuthService {
     return this.issueTokens(user.id, user.email, business.id, branch.id, user.role, permissions);
   }
 
+  /**
+   * Signing in.
+   *
+   * The subtlety that used to break this: an address is only unique WITHIN a business
+   * (`@@unique([businessId, email])`), so the same address can name more than one account —
+   * a staff member added with the same address the owner already uses, for instance. The old
+   * code took `findFirst` on the address alone, which returns whichever row Postgres felt like,
+   * and then judged the sign-in by THAT row: the wrong account absorbed the attempts, locked
+   * itself at five, and from then on everybody using the address was told the account was
+   * locked — including the person whose password was right all along.
+   *
+   * So the account is resolved by the PASSWORD, not by row order. Whoever's password was typed
+   * is who is signing in, and the refusal (if any) describes their account and nobody else's.
+   */
   async login(dto: LoginDto, ip?: string) {
-    const user = await this.prisma.user.findFirst({
-      where: { email: dto.email, deletedAt: null },
+    // Case-insensitive: the address is stored as typed at creation, and nobody remembers whether
+    // the owner capitalised it. Oldest first, and capped, so a shared address cannot turn one
+    // sign-in into an unbounded number of bcrypt comparisons.
+    const candidates = await this.prisma.user.findMany({
+      where: { email: { equals: dto.email, mode: 'insensitive' }, deletedAt: null },
       include: { business: true },
+      orderBy: { createdAt: 'asc' },
+      take: MAX_LOGIN_CANDIDATES,
     });
-    if (!user) throw new UnauthorizedException('Invalid credentials');
-    if (!user.isActive) throw new UnauthorizedException('This account has been disabled');
-    if (!user.isApproved) throw new UnauthorizedException('Your account is awaiting Super Admin approval');
-    if (user.isLocked) throw new UnauthorizedException('Account locked');
-    if (!user.business.isActive) throw new UnauthorizedException('Business account suspended');
+    if (!candidates.length) throw new UnauthorizedException(LOGIN_ERRORS.INVALID);
 
-    const valid = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!valid) {
-      const attempts = user.failedAttempts + 1;
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          failedAttempts: attempts,
-          isLocked: attempts >= 5,
-        },
-      });
-      throw new UnauthorizedException('Invalid credentials');
+    let user: (typeof candidates)[number] | undefined;
+    for (const candidate of candidates) {
+      if (!(await bcrypt.compare(dto.password, candidate.passwordHash))) continue;
+      user = candidate;
+      // Two accounts on one address could in principle share a password; prefer the one that
+      // can actually sign in rather than reporting the other one's state.
+      if (loginRefusalReason(candidate) === null) break;
     }
+
+    if (!user) {
+      // Nobody's password matched, so there is no single account to blame. Count the attempt
+      // against every account on the address — someone is guessing at it, and all of them are
+      // the target. (Before, one arbitrary account silently took the whole beating.)
+      const attempts = candidates.map((c) =>
+        this.prisma.user.update({
+          where: { id: c.id },
+          data: {
+            failedAttempts: c.failedAttempts + 1,
+            isLocked: c.failedAttempts + 1 >= MAX_FAILED_ATTEMPTS,
+          },
+        }),
+      );
+      await this.prisma.$transaction(attempts);
+      throw new UnauthorizedException(LOGIN_ERRORS.INVALID);
+    }
+
+    // The password is proven correct, so it is safe to say exactly why we still cannot let them
+    // in: only the account holder ever sees these. Every refusal above this line is the same
+    // "incorrect email or password", so the form can't be used to probe which accounts exist.
+    this.assertLoginAllowed(user);
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -369,12 +421,11 @@ export class AuthService {
 
   // Shared gate for every path that mints tokens (login, password reset, refresh) so a
   // disabled / unapproved / locked account (or a suspended business) can never obtain
-  // usable tokens by any route.
-  private assertLoginAllowed(user: { isActive: boolean; isApproved: boolean; isLocked: boolean; business?: { isActive: boolean } }) {
-    if (!user.isActive) throw new UnauthorizedException('This account has been disabled');
-    if (!user.isApproved) throw new UnauthorizedException('Your account is awaiting Super Admin approval');
-    if (user.isLocked) throw new UnauthorizedException('Account locked');
-    if (user.business && !user.business.isActive) throw new UnauthorizedException('Business account suspended');
+  // usable tokens by any route. The wording lives in login-refusal.ts so every door gives the
+  // same, specific answer.
+  private assertLoginAllowed(user: LoginGateUser, opts: { ignoreLock?: boolean } = {}) {
+    const refusal = loginRefusalReason(user, opts);
+    if (refusal) throw new UnauthorizedException(refusal);
   }
 
   // resetKeyForRole and the key-based resetPassword used to live here: one shared secret per
