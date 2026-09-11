@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import * as bcrypt from 'bcrypt';
 import { Permission, ROLE_PERMISSIONS, SystemRole } from '@nexus/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { insensitiveEquals } from '../common/escape-like';
 import { CreateUserDto } from './dto/create-user.dto';
 
 // Business-wide roles (SUPER_ADMIN, and anything holding BUSINESS_MANAGE like
@@ -61,7 +62,7 @@ export class UsersService {
     // Case-insensitive, because login matches that way too and two rows differing only in case
     // would leave one of them permanently unreachable.
     const clashing = await this.prisma.user.findFirst({
-      where: { businessId, email: { equals: data.email, mode: 'insensitive' } },
+      where: { businessId, email: insensitiveEquals(data.email) },
     });
     if (clashing && !clashing.deletedAt) {
       throw new ConflictException('Someone in this business already uses that email address');

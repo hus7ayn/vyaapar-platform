@@ -9,6 +9,7 @@ import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes, randomInt } from 'crypto';
 import { ROLE_PERMISSIONS, SystemRole } from '@nexus/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { insensitiveEquals } from '../common/escape-like';
 import { MailService } from '../mail/mail.service';
 import { resetCodeEmail, verifyAddressEmail } from '../mail/templates';
 import { LoginDto, SignupDto } from './dto/auth.dto';
@@ -70,7 +71,7 @@ export class AuthService {
     const users = await this.prisma.user.findMany({
       // Case-insensitive, like login: nobody remembers how the address was capitalised when the
       // account was made, and a reset that silently matches nothing looks identical to success.
-      where: { email: { equals: email, mode: 'insensitive' }, deletedAt: null },
+      where: { email: insensitiveEquals(email), deletedAt: null },
       include: { business: true },
     });
 
@@ -107,7 +108,7 @@ export class AuthService {
         used: false,
         purpose: OTP_PURPOSE_RESET,
         expiresAt: { gt: new Date() },
-        user: { email: { equals: email, mode: 'insensitive' }, deletedAt: null },
+        user: { email: insensitiveEquals(email), deletedAt: null },
       },
       orderBy: { createdAt: 'desc' },
       include: { user: { include: { business: true } } },
@@ -248,7 +249,7 @@ export class AuthService {
 
   async signup(dto: SignupDto) {
     const existing = await this.prisma.user.findFirst({
-      where: { email: { equals: dto.email, mode: 'insensitive' } },
+      where: { email: insensitiveEquals(dto.email) },
     });
     if (existing) throw new ConflictException('Email already registered');
 
@@ -337,7 +338,7 @@ export class AuthService {
     // the owner capitalised it. Oldest first, and capped, so a shared address cannot turn one
     // sign-in into an unbounded number of bcrypt comparisons.
     const candidates = await this.prisma.user.findMany({
-      where: { email: { equals: dto.email, mode: 'insensitive' }, deletedAt: null },
+      where: { email: insensitiveEquals(dto.email), deletedAt: null },
       include: { business: true },
       orderBy: { createdAt: 'asc' },
       take: MAX_LOGIN_CANDIDATES,
