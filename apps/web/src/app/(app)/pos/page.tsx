@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { api, checkApiHealth } from '@/lib/api';
 import { formatCurrency, cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
-import { usePosStore, CartItem } from '@/stores/pos-store';
+import { usePosStore, CartItem, lineDiscountOf, sumMoney, diffMoney } from '@/stores/pos-store';
 import { queueSyncOperation, findCachedProductByBarcode } from '@/lib/offline-db';
 import { startSyncInterval } from '@/lib/sync-manager';
 import { usePosCatalog, type PosProduct } from '@/hooks/use-pos-catalog';
@@ -35,6 +35,16 @@ const BarcodeScanner = dynamic(
 );
 
 type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'BANK' | 'DEBT';
+
+/**
+ * Money to the paisa. The shared formatCurrency() drops the paise (maximumFractionDigits: 0),
+ * which is harmless on a rounded-off bill but hides up to 49p of one with Round Off switched off —
+ * and the confirm dialog is the last figure the cashier reads before the drawer opens. Rounds half
+ * away from zero, exactly like the numeric(14,2) columns these figures are stored in, so what is
+ * on screen is what is in the ledger.
+ */
+const exactMoney = (n: number) =>
+  `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function PosPage() {
   const token = useAuthStore((s) => s.accessToken)!;
@@ -88,6 +98,10 @@ export default function PosPage() {
   // read against the CURRENT subtotal, so adding, removing, repricing or re-quantifying a line can
   // no longer leave the screen total and the server total disagreeing.
   const billDiscount = usePosStore((s) => s.getBillDiscount());
+  // The same discount as the API records it — tax-inclusive, because computeTotals() takes it off
+  // (subtotal + tax). ₹100 off 18% goods is stored, printed and reported as ₹118, so the confirm
+  // dialog shows THAT figure rather than letting the screen and the customer's receipt disagree.
+  const billDiscountIncl = usePosStore((s) => s.getBillDiscountInclusive());
   const removeTax = usePosStore((s) => s.removeTax);
   const roundOff = usePosStore((s) => s.roundOff);
   const additionalCharges = usePosStore((s) => s.additionalCharges);
@@ -152,20 +166,38 @@ export default function PosPage() {
       if (status === 'COMPLETED') checkoutIdRef.current = idempotencyKey;
 
       const total = getTotal();
+      // NEVER tender getTotal()'s raw double. The API re-derives the bill in exact decimal and
+      // compares with no epsilon: a hair over is a hard 400 "Paid amount exceeds total", a hair
+      // under books the bill PARTIAL with a phantom receivable that stores as ₹0.00. getTenderAmount()
+      // returns the exact decimal total as a value that parses back to the identical figure server
+      // side, and never one paisa more than it.
+      const tender = usePosStore.getState().getTenderAmount();
       // A split is only ever valid for the exact bill it was entered against. If the cart or a
       // discount moved after the split was confirmed, the amounts no longer add up — the API then
       // either rejects the sale ("Paid amount exceeds total") or, worse, books it as PARTIAL with a
       // phantom receivable. Refuse loudly instead of sending a payments array that doesn't balance.
-      const splitSum = splitPayments.reduce((s, p) => s + p.amount, 0);
+      const splitSum = sumMoney(splitPayments.map((p) => p.amount));
       if (status === 'COMPLETED' && splitPayments.length > 0 && Math.abs(splitSum - total) > 0.01) {
         throw new Error('Bill total changed since the split was entered — please redo the split');
       }
 
+      // Square the split off against the tendered figure itself, in exact decimal. The dialog
+      // already balances against the bill it was shown, but the tolerance above lets through a
+      // sub-paisa drift, and a sub-paisa OVER is still a rejected sale — so rebuild the largest
+      // tender as (tender − the others) rather than trusting the sum.
+      const splitRows = splitPayments.map((p) => ({ paymentType: p.method, amount: p.amount }));
+      if (splitRows.length > 0) {
+        let big = 0;
+        splitRows.forEach((p, i) => { if (p.amount > splitRows[big].amount) big = i; });
+        const others = sumMoney(splitRows.filter((_, i) => i !== big).map((p) => p.amount));
+        splitRows[big] = { ...splitRows[big], amount: Math.max(0, diffMoney(tender, others)) };
+      }
+
       const payments =
         status === 'COMPLETED'
-          ? splitPayments.length > 0
-            ? splitPayments.map((p) => ({ paymentType: p.method, amount: p.amount }))
-            : [{ paymentType: paymentMethod, amount: total }]
+          ? splitRows.length > 0
+            ? splitRows
+            : [{ paymentType: paymentMethod, amount: tender }]
           : [];
 
       if (status === 'COMPLETED' && payments.some((p) => p.paymentType === 'DEBT') && !customerId) {
@@ -177,26 +209,25 @@ export default function PosPage() {
       // a phantom receivable against the customer. Nothing can switch the redemption on today (the
       // API returns no loyaltyPoints on a party), but refuse loudly the moment it can, rather than
       // let it turn into silent bad debt.
-      if (status === 'COMPLETED' && pointsRedeemed > 0) {
+      // (Applies to a HOLD too: a held bill is stored with the API's total, so parking one with
+      // points would resurrect it at a different price than the screen quoted.)
+      if (pointsRedeemed > 0) {
         throw new Error('Loyalty redemption is not supported on a bill yet — cancel it to continue');
       }
 
-      // Exactly ONE bill discount reaches the API. computeTotals() treats discountPercent as
-      // authoritative whenever it is present, so the POS's old habit of always sending it (as 0)
-      // alongside a ₹ amount made the server silently drop the ₹ discount and short-pay the bill.
-      // BOTH discount modes now funnel through the same derived rupee figure the screen is showing
-      // and are sent as its percentage of the CURRENT subtotal — which is exactly how the POS
-      // applies it, so the server's (subtotal + tax) x pct/100 reproduces the screen total. Reading
-      // it live (instead of a value cached when the cashier typed it) is what keeps the two in step
-      // after the cart moves underneath the discount.
-      const subtotal = getSubtotal();
-      const billDiscountValue = usePosStore.getState().getBillDiscount();
-      const billDiscountPercent =
-        billDiscountValue > 0 && subtotal > 0
-          // Capped at 100%: the POS floors its own taxable amount at zero, so a discount larger
-          // than the goods value must reach the API as "everything off", not a negative total.
-          ? Math.min(100, (billDiscountValue / subtotal) * 100)
-          : undefined;
+      // Exactly ONE bill discount reaches the API, and it goes as a RUPEE AMOUNT, never as a
+      // percentage. computeTotals() treats discountPercent as authoritative whenever it is present
+      // (which is why sending it as 0 alongside a ₹ amount used to make the server drop the ₹
+      // discount and short-pay the bill), and it re-derives the rupee figure from that percentage
+      // in Decimal — landing a hair either side of the client's pre-round total, so a ₹2,719.50
+      // bill showed 2720 on screen and computed 2719 on the server -> hard 400. Worse, the column
+      // is numeric(5,2): 0.3846…% is STORED as 0.38, so a later full refund rebuilt the bill off a
+      // different discount than the one that was charged.
+      // The store converts both discount modes into the single tax-inclusive rupee figure the API
+      // applies to (subtotal + tax), quantised to paise. The server subtracts exactly that number,
+      // so its total is exactly the screen's — and the bill records exactly the discount shown at
+      // the moment of confirming.
+      const billDiscountAmount = usePosStore.getState().getBillDiscountInclusive();
 
       const payload = {
         branchId,
@@ -207,13 +238,16 @@ export default function PosPage() {
           quantity: c.quantity,
           unit: c.unit ?? 'PCS',
           unitPrice: c.unitPrice,
-          discountAmount: c.discount,
+          // Clamped to what the line is worth: buildLines() does NOT floor a line at zero the way
+          // the POS does, so an over-typed line discount made the server's subtotal (and its tax)
+          // dive below the screen's and the sale was rejected.
+          discountAmount: lineDiscountOf(c),
           taxRate: removeTax ? 0 : c.taxRate,
           hsnCode: c.hsnCode,
         })),
         payments,
-        discountPercent: billDiscountPercent,
-        discountAmount: undefined,
+        discountPercent: undefined,
+        discountAmount: billDiscountAmount > 0 ? billDiscountAmount : undefined,
         additionalCharges: additionalCharges > 0 ? [{ name: 'Additional', amount: additionalCharges }] : undefined,
         roundOffEnabled: roundOff,
         pointsRedeemed: usePosStore.getState().pointsRedeemed,
@@ -481,16 +515,24 @@ export default function PosPage() {
             ))}
           </div>
           <div className="space-y-0.5 text-sm border-t pt-2">
-            <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatCurrency(getSubtotal())}</span></div>
-            {billDiscount > 0 && (
-              <div className="flex justify-between text-emerald-700"><span>Discount</span><span>&minus;{formatCurrency(billDiscount)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{exactMoney(getSubtotal())}</span></div>
+            {billDiscountIncl > 0 && (
+              <div className="flex justify-between text-emerald-700">
+                <span>
+                  Discount
+                  {Math.abs(billDiscountIncl - billDiscount) >= 0.005 && (
+                    <span className="text-muted-foreground font-normal"> (incl. tax, as printed)</span>
+                  )}
+                </span>
+                <span>&minus;{exactMoney(billDiscountIncl)}</span>
+              </div>
             )}
             {!removeTax && getTax() > 0 && (
-              <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span>{formatCurrency(getTax())}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span>{exactMoney(getTax())}</span></div>
             )}
             <div className="flex justify-between text-base font-bold text-[hsl(348,85%,52%)] pt-1 border-t border-dashed">
               <span>Grand Total</span>
-              <span>{formatCurrency(getTotal())}</span>
+              <span>{exactMoney(getTotal())}</span>
             </div>
           </div>
           <div className="text-sm border-t pt-2">

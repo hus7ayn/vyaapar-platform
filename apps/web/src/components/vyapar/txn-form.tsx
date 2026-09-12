@@ -66,6 +66,21 @@ function lineDiscount(l: FormLine, gross: number): number {
 }
 
 /**
+ * Ancestors that can clip the anchor out of sight — <main>'s scroller, the line-item table's
+ * own horizontal scroller. Collected once when the panel opens; only their rects are read
+ * afterwards, so scrolling stays cheap. They bound VISIBILITY only, never the panel's size:
+ * the panel is portalled out of them precisely so it can overflow them.
+ */
+function clippingAncestors(el: HTMLElement): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const s = getComputedStyle(p);
+    if (s.overflowX !== 'visible' || s.overflowY !== 'visible') out.push(p);
+  }
+  return out;
+}
+
+/**
  * An autocomplete list rendered into <body> instead of next to its input.
  *
  * The line-items table has to scroll sideways on a phone, and an `overflow-x-auto` ancestor
@@ -90,24 +105,63 @@ function AutocompleteDropdown({
   const closeRef = useRef(onClose);
   useEffect(() => { closeRef.current = onClose; });
 
-  const [box, setBox] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+  /**
+   * Layout-viewport coordinates, which is what `position: fixed` resolves against.
+   * `top` and `bottom` are mutually exclusive: a panel that drops upwards hangs off its BOTTOM
+   * edge, because its height is content-driven (maxHeight only caps it). Subtracting maxHeight
+   * from the input's top instead would leave a short filtered list floating in mid-air.
+   */
+  const [box, setBox] = useState<
+    { top?: number; bottom?: number; left: number; width: number; maxHeight: number } | null
+  >(null);
 
   useEffect(() => {
     if (!open || !anchorEl) { setBox(null); return; }
+    const clips = clippingAncestors(anchorEl);
+    // iOS Safari never shrinks window.innerHeight for the on-screen keyboard — only
+    // visualViewport reports the strip of screen the keyboard leaves — so measure against that
+    // where it exists. Its offsets are relative to the same layout viewport that
+    // getBoundingClientRect() and `position: fixed` use, so the two mix safely.
+    const vv = window.visualViewport;
     const place = () => {
       const r = anchorEl.getBoundingClientRect();
+      const viewTop = vv ? vv.offsetTop : 0;
+      const viewBottom = viewTop + (vv ? vv.height : window.innerHeight);
+
+      // Stay mounted but paint nothing once the input itself is out of sight — scrolled out of
+      // <main>, off the table's side-scroller, or under the keyboard. Otherwise the panel hangs
+      // over unrelated content (and over the sticky TopBar, which it outranks) until the next
+      // click. It comes straight back when the input is scrolled into view again.
+      let visTop = viewTop;
+      let visBottom = viewBottom;
+      let visLeft = vv ? vv.offsetLeft : 0;
+      let visRight = visLeft + (vv ? vv.width : window.innerWidth);
+      for (const clip of clips) {
+        const c = clip.getBoundingClientRect();
+        if (c.width === 0 && c.height === 0) continue; // laid out as `display: contents` — clips nothing
+        visTop = Math.max(visTop, c.top);
+        visBottom = Math.min(visBottom, c.bottom);
+        visLeft = Math.max(visLeft, c.left);
+        visRight = Math.min(visRight, c.right);
+      }
+      if (r.bottom <= visTop || r.top >= visBottom || r.right <= visLeft || r.left >= visRight) {
+        setBox(null);
+        return;
+      }
+
       const width = Math.min(Math.max(r.width, minWidth), window.innerWidth - 16);
-      const below = window.innerHeight - r.bottom - 8;
-      const above = r.top - 8;
+      const below = viewBottom - r.bottom - 8;
+      const above = r.top - viewTop - 8;
       // Drop upwards when the field sits low on a short screen (phone with the keyboard up).
       const flip = below < 160 && above > below;
-      const maxHeight = Math.max(96, Math.min(224, flip ? above : below));
       setBox({
-        top: flip ? r.top - maxHeight - 4 : r.bottom + 4,
+        // Pin the edge that touches the input: top when dropping down, bottom when flipped.
+        top: flip ? undefined : r.bottom + 4,
+        bottom: flip ? window.innerHeight - r.top + 4 : undefined,
         // Keep the panel on screen when its input sits near the right edge.
         left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)),
         width,
-        maxHeight,
+        maxHeight: Math.max(96, Math.min(224, flip ? above : below)),
       });
     };
     place();
@@ -115,9 +169,14 @@ function AutocompleteDropdown({
     // table's own horizontal scroller.
     window.addEventListener('scroll', place, true);
     window.addEventListener('resize', place);
+    // The keyboard opening/closing on iOS fires neither of those — only these two.
+    vv?.addEventListener('resize', place);
+    vv?.addEventListener('scroll', place);
     return () => {
       window.removeEventListener('scroll', place, true);
       window.removeEventListener('resize', place);
+      vv?.removeEventListener('resize', place);
+      vv?.removeEventListener('scroll', place);
     };
   }, [open, anchorEl, minWidth]);
 
@@ -146,7 +205,7 @@ function AutocompleteDropdown({
     <div
       ref={panelRef}
       className="fixed z-50 bg-white border rounded-md shadow-lg overflow-auto"
-      style={{ top: box.top, left: box.left, width: box.width, maxHeight: box.maxHeight }}
+      style={{ top: box.top, bottom: box.bottom, left: box.left, width: box.width, maxHeight: box.maxHeight }}
     >
       {children}
     </div>,
@@ -527,8 +586,13 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
                         className="h-9"
                         value={activeItemRow === l.key ? itemSearch : l.name}
                         placeholder="Search item…"
-                        onChange={(e) => { setItemSearch(e.target.value); updateLine(l.key, { name: e.target.value, itemId: undefined }); }}
+                        // Escape closes the list by clearing activeItemRow; typing or clicking the
+                        // field re-opens it. Without that the row stays dead until the input is
+                        // blurred and re-focused (onFocus can't re-fire on a focused element),
+                        // so the cashier ends up saving free text with no itemId.
+                        onChange={(e) => { setActiveItemRow(l.key); setItemSearch(e.target.value); updateLine(l.key, { name: e.target.value, itemId: undefined }); }}
                         onFocus={() => { setActiveItemRow(l.key); setItemSearch(l.name); }}
+                        onClick={() => setActiveItemRow((r) => (r === l.key ? r : l.key))}
                         onBlur={() => setTimeout(() => setActiveItemRow((r) => (r === l.key ? null : r)), 150)}
                       />
                       <AutocompleteDropdown

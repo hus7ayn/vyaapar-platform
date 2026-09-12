@@ -4,9 +4,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { resolveBranchWarehouse } from '../inventory/warehouse.util';
 import {
   BARCODE_PREFIX_LEN,
-  buildItemBarcode,
   decodeCostFromBarcode,
+  encodeCostSuffix,
   isCostEncodedBarcode,
+  perturbBarcodePrefix,
+  resolveBarcodePrefix,
 } from './barcode.util';
 import { EventsGateway } from '../events/events.gateway';
 
@@ -254,30 +256,35 @@ export class ItemsService {
 
   async update(businessId: string, id: string, body: Partial<ItemInput> & { isActive?: boolean }) {
     const existing = await this.get(businessId, id);
-    // The barcode encodes the cost price in its trailing digits, so a cost change has to be mirrored
-    // into it — otherwise every later scan decodes the superseded cost. The 8-digit prefix is
-    // preserved so the item keeps the identity already printed on its shelf tags.
-    const nextCost = body.costPrice ?? body.purchasePrice;
-    const currentCost = Number(existing.costPrice) || Number(existing.purchasePrice) || 0;
-    const rebuiltBarcode =
-      nextCost !== undefined && Number(nextCost) !== currentCost
-        ? await this.generateUniqueBarcode(
-            businessId,
-            { sku: body.sku ?? existing.sku, id: existing.id },
-            Number(nextCost),
-            {
-              excludeItemId: existing.id,
-              existingPrefix: existing.barcode?.replace(/\D/g, '').slice(0, BARCODE_PREFIX_LEN),
-            },
-          )
-        : undefined;
+    // An item's barcode is PRINTED and stuck on physical stock, so editing a price must never
+    // change it. This used to mirror a cost change into the trailing digits, which silently
+    // invalidated every tag already on the shelf (the scan then finds no row at all) and mangled
+    // imported/manufacturer codes by treating their leading digits as our prefix — with no
+    // warning and no consent. The cost digits now move only when a human presses Regenerate
+    // (assignBarcode), which is where the "then reprint the tags" prompt lives; until they do,
+    // the item page's stale-cost warning is what tells them it is worth doing.
+    //
+    // The one barcode write left here FILLS IN a missing one: there is no printed label to
+    // invalidate, and it uses the same effective cost (costPrice falling back to purchasePrice)
+    // that assignBarcode, findByBarcode and the barcode panel use, so they cannot disagree.
+    const nextCostPrice = body.costPrice ?? Number(existing.costPrice);
+    const nextPurchasePrice = body.purchasePrice ?? Number(existing.purchasePrice);
+    const effectiveCost = Number(nextCostPrice) || Number(nextPurchasePrice) || 0;
+    const assignedBarcode = existing.barcode
+      ? undefined
+      : await this.generateUniqueBarcode(
+          businessId,
+          { sku: body.sku ?? existing.sku, id: existing.id },
+          effectiveCost,
+          { excludeItemId: existing.id },
+        );
     const item = await this.prisma.item.update({
       where: { id },
       data: {
         ...(body.name !== undefined && { name: body.name }),
         ...(body.itemType !== undefined && { itemType: body.itemType }),
         ...(body.sku !== undefined && { sku: body.sku }),
-        ...(rebuiltBarcode && { barcode: rebuiltBarcode }),
+        ...(assignedBarcode && { barcode: assignedBarcode }),
         ...(body.size !== undefined && { size: body.size?.trim() || null }),
         ...(body.hsnCode !== undefined && { hsnCode: body.hsnCode }),
         ...(body.categoryId !== undefined && { categoryId: body.categoryId }),
@@ -398,36 +405,59 @@ export class ItemsService {
     return QRCode.toDataURL(text, { width: 256, margin: 2 });
   }
 
-  // Build a barcode from the product details and retry with a perturbed prefix until it is
-  // unique within the business (the cost suffix is preserved so labels still decode cost).
+  // Build a barcode from the product details and, on a clash, walk the identity digits until the
+  // value is unique within the business (the cost suffix is untouched, so labels still decode the
+  // same cost). Two items sharing a barcode is a money bug — findByBarcode matches exactly and
+  // takes the first row, so the wrong item is sold at the wrong price off the wrong stock — so
+  // this never returns a value it has not just checked, and gives up loudly rather than quietly
+  // handing back a duplicate.
+  //
+  // The old retry re-derived from `${sku}${attempt}`, which could not move the prefix at all
+  // (deriveBarcodePrefix reads only the first five digits of the seed): every attempt, and the
+  // fallback, rebuilt the identical candidate.
   private async generateUniqueBarcode(
     businessId: string,
     seed: { sku: string; id: string },
     cost: number,
     opts?: { excludeItemId?: string; existingPrefix?: string },
   ): Promise<string> {
-    for (let attempt = 0; attempt < 30; attempt++) {
-      const candidate =
+    const basePrefix = resolveBarcodePrefix(seed, opts?.existingPrefix);
+    const suffix = encodeCostSuffix(cost);
+    const WALK_ATTEMPTS = 25; // deterministic neighbours of the derived identity
+    const RANDOM_ATTEMPTS = 25; // then jump around the 100k identity space
+    for (let attempt = 0; attempt < WALK_ATTEMPTS + RANDOM_ATTEMPTS; attempt++) {
+      const prefix =
         attempt === 0
-          ? buildItemBarcode(seed, cost, opts?.existingPrefix)
-          : buildItemBarcode({ sku: `${seed.sku}${attempt}`, id: seed.id }, cost);
+          ? basePrefix
+          : perturbBarcodePrefix(
+              basePrefix,
+              attempt < WALK_ATTEMPTS ? attempt : 1 + Math.floor(Math.random() * 99999),
+            );
+      const candidate = `${prefix}${suffix}`;
+      // Mirror findByBarcode's lookup exactly: a scan resolves on barcode OR sku OR a variant's
+      // barcode, so anything one of those would already match is a clash, not just a duplicate
+      // barcode column.
       const clash = await this.prisma.item.findFirst({
         where: {
           businessId,
-          barcode: candidate,
           deletedAt: null,
+          OR: [{ barcode: candidate }, { sku: candidate }, { variants: { some: { barcode: candidate } } }],
           ...(opts?.excludeItemId ? { id: { not: opts.excludeItemId } } : {}),
         },
         select: { id: true },
       });
       if (!clash) return candidate;
     }
-    // Fallback: item-id digits guarantee uniqueness even if every prefix perturbation collided.
-    return buildItemBarcode({ sku: seed.id.replace(/\D/g, '') || seed.id, id: seed.id }, cost);
+    throw new BadRequestException(
+      'Could not allocate a unique barcode for this item — every identity tried is already in use. Please change the SKU and try again.',
+    );
   }
 
   // Generate (no barcode yet) or Regenerate (rebuild the cost suffix from the item's CURRENT cost,
   // keeping the 8-digit identity prefix so tags already on the shelf still point at this item).
+  // This is the ONLY path that may change a barcode already assigned: it is reached from the
+  // Regenerate button, whose caption states that printed tags stop matching, so the invalidation
+  // is something the shop asked for rather than a side effect of saving a price.
   // Regenerating an item whose barcode is already in sync produces the identical value, so report
   // whether anything actually changed — writing the same row and returning it made the UI's
   // Regenerate button look like it did nothing at all.
@@ -456,7 +486,15 @@ export class ItemsService {
     const updated = [];
     for (const row of items) {
       const cost = Number(row.costPrice) || Number(row.purchasePrice) || 0;
-      const barcode = buildItemBarcode({ sku: row.sku, id: row.id }, cost);
+      // Uniqueness is checked per row (and the rows are written as we go, so each check sees the
+      // ones already handed out): two items in the same run whose skus share their first five
+      // digits used to be given the byte-identical barcode.
+      const barcode = await this.generateUniqueBarcode(
+        businessId,
+        { sku: row.sku, id: row.id },
+        cost,
+        { excludeItemId: row.id },
+      );
       updated.push(await this.prisma.item.update({ where: { id: row.id }, data: { barcode } }));
     }
     return updated;

@@ -89,8 +89,9 @@ interface Category {
 }
 
 // Mirrors apps/api/src/items/barcode.util.ts: an 8-digit identity prefix followed by the cost
-// price in paise. The suffix is at least 5 digits but GROWS past that for ₹1000+, so cost is
-// everything after the prefix — reading a fixed last-5 would report ₹999.99 for a ₹1500 item.
+// price in WHOLE RUPEES, 5 digits — so an ordinary tag is exactly 13 digits and ₹25,000 ends
+// "25000", not "2500000". Paise are not carried, so every comparison here is at rupee
+// granularity (₹1,499.59 encodes as 01500 and must not be reported stale).
 const BARCODE_PREFIX_LEN = 8;
 const MIN_COST_SUFFIX_LEN = 5;
 /** ₹999.99 in paise — the ceiling the old encoder clamped every cost to. */
@@ -100,34 +101,76 @@ function toPaise(costPrice: number): number {
   return Number.isFinite(costPrice) ? Math.round(Math.max(0, costPrice) * 100) : 0;
 }
 
+/** Whole rupees, which is the granularity the barcode suffix carries. */
+function toRupees(costPrice: number): number {
+  return Number.isFinite(costPrice) ? Math.round(Math.max(0, costPrice)) : 0;
+}
+
 function encodeBarcodeCostSuffix(costPrice: number): string {
-  return String(toPaise(costPrice)).padStart(MIN_COST_SUFFIX_LEN, '0');
+  return String(toRupees(costPrice)).padStart(MIN_COST_SUFFIX_LEN, '0');
 }
 
 function decodeBarcodeCost(barcode?: string | null): number | null {
   if (!barcode) return null;
   const digits = barcode.replace(/\D/g, '');
   if (digits.length <= BARCODE_PREFIX_LEN) return null;
-  const paise = Number(digits.slice(BARCODE_PREFIX_LEN));
-  return Number.isFinite(paise) ? paise / 100 : null;
+  const rupees = Number(digits.slice(BARCODE_PREFIX_LEN));
+  return Number.isFinite(rupees) ? rupees : null;
 }
+
+const HOUSE_HEAD = '890';
+/** Prefix this generator uses when an item's sku and id hold no digits at all. */
+const DIGITLESS_PREFIX = HOUSE_HEAD.padEnd(BARCODE_PREFIX_LEN, '0');
 
 /** Mirrors deriveBarcodePrefix: the prefix the server builds for an item with no barcode yet. */
 function deriveBarcodePrefix(seed?: string | null): string | null {
   const base = (seed ?? '').replace(/\D/g, '');
   if (!base) return null;
-  return `890${base}`.padEnd(BARCODE_PREFIX_LEN, '0').slice(0, BARCODE_PREFIX_LEN);
+  return `${HOUSE_HEAD}${base}`.padEnd(BARCODE_PREFIX_LEN, '0').slice(0, BARCODE_PREFIX_LEN);
+}
+
+/** Mirrors resolveBarcodePrefix: keep the identity already printed, else derive one. */
+function resolveBarcodePrefix(seed: { sku?: string | null; id?: string | null }, existing?: string | null): string {
+  const kept = (existing ?? '').replace(/\D/g, '').slice(0, BARCODE_PREFIX_LEN);
+  if (kept.length === BARCODE_PREFIX_LEN) return kept;
+  return deriveBarcodePrefix(seed.sku) ?? deriveBarcodePrefix(seed.id) ?? DIGITLESS_PREFIX;
+}
+
+/** Mirrors gtinCheckDigit: the standard EAN/UPC weighted-sum check. */
+function gtinCheckDigit(body: string): number {
+  let sum = 0;
+  let weight = 3;
+  for (let i = body.length - 1; i >= 0; i--) {
+    sum += Number(body[i]) * weight;
+    weight = weight === 3 ? 1 : 3;
+  }
+  return (10 - (sum % 10)) % 10;
+}
+
+/** A value that checks out as an EAN-8 / UPC-A / EAN-13 was printed by a manufacturer, not by us. */
+function hasRetailCheckDigit(digits: string): boolean {
+  if (digits.length !== 13 && digits.length !== 12 && digits.length !== 8) return false;
+  return gtinCheckDigit(digits.slice(0, -1)) === Number(digits[digits.length - 1]);
+}
+
+/** Mirrors isOwnPrefix, including the digitless-sku case create() stores as 89000000. */
+function isOwnBarcodePrefix(prefix: string, seed: { sku?: string | null; id?: string | null }): boolean {
+  const fromSku = deriveBarcodePrefix(seed.sku);
+  if (fromSku && prefix === fromSku) return true;
+  const fromId = deriveBarcodePrefix(seed.id);
+  if (fromId && prefix === fromId) return true;
+  return !fromSku && prefix === DIGITLESS_PREFIX;
 }
 
 /**
  * Mirrors isCostEncodedBarcode: do these trailing digits really hold a cost price?
  *
  * Every barcode has digits after the 8th, but only ones this app generated MEAN anything by them.
- * A seeded, CSV-imported or hand-typed value is a plain number — the seeded 8901001003001 on a
+ * A seeded, imported or hand-entered value is a plain number — the seeded 8901001003001 on a
  * ₹168 item “decodes” to ₹30.01 — and telling its owner the tag is stale would send them to
- * Regenerate, changing a barcode already printed on physical stock so it no longer scans. So we
- * accept only the prefix this generator derives for THIS item, or the unmistakable clamp
- * signature (13 digits ending 99999 = ₹999.99 on an item costing more), which is the real bug.
+ * Regenerate, changing a barcode already printed on physical stock so it no longer scans. The
+ * decoded figure is only ever displayed, never charged, so a missed warning costs nothing and a
+ * false one costs a shelf of labels: when in doubt, say no.
  */
 function isCostEncodedBarcode(
   barcode: string | null | undefined,
@@ -136,13 +179,21 @@ function isCostEncodedBarcode(
 ): boolean {
   const digits = (barcode ?? '').replace(/\D/g, '');
   if (digits.length <= BARCODE_PREFIX_LEN) return false;
-  const prefix = digits.slice(0, BARCODE_PREFIX_LEN);
-  if (prefix === deriveBarcodePrefix(seed.sku) || prefix === deriveBarcodePrefix(seed.id)) return true;
-  return (
+  const suffix = digits.slice(BARCODE_PREFIX_LEN);
+  // The clamp signature (13 digits ending 99999 = ₹999.99 on an item costing more) is the real
+  // bug the shop hit and is specific enough to stand on its own.
+  if (
     digits.length === BARCODE_PREFIX_LEN + MIN_COST_SUFFIX_LEN &&
-    Number(digits.slice(BARCODE_PREFIX_LEN)) === CLAMPED_COST_PAISE &&
+    Number(suffix) === CLAMPED_COST_PAISE &&
     toPaise(costPrice) > CLAMPED_COST_PAISE
-  );
+  ) {
+    return true;
+  }
+  // Our encoder pads to five digits and then widens, so it never writes a sixth digit that is a
+  // leading zero; and it never happens to satisfy a retail check digit except by coincidence.
+  if (suffix.length > MIN_COST_SUFFIX_LEN && suffix.startsWith('0')) return false;
+  if (hasRetailCheckDigit(digits)) return false;
+  return isOwnBarcodePrefix(digits.slice(0, BARCODE_PREFIX_LEN), seed);
 }
 
 interface ItemForm {
@@ -653,7 +704,7 @@ export default function ItemsPage() {
             <BarcodeTagPanel
               itemId={selected.id}
               barcode={selected.barcode}
-              costPrice={Number(selected.costPrice) || Number(selected.purchasePrice)}
+              costPrice={Number(selected.costPrice) || Number(selected.purchasePrice) || 0}
               name={selected.name}
               price={Number(selected.mrp) || Number(selected.salePrice)}
               category={selected.category?.name ?? null}
@@ -841,8 +892,10 @@ export default function ItemsPage() {
                   <label className="text-xs font-medium text-muted-foreground">Barcode</label>
                   <Input value={form.barcode || 'Assigned automatically'} readOnly disabled className="font-mono bg-muted/50" />
                   <p className="text-[10px] text-muted-foreground mt-1">
-                    Generated by the system — its last 5 digits encode the cost price, so it updates
-                    itself whenever you change that price.
+                    Generated by the system — the digits after the first 8 encode the cost price.
+                    Changing a price here does <span className="font-medium">not</span> change the
+                    barcode, so tags already printed keep scanning; use Regenerate on the item when
+                    you are ready to reprint them.
                   </p>
                 </div>
                 <div>
@@ -1038,7 +1091,6 @@ function BarcodeTagPanel({
     enabled: !!token && !!barcode,
   });
 
-  const digits = (barcode ?? '').replace(/\D/g, '');
   const costPaise = toPaise(costPrice);
   // Same normalisation the server applies (missing/negative cost → 0), so the rupees shown here
   // are the rupees the barcode will actually encode rather than a stray NaN.
@@ -1048,20 +1100,27 @@ function BarcodeTagPanel({
   const costEncoded = isCostEncodedBarcode(barcode, { sku, id: itemId }, costPrice);
   const decoded = costEncoded ? decodeBarcodeCost(barcode) : null;
   // Exactly what assignBarcode would store if Regenerate were pressed now: the printed 8-digit
-  // identity prefix is kept and only the cost digits are rebuilt. Equal means the click is a
-  // no-op, which is what the button now shows instead of firing a “nothing to change” toast.
-  const wouldBecome =
-    digits.length >= BARCODE_PREFIX_LEN ? `${digits.slice(0, BARCODE_PREFIX_LEN)}${expectedSuffix}` : null;
+  // identity prefix is kept (or derived, when there is nothing printed to keep) and only the cost
+  // digits are rebuilt.
+  const wouldBecome = `${resolveBarcodePrefix({ sku, id: itemId }, barcode)}${expectedSuffix}`;
+  // Disable the button exactly when a click cannot change the stored value — that part is about
+  // the string, not its meaning. What the caption SAYS about it is a separate question: "already
+  // encodes Rs.X" is a claim we may only make for a barcode we can prove is ours, otherwise the
+  // panel contradicts the line right above it ("these digits don't encode a cost price"), which
+  // is what every seeded item looked like once the server had quietly rewritten its cost digits.
   const upToDate = !!barcode && wouldBecome === barcode;
-  // Round both sides to paise before comparing — cost comes back as a Decimal string.
-  const staleSuffix = decoded != null && Math.round(decoded * 100) !== costPaise;
+  // Compare at RUPEE granularity — rupees is all the suffix carries, so ₹1,499.59 encoded as
+  // 01500 is correct, not stale. Comparing paise here would send the shop to reprint good labels.
+  const staleSuffix = decoded != null && decoded !== toRupees(costPrice);
   const regenerateHint = !barcode
     ? `Creates a barcode ending ${expectedSuffix} (cost ${formatMoney(costRupees)}).`
     : upToDate
-      ? `Already encodes ${formatMoney(costRupees)} — nothing to regenerate.`
+      ? costEncoded
+        ? `Already encodes ${formatMoney(costRupees)} — nothing to regenerate.`
+        : 'Regenerating would produce this very value — nothing to change.'
       : costEncoded
         ? `Rebuilds the cost digits as ${expectedSuffix} (${formatMoney(costRupees)}).`
-        : `Replaces the last digits with ${formatMoney(costRupees)} — printed tags stop matching.`;
+        : `Replaces this with ${wouldBecome} (cost ${formatMoney(costRupees)}) — printed tags stop matching.`;
 
   return (
     <div className="bg-white rounded-lg border shadow-sm p-4">
@@ -1072,11 +1131,11 @@ function BarcodeTagPanel({
           </p>
           <p className="text-xs text-muted-foreground mt-1">
             {decoded != null ? (
-              <>Digits after the first 8 encode cost price in paise · decoded: <span className="font-medium">{formatMoney(decoded)}</span></>
+              <>Digits after the first 8 are the cost price in rupees · decoded: <span className="font-medium">{formatMoney(decoded)}</span></>
             ) : barcode ? (
               <>Imported or hand-entered — these digits don&apos;t encode a cost price.</>
             ) : (
-              <>Digits after the first 8 encode cost price in paise · expected suffix: <span className="font-mono">{expectedSuffix}</span></>
+              <>Digits after the first 8 are the cost price in rupees · expected suffix: <span className="font-mono">{expectedSuffix}</span></>
             )}
           </p>
           {/* Fires only for a barcode we can prove is ours and out of date (see isCostEncodedBarcode).
@@ -1104,7 +1163,18 @@ function BarcodeTagPanel({
               variant="outline"
               size="sm"
               disabled={generating || upToDate}
-              onClick={onGenerate}
+              onClick={() => {
+                // Regenerating is the ONE action that invalidates labels already stuck on stock,
+                // so it is never taken on the strength of a caption alone: name both values and
+                // let the shop decide. (Nothing else in the app changes a barcode any more.)
+                if (
+                  barcode &&
+                  !confirm(
+                    `Replace barcode ${barcode} with ${wouldBecome}?\n\nTags already printed with ${barcode} will stop scanning — you will need to reprint them.`,
+                  )
+                ) return;
+                onGenerate();
+              }}
             >
               <Barcode className="h-3 w-3 mr-1" /> {barcode ? 'Regenerate' : 'Generate'}
             </Button>
