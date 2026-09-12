@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Save, Printer } from 'lucide-react';
@@ -64,6 +65,95 @@ function lineDiscount(l: FormLine, gross: number): number {
   return l.discountType === 'AMT' ? Math.min(value, gross) : gross * (value / 100);
 }
 
+/**
+ * An autocomplete list rendered into <body> instead of next to its input.
+ *
+ * The line-items table has to scroll sideways on a phone, and an `overflow-x-auto` ancestor
+ * forces the other axis to `auto` as well — which would clip a normally-positioned dropdown and
+ * break item search. Portalling it out sidesteps that, at the cost of having to place the panel
+ * from the input's viewport rect and re-measure whenever anything scrolls or resizes.
+ */
+function AutocompleteDropdown({
+  anchorEl,
+  open,
+  minWidth = 0,
+  onClose,
+  children,
+}: {
+  anchorEl: HTMLElement | null;
+  open: boolean;
+  minWidth?: number;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; });
+
+  const [box, setBox] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+
+  useEffect(() => {
+    if (!open || !anchorEl) { setBox(null); return; }
+    const place = () => {
+      const r = anchorEl.getBoundingClientRect();
+      const width = Math.min(Math.max(r.width, minWidth), window.innerWidth - 16);
+      const below = window.innerHeight - r.bottom - 8;
+      const above = r.top - 8;
+      // Drop upwards when the field sits low on a short screen (phone with the keyboard up).
+      const flip = below < 160 && above > below;
+      const maxHeight = Math.max(96, Math.min(224, flip ? above : below));
+      setBox({
+        top: flip ? r.top - maxHeight - 4 : r.bottom + 4,
+        // Keep the panel on screen when its input sits near the right edge.
+        left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)),
+        width,
+        maxHeight,
+      });
+    };
+    place();
+    // Capture phase, because scroll doesn't bubble: this also catches <main> and the
+    // table's own horizontal scroller.
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [open, anchorEl, minWidth]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRef.current(); };
+    // Pointer-down rather than click, so a pick (which runs on mouseDown) is never cancelled here.
+    const onPointerDown = (e: Event) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (panelRef.current?.contains(target) || anchorEl?.contains(target)) return;
+      closeRef.current();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('touchstart', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('touchstart', onPointerDown);
+    };
+  }, [open, anchorEl]);
+
+  if (!open || !box) return null;
+  return createPortal(
+    <div
+      ref={panelRef}
+      className="fixed z-50 bg-white border rounded-md shadow-lg overflow-auto"
+      style={{ top: box.top, left: box.left, width: box.width, maxHeight: box.maxHeight }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 let lineKey = 1;
 const emptyLine = (): FormLine => ({
   key: lineKey++, name: '', quantity: '1', unit: 'PCS', unitPrice: '', discountValue: '', discountType: 'PCT', taxRate: '0',
@@ -115,6 +205,9 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
   const [activeItemRow, setActiveItemRow] = useState<number | null>(null);
   const [itemSearch, setItemSearch] = useState('');
   const [showPreview, setShowPreview] = useState(false);
+  // The autocomplete panels live in a portal, so they position themselves off these inputs.
+  const partyInputRef = useRef<HTMLInputElement>(null);
+  const itemInputRefs = useRef(new Map<number, HTMLInputElement>());
 
   const { data: parties } = useQuery({
     queryKey: ['parties-all'],
@@ -316,29 +409,32 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
             {meta.partyLabel}{isExpense && <span className="text-red-600"> *</span>}
           </label>
           <Input
+            ref={partyInputRef}
             value={partySearch}
             placeholder={isExpense ? 'Who was this paid to?' : `Search ${meta.partyLabel.toLowerCase()}…`}
             onChange={(e) => { setPartySearch(e.target.value); setPartyId(undefined); setPartyOpen(true); }}
             onFocus={() => setPartyOpen(true)}
             onBlur={() => setTimeout(() => setPartyOpen(false), 150)}
           />
-          {partyOpen && filteredParties.length > 0 && (
-            <div className="absolute z-20 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-auto">
-              {filteredParties.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="w-full text-left px-3 py-2 hover:bg-red-50 text-sm flex justify-between"
-                  onMouseDown={() => { setPartyId(p.id); setPartySearch(p.name); setPartyOpen(false); }}
-                >
-                  <span>{p.name}</span>
-                  <span className={cn('text-xs', Number(p.currentBalance) >= 0 ? 'text-green-600' : 'text-red-600')}>
-                    {formatMoney(Math.abs(Number(p.currentBalance)))}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+          <AutocompleteDropdown
+            anchorEl={partyInputRef.current}
+            open={partyOpen && filteredParties.length > 0}
+            onClose={() => setPartyOpen(false)}
+          >
+            {filteredParties.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="w-full text-left px-3 py-2 hover:bg-red-50 text-sm flex justify-between gap-2"
+                onMouseDown={() => { setPartyId(p.id); setPartySearch(p.name); setPartyOpen(false); }}
+              >
+                <span className="truncate">{p.name}</span>
+                <span className={cn('text-xs shrink-0', Number(p.currentBalance) >= 0 ? 'text-green-600' : 'text-red-600')}>
+                  {formatMoney(Math.abs(Number(p.currentBalance)))}
+                </span>
+              </button>
+            ))}
+          </AutocompleteDropdown>
           {selectedParty && (
             <p className="text-xs mt-1 text-muted-foreground">
               Balance:{' '}
@@ -371,7 +467,7 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
             ) : (
               <div className="flex gap-2">
                 <select
-                  className="w-full h-10 rounded-md border px-3 text-sm bg-white"
+                  className="w-full min-w-0 h-10 rounded-md border px-3 text-sm bg-white"
                   value={expenseCategoryId}
                   onChange={(e) => setExpenseCategoryId(e.target.value)}
                 >
@@ -399,8 +495,10 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
 
       {/* Item lines */}
       {meta.hasLines && (
-        <div className="bg-white rounded-lg border shadow-sm overflow-visible">
-          <table className="w-full text-sm">
+        <div className="bg-white rounded-lg border shadow-sm">
+          {/* The item autocomplete is portalled to <body>, so this scroller can't clip it. */}
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[820px]">
             <thead>
               <tr className="bg-red-50 text-red-900 text-xs">
                 <th className="px-2 py-2 text-left w-8">#</th>
@@ -423,8 +521,9 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
                 return (
                   <tr key={l.key} className="border-t align-top">
                     <td className="px-2 py-1.5 text-muted-foreground">{idx + 1}</td>
-                    <td className="px-2 py-1.5 relative">
+                    <td className="px-2 py-1.5">
                       <Input
+                        ref={(el) => { if (el) itemInputRefs.current.set(l.key, el); else itemInputRefs.current.delete(l.key); }}
                         className="h-9"
                         value={activeItemRow === l.key ? itemSearch : l.name}
                         placeholder="Search item…"
@@ -432,27 +531,30 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
                         onFocus={() => { setActiveItemRow(l.key); setItemSearch(l.name); }}
                         onBlur={() => setTimeout(() => setActiveItemRow((r) => (r === l.key ? null : r)), 150)}
                       />
-                      {activeItemRow === l.key && filteredItems.length > 0 && (
-                        <div className="absolute z-30 mt-1 w-72 bg-white border rounded-md shadow-lg max-h-56 overflow-auto">
-                          {filteredItems.map((it) => (
-                            <button
-                              key={it.id}
-                              type="button"
-                              className="w-full text-left px-3 py-2 hover:bg-red-50 text-sm"
-                              onMouseDown={() => pickItem(l.key, it)}
-                            >
-                              <div className="flex justify-between">
-                                <span className="font-medium">{it.name}{it.size ? ` · ${it.size}` : ''}</span>
-                                <span>{formatMoney(meta.side === 'purchase' ? it.purchasePrice : it.salePrice)}</span>
-                              </div>
-                              <div className="text-xs text-muted-foreground flex justify-between">
-                                <span>{it.sku}{it.size ? ` · Size ${it.size}` : ''}</span>
-                                {it.itemType === 'PRODUCT' && <span>Stock: {Number(it.currentStock)}</span>}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      <AutocompleteDropdown
+                        anchorEl={itemInputRefs.current.get(l.key) ?? null}
+                        open={activeItemRow === l.key && filteredItems.length > 0}
+                        minWidth={288}
+                        onClose={() => setActiveItemRow((r) => (r === l.key ? null : r))}
+                      >
+                        {filteredItems.map((it) => (
+                          <button
+                            key={it.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 hover:bg-red-50 text-sm"
+                            onMouseDown={() => pickItem(l.key, it)}
+                          >
+                            <div className="flex justify-between gap-2">
+                              <span className="font-medium truncate">{it.name}{it.size ? ` · ${it.size}` : ''}</span>
+                              <span className="shrink-0">{formatMoney(meta.side === 'purchase' ? it.purchasePrice : it.salePrice)}</span>
+                            </div>
+                            <div className="text-xs text-muted-foreground flex justify-between gap-2">
+                              <span className="truncate">{it.sku}{it.size ? ` · Size ${it.size}` : ''}</span>
+                              {it.itemType === 'PRODUCT' && <span className="shrink-0">Stock: {Number(it.currentStock)}</span>}
+                            </div>
+                          </button>
+                        ))}
+                      </AutocompleteDropdown>
                     </td>
                     <td className="px-2 py-1.5">
                       <Input className="h-9 text-right" type="number" min="0" value={l.quantity} onChange={(e) => updateLine(l.key, { quantity: e.target.value })} />
@@ -465,8 +567,11 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
                     </td>
                     <td className="px-2 py-1.5">
                       <div className="flex items-stretch">
+                        {/* min-w-0: as a flex item the input's automatic minimum size is its
+                            intrinsic ~180px, which forced this column ~100px past the w-32 the
+                            header asks for and made the whole table that much wider. */}
                         <Input
-                          className="h-9 text-right rounded-r-none"
+                          className="h-9 text-right rounded-r-none min-w-0"
                           type="number"
                           min="0"
                           max={l.discountType === 'PCT' ? 100 : undefined}
@@ -499,6 +604,7 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
               })}
             </tbody>
           </table>
+          </div>
           <div className="p-2 border-t">
             <Button type="button" variant="outline" size="sm" onClick={() => setLines((ls) => [...ls, emptyLine()])}>
               <Plus className="h-4 w-4 mr-1" /> Add Row
@@ -530,7 +636,9 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
             </div>
             <div>
               <label className="text-xs font-semibold text-muted-foreground">Account</label>
-              <select className="w-full h-10 rounded-md border px-3 text-sm bg-white" value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} disabled={creditSale || paymentType === 'CHEQUE'}>
+              {/* min-w-0 — a select is as wide as its widest option unless told otherwise, so a
+                  long bank-account name would push this grid past a phone's width. */}
+              <select className="w-full min-w-0 h-10 rounded-md border px-3 text-sm bg-white" value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} disabled={creditSale || paymentType === 'CHEQUE'}>
                 <option value="">Auto ({paymentType === 'CASH' ? 'Cash In Hand' : 'First Bank A/c'})</option>
                 {(accounts ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>

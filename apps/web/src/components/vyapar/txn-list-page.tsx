@@ -240,7 +240,8 @@ export function TxnViewDialog({ txn, onClose }: { txn: Txn | null; onClose: () =
             {txn.description && <div className="col-span-2"><span className="text-muted-foreground">Notes:</span> {txn.description}</div>}
           </div>
           {!!txn.lines?.length && (
-            <table className="w-full text-xs border rounded">
+            <div className="overflow-x-auto">
+            <table className="w-full text-xs border rounded min-w-[380px]">
               <thead><tr className="bg-slate-50 text-muted-foreground">
                 <th className="px-2 py-1 text-left">Item</th>
                 <th className="px-2 py-1 text-right">Qty</th>
@@ -260,6 +261,7 @@ export function TxnViewDialog({ txn, onClose }: { txn: Txn | null; onClose: () =
                 ))}
               </tbody>
             </table>
+            </div>
           )}
           <div className="border-t pt-2 space-y-1">
             <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatMoney(txn.subtotal)}</span></div>

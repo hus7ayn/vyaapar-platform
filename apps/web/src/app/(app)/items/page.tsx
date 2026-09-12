@@ -92,6 +92,17 @@ interface Category {
 // price in paise. The suffix is at least 5 digits but GROWS past that for ₹1000+, so cost is
 // everything after the prefix — reading a fixed last-5 would report ₹999.99 for a ₹1500 item.
 const BARCODE_PREFIX_LEN = 8;
+const MIN_COST_SUFFIX_LEN = 5;
+/** ₹999.99 in paise — the ceiling the old encoder clamped every cost to. */
+const CLAMPED_COST_PAISE = 99999;
+
+function toPaise(costPrice: number): number {
+  return Number.isFinite(costPrice) ? Math.round(Math.max(0, costPrice) * 100) : 0;
+}
+
+function encodeBarcodeCostSuffix(costPrice: number): string {
+  return String(toPaise(costPrice)).padStart(MIN_COST_SUFFIX_LEN, '0');
+}
 
 function decodeBarcodeCost(barcode?: string | null): number | null {
   if (!barcode) return null;
@@ -99,6 +110,39 @@ function decodeBarcodeCost(barcode?: string | null): number | null {
   if (digits.length <= BARCODE_PREFIX_LEN) return null;
   const paise = Number(digits.slice(BARCODE_PREFIX_LEN));
   return Number.isFinite(paise) ? paise / 100 : null;
+}
+
+/** Mirrors deriveBarcodePrefix: the prefix the server builds for an item with no barcode yet. */
+function deriveBarcodePrefix(seed?: string | null): string | null {
+  const base = (seed ?? '').replace(/\D/g, '');
+  if (!base) return null;
+  return `890${base}`.padEnd(BARCODE_PREFIX_LEN, '0').slice(0, BARCODE_PREFIX_LEN);
+}
+
+/**
+ * Mirrors isCostEncodedBarcode: do these trailing digits really hold a cost price?
+ *
+ * Every barcode has digits after the 8th, but only ones this app generated MEAN anything by them.
+ * A seeded, CSV-imported or hand-typed value is a plain number — the seeded 8901001003001 on a
+ * ₹168 item “decodes” to ₹30.01 — and telling its owner the tag is stale would send them to
+ * Regenerate, changing a barcode already printed on physical stock so it no longer scans. So we
+ * accept only the prefix this generator derives for THIS item, or the unmistakable clamp
+ * signature (13 digits ending 99999 = ₹999.99 on an item costing more), which is the real bug.
+ */
+function isCostEncodedBarcode(
+  barcode: string | null | undefined,
+  seed: { sku?: string | null; id?: string | null },
+  costPrice: number,
+): boolean {
+  const digits = (barcode ?? '').replace(/\D/g, '');
+  if (digits.length <= BARCODE_PREFIX_LEN) return false;
+  const prefix = digits.slice(0, BARCODE_PREFIX_LEN);
+  if (prefix === deriveBarcodePrefix(seed.sku) || prefix === deriveBarcodePrefix(seed.id)) return true;
+  return (
+    digits.length === BARCODE_PREFIX_LEN + MIN_COST_SUFFIX_LEN &&
+    Number(digits.slice(BARCODE_PREFIX_LEN)) === CLAMPED_COST_PAISE &&
+    toPaise(costPrice) > CLAMPED_COST_PAISE
+  );
 }
 
 interface ItemForm {
@@ -994,11 +1038,30 @@ function BarcodeTagPanel({
     enabled: !!token && !!barcode,
   });
 
-  const decoded = decodeBarcodeCost(barcode);
-  const costPaise = Number.isFinite(costPrice) ? Math.round(costPrice * 100) : null;
-  const expectedSuffix = String(costPaise ?? 0).padStart(5, '0');
+  const digits = (barcode ?? '').replace(/\D/g, '');
+  const costPaise = toPaise(costPrice);
+  // Same normalisation the server applies (missing/negative cost → 0), so the rupees shown here
+  // are the rupees the barcode will actually encode rather than a stray NaN.
+  const costRupees = costPaise / 100;
+  const expectedSuffix = encodeBarcodeCostSuffix(costPrice);
+  // Decode a cost only from a barcode we know is ours — anything else has arbitrary digits there.
+  const costEncoded = isCostEncodedBarcode(barcode, { sku, id: itemId }, costPrice);
+  const decoded = costEncoded ? decodeBarcodeCost(barcode) : null;
+  // Exactly what assignBarcode would store if Regenerate were pressed now: the printed 8-digit
+  // identity prefix is kept and only the cost digits are rebuilt. Equal means the click is a
+  // no-op, which is what the button now shows instead of firing a “nothing to change” toast.
+  const wouldBecome =
+    digits.length >= BARCODE_PREFIX_LEN ? `${digits.slice(0, BARCODE_PREFIX_LEN)}${expectedSuffix}` : null;
+  const upToDate = !!barcode && wouldBecome === barcode;
   // Round both sides to paise before comparing — cost comes back as a Decimal string.
-  const staleSuffix = decoded != null && costPaise != null && Math.round(decoded * 100) !== costPaise;
+  const staleSuffix = decoded != null && Math.round(decoded * 100) !== costPaise;
+  const regenerateHint = !barcode
+    ? `Creates a barcode ending ${expectedSuffix} (cost ${formatMoney(costRupees)}).`
+    : upToDate
+      ? `Already encodes ${formatMoney(costRupees)} — nothing to regenerate.`
+      : costEncoded
+        ? `Rebuilds the cost digits as ${expectedSuffix} (${formatMoney(costRupees)}).`
+        : `Replaces the last digits with ${formatMoney(costRupees)} — printed tags stop matching.`;
 
   return (
     <div className="bg-white rounded-lg border shadow-sm p-4">
@@ -1008,15 +1071,20 @@ function BarcodeTagPanel({
             <Barcode className="h-4 w-4" /> Barcode Tag
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            Digits after the first 8 encode cost price in paise
-            {decoded != null && <> · decoded: <span className="font-medium">{formatMoney(decoded)}</span></>}
-            {decoded == null && costPrice > 0 && <> · expected suffix: <span className="font-mono">{expectedSuffix}</span></>}
+            {decoded != null ? (
+              <>Digits after the first 8 encode cost price in paise · decoded: <span className="font-medium">{formatMoney(decoded)}</span></>
+            ) : barcode ? (
+              <>Imported or hand-entered — these digits don&apos;t encode a cost price.</>
+            ) : (
+              <>Digits after the first 8 encode cost price in paise · expected suffix: <span className="font-mono">{expectedSuffix}</span></>
+            )}
           </p>
-          {/* A stale suffix (e.g. an old label clamped at 99999 = ₹999.99) is only fixed by
-              Regenerate, so point the user at the button rather than leaving them to guess. */}
+          {/* Fires only for a barcode we can prove is ours and out of date (see isCostEncodedBarcode).
+              Regenerate changes the printed value, so a false alarm here would talk the shop into
+              invalidating labels that are already stuck on stock. */}
           {staleSuffix && (
             <p className="text-xs text-amber-600 mt-1">
-              Encoded cost {formatMoney(decoded!)} doesn&apos;t match this item&apos;s cost price {formatMoney(costPrice)} — click Regenerate, then reprint the tags.
+              Encoded cost {formatMoney(decoded!)} doesn&apos;t match this item&apos;s cost price {formatMoney(costRupees)} — click Regenerate, then reprint the tags.
             </p>
           )}
           <div className="flex items-center gap-2 mt-2">
@@ -1027,21 +1095,23 @@ function BarcodeTagPanel({
             )}
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onEdit}>Edit Item</Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={generating}
-            onClick={onGenerate}
-            title={
-              barcode
-                ? "Rebuild this barcode's cost digits from the item's current cost price (the identity prefix is kept)"
-                : 'Assign a barcode to this item'
-            }
-          >
-            <Barcode className="h-3 w-3 mr-1" /> {barcode ? 'Regenerate' : 'Generate'}
-          </Button>
+        {/* The caption is always visible: a hover-only title is unreachable on the shop's phones,
+            which is how “I press Regenerate and nothing happens” started. */}
+        <div className="flex flex-col gap-1 sm:items-end">
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onEdit}>Edit Item</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={generating || upToDate}
+              onClick={onGenerate}
+            >
+              <Barcode className="h-3 w-3 mr-1" /> {barcode ? 'Regenerate' : 'Generate'}
+            </Button>
+          </div>
+          <p className="text-[11px] leading-snug text-muted-foreground max-w-[260px] sm:text-right">
+            {regenerateHint}
+          </p>
         </div>
       </div>
       {image?.dataUrl && (

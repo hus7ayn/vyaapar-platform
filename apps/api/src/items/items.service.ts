@@ -2,7 +2,12 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveBranchWarehouse } from '../inventory/warehouse.util';
-import { BARCODE_PREFIX_LEN, buildItemBarcode, decodeCostFromBarcode } from './barcode.util';
+import {
+  BARCODE_PREFIX_LEN,
+  buildItemBarcode,
+  decodeCostFromBarcode,
+  isCostEncodedBarcode,
+} from './barcode.util';
 import { EventsGateway } from '../events/events.gateway';
 
 export interface ItemInput {
@@ -144,7 +149,11 @@ export class ItemsService {
       include: { variants: true },
     });
     if (!item) throw new NotFoundException('Item not found for barcode');
-    const decodedCost = decodeCostFromBarcode(barcode);
+    // Only decode a cost out of a barcode this app generated. A seeded/imported/hand-typed value
+    // (or a match on sku, which carries no cost digits at all) has arbitrary trailing digits, and
+    // reporting those as a cost price is how a ₹168 item ends up looking like it cost ₹30.01.
+    const cost = Number(item.costPrice) || Number(item.purchasePrice) || 0;
+    const decodedCost = isCostEncodedBarcode(barcode, item, cost) ? decodeCostFromBarcode(barcode) : null;
     return { ...item, decodedBarcodeCost: decodedCost };
   }
 

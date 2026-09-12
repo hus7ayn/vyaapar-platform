@@ -115,6 +115,13 @@ export class TxnCoreService {
     priceField: 'sale' | 'purchase',
     branchId?: string | null,
     enforceMinSalePrice = false,
+    // Lines that merely RE-ISSUE a price the shop has already charged — an exchange replacement
+    // priced off the original invoice line — are exempt from the below-cost guard below: the money
+    // was taken at that price when the bill was raised, so a cost that has risen since (restocked
+    // at a higher wholesale rate) must not block an honest swap. Membership is by object identity
+    // and the set is only ever built server-side, so nothing a client posts can land in it —
+    // ordinary new sales stay fully guarded.
+    belowCostAllowed?: ReadonlySet<TxnLineInput>,
   ) {
     const itemIds = lines.map((l) => l.itemId).filter(Boolean) as string[];
     const items = itemIds.length
@@ -138,8 +145,9 @@ export class TxnCoreService {
       const itemCost = item ? (D(item.costPrice).gt(0) ? D(item.costPrice) : D(item.purchasePrice)) : D(0);
       // A1: a sale line may never be priced below cost. Only blocks real sales (enforceMinSalePrice
       // is true only for SALE_INVOICE), only when we actually know a positive cost and a positive
-      // price — free items / adjustments / cost-unknown items are left alone.
-      if (enforceMinSalePrice && item && itemCost.gt(0) && unitPrice.gt(0) && unitPrice.lt(itemCost)) {
+      // price — free items / adjustments / cost-unknown items are left alone, as are exchange
+      // replacements re-issuing a price already charged (see belowCostAllowed).
+      if (enforceMinSalePrice && !belowCostAllowed?.has(l) && item && itemCost.gt(0) && unitPrice.gt(0) && unitPrice.lt(itemCost)) {
         throw new BadRequestException('Sale price cannot be less than the cost price.');
       }
       const gross = unitPrice.mul(qty);
@@ -535,7 +543,15 @@ export class TxnCoreService {
 
   // ─── Create ────────────────────────────────────────────────────────────────
 
-  async createTxn(businessId: string, userId: string | null, input: CreateTxnInput, existingTx?: Tx) {
+  async createTxn(
+    businessId: string,
+    userId: string | null,
+    input: CreateTxnInput,
+    existingTx?: Tx,
+    // Server-only options — never derived from the request body. `belowCostAllowed` names the
+    // exact line objects that re-issue an already-charged price (exchange replacements).
+    opts?: { belowCostAllowed?: ReadonlySet<TxnLineInput> },
+  ) {
     const txnType = input.txnType;
     const isSaleSide = ['SALE_INVOICE', 'CREDIT_NOTE', 'SALE_ORDER', 'DELIVERY_CHALLAN', 'ESTIMATE'].includes(txnType);
     const isPaymentTxn = txnType === 'PAYMENT_IN' || txnType === 'PAYMENT_OUT';
@@ -552,7 +568,7 @@ export class TxnCoreService {
     }
 
     const { built, subtotal, taxTotal } = hasLines
-      ? await this.buildLines(businessId, input.lines!, isSaleSide ? 'sale' : 'purchase', input.branchId, txnType === 'SALE_INVOICE')
+      ? await this.buildLines(businessId, input.lines!, isSaleSide ? 'sale' : 'purchase', input.branchId, txnType === 'SALE_INVOICE', opts?.belowCostAllowed)
       : { built: [], subtotal: D(input.total ?? 0), taxTotal: D(0) };
 
     const { billDiscount, roundOff, total } = hasLines

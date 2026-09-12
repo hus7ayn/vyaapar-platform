@@ -255,7 +255,7 @@ export default function UsersPage() {
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <span className="text-sm px-3 py-1 rounded-full bg-secondary">
                 {ROLE_LABELS[u.role as SystemRole] ?? u.role}
               </span>

@@ -5,6 +5,10 @@ import { EventsGateway } from '../events/events.gateway';
 
 type SaleBody = Omit<CreateTxnInput, 'txnType'>;
 
+/** 2-dp money rounding. The POS return dialog uses the identical helper on the identical stored
+ *  numbers, so what the cashier sees is what the server stores, to the paisa. */
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 @Injectable()
 export class SaleService {
   constructor(private core: TxnCoreService, private events: EventsGateway) {}
@@ -145,6 +149,20 @@ export class SaleService {
   }
 
   /**
+   * The fraction of a line's total the customer ACTUALLY paid, once the BILL-level discount is
+   * accounted for. computeTotals subtracts that discount from (subtotal + tax), i.e. exactly in
+   * proportion to each line's total, so every line's share of it is this single scalar. Round-off
+   * and additional charges are deliberately left out: they are bill-level, not part of any item's
+   * rate, and neither leg of an exchange re-issues them — allocating them on one leg only would
+   * make a like-for-like swap pay out or collect money that was never owed.
+   */
+  private billFactor(txn: { subtotal: Prisma.Decimal; taxAmount: Prisma.Decimal; discountAmount: Prisma.Decimal }) {
+    const base = Number(txn.subtotal) + Number(txn.taxAmount);
+    if (!(base > 0)) return 1;
+    return Math.max(0, Math.min(1, 1 - Number(txn.discountAmount) / base));
+  }
+
+  /**
    * Return an invoice as a credit note, at QUANTITY granularity. `returns:[{lineId,quantity}]`
    * returns exactly those units; `lineIds` returns each named line's remaining quantity; no
    * selector = full return (reproduces bill discount/charges, refunds the exact total). Each
@@ -243,8 +261,17 @@ export class SaleService {
       newlyReturned[orig.id] = (newlyReturned[orig.id] ?? 0) + qty;
     }
     if (!built.length) throw new BadRequestException('Select at least one item and quantity to return');
+
+    // The BILL-level discount belongs to the returned units too. It is the POS's most-used
+    // discount control, and `built` above only carries LINE discounts — so without this a partial
+    // return hands back the undiscounted price of goods the customer bought discounted. Because
+    // computeTotals takes that discount off (subtotal + tax) pro rata, the share owed to this
+    // return is one scalar factor away from the gross refund. (A pristine full return takes the
+    // branch below instead, which reproduces the whole bill exactly, charges and round-off
+    // included.)
+    const billShare = round2(refundTotal - refundTotal * this.billFactor(txn));
     // Floor so the CASH refund never exceeds createTxn's recomputed total.
-    refundTotal = Math.floor(refundTotal * 100) / 100;
+    refundTotal = Math.floor((refundTotal - billShare) * 100) / 100;
 
     const creditNote = await this.core.createTxn(businessId, userId, {
       txnType: 'CREDIT_NOTE',
@@ -262,6 +289,7 @@ export class SaleService {
             payments: body?.payments ?? (cashRefund ? [{ paymentType: 'CASH', amount: Number(txn.total) }] : []),
           }
         : {
+            discountAmount: billShare > 0 ? billShare : undefined,
             payments: cashRefund ? [{ paymentType: 'CASH', amount: refundTotal }] : [],
           }),
       description: `${label} against ${txn.txnNumber}`,
@@ -278,9 +306,10 @@ export class SaleService {
   }
 
   /**
-   * Exchange: cash-refund the selected returned items, then ring up chosen
-   * replacement items as a new fully-paid sale. Net cash = new sale total minus
-   * refund. Totals are computed on the backend so the sale is deterministically paid.
+   * Exchange: cash-refund the selected returned items, then ring up chosen replacement items as a
+   * new fully-paid sale. Net cash = new sale total minus refund. Totals are computed on the
+   * backend so the sale is deterministically paid, and the POS return dialog reproduces every
+   * step of the pricing below so the popup shows exactly what gets charged.
    */
   async exchangeInvoice(
     businessId: string,
@@ -309,49 +338,115 @@ export class SaleService {
     });
     const itemMap = new Map(items.map((i) => [i.id, i]));
 
-    // An exchange has to honour what the customer ACTUALLY paid on the original bill, not the
-    // item's current catalogue price: a price the shop changed afterwards (or a discount given at
-    // the till) must never silently re-price the swap. So for any replacement that already appears
-    // on the invoice being exchanged we reuse that line's stored unitPrice, per-unit discount and
-    // taxRate; a genuinely different product has no history here and falls back to its sale price.
-    // Carrying the discount as a line discount (rather than folding it into unitPrice) keeps
-    // buildLines' below-cost guard comparing the same price a normal sale would use.
-    const soldAs = new Map<string, { unitPrice: number; discountPerUnit: number; taxRate: number }>();
-    for (const l of txn.lines) {
-      if (!l.itemId || soldAs.has(l.itemId)) continue;
-      const soldQty = Number(l.quantity) || 1;
-      soldAs.set(l.itemId, {
-        unitPrice: Number(l.unitPrice),
-        discountPerUnit: Number(l.discountAmount ?? 0) / soldQty,
-        taxRate: Number(l.taxRate),
+    // An exchange has to honour what the customer ACTUALLY paid for the units they are handing
+    // back — not the item's current catalogue price (a price the shop changed afterwards must
+    // never silently re-price the swap), and not for any quantity the cashier likes. So the old
+    // price is an ALLOWANCE: one unit at the bill's own rate for every unit of that item on this
+    // credit note, taken from the very line it was returned from. Anything beyond the allowance,
+    // and any genuinely different product, is an ordinary new sale at today's price. `unitPrice`
+    // stays the rate printed on the original bill and the discounts ride as a line discount, so
+    // the replacement bill reads like the original one.
+    const billFactor = this.billFactor(txn);
+    const origById = new Map(txn.lines.map((l) => [l.id, l]));
+    type Allowance = { qty: number; unitPrice: number; netUnitPrice: number; taxRate: number };
+    const allowances = new Map<string, Allowance[]>();
+    for (const cn of creditNote.lines) {
+      const orig = cn.sourceLineId ? origById.get(cn.sourceLineId) : undefined;
+      const qty = Number(cn.quantity);
+      if (!orig?.itemId || qty <= 0) continue;
+      const soldQty = Number(orig.quantity) || 1;
+      const discountPerUnit = orig.discountPercent != null
+        ? (Number(orig.unitPrice) * Number(orig.discountPercent)) / 100
+        : Number(orig.discountAmount ?? 0) / soldQty;
+      const list = allowances.get(orig.itemId) ?? [];
+      list.push({
+        qty,
+        unitPrice: Number(orig.unitPrice),
+        // The rate the customer was really charged: the line discount, then this line's share of
+        // the bill-level discount. Rounded to the paisa here and nowhere else, so the dialog's
+        // identical arithmetic lands on the identical number.
+        netUnitPrice: round2((Number(orig.unitPrice) - discountPerUnit) * billFactor),
+        taxRate: Number(orig.taxRate),
       });
+      allowances.set(orig.itemId, list);
     }
+    // Dearest first, so the order credit-note lines happen to come back in can never change the
+    // price, and a bill that carried the same item at two rates re-issues the higher one first.
+    for (const list of allowances.values()) list.sort((a, b) => b.netUnitPrice - a.netUnitPrice);
 
-    let total = 0;
-    const lines = body.replacements.map((r) => {
+    // Only the lines re-issuing an already-charged price are exempted from the below-cost guard;
+    // units sold at today's catalogue rate are an ordinary sale and stay guarded.
+    const lines: TxnLineInput[] = [];
+    const belowCostAllowed = new Set<TxnLineInput>();
+    for (const r of body.replacements) {
       const item = itemMap.get(r.itemId);
       if (!item) throw new BadRequestException('Replacement item not found');
-      const sold = soldAs.get(r.itemId);
-      const unitPrice = sold ? sold.unitPrice : Number(item.salePrice);
-      const taxRate = sold ? sold.taxRate : Number(item.taxRate);
-      const qty = Number(r.quantity) || 1;
-      const discountAmount = sold ? sold.discountPerUnit * qty : 0;
-      const taxable = unitPrice * qty - discountAmount;
-      total += taxable * (1 + taxRate / 100);
-      return { itemId: item.id, name: item.name, quantity: qty, unit: item.baseUnit, unitPrice, discountAmount, taxRate };
-    });
-    // Floor so the CASH payment never exceeds createTxn's computed total (no paidAmount>total error).
-    const paid = Math.floor(total * 100) / 100;
-    const sale = await this.core.createTxn(businessId, userId, {
-      txnType: 'SALE_INVOICE',
-      branchId: txn.branchId ?? undefined,
-      partyId: txn.partyId ?? undefined,
-      partyName: txn.partyName ?? undefined,
-      lines,
-      roundOffEnabled: false,
-      payments: [{ paymentType: 'CASH', amount: paid }],
-      description: `Exchange for ${txn.txnNumber}`,
-    });
+      let left = Number(r.quantity) || 1;
+      for (const a of allowances.get(r.itemId) ?? []) {
+        if (left <= 0) break;
+        const take = Math.min(left, a.qty);
+        if (take <= 0) continue;
+        a.qty -= take;
+        left -= take;
+        const line: TxnLineInput = {
+          itemId: item.id,
+          name: item.name,
+          quantity: take,
+          unit: item.baseUnit,
+          unitPrice: a.unitPrice,
+          discountAmount: round2((a.unitPrice - a.netUnitPrice) * take),
+          taxRate: a.taxRate,
+        };
+        lines.push(line);
+        belowCostAllowed.add(line);
+      }
+      if (left > 0) {
+        lines.push({
+          itemId: item.id,
+          name: item.name,
+          quantity: left,
+          unit: item.baseUnit,
+          unitPrice: Number(item.salePrice),
+          discountAmount: 0,
+          taxRate: Number(item.taxRate),
+        });
+      }
+    }
+    if (!lines.length) throw new BadRequestException('Select at least one replacement item');
+
+    // Exact Decimal mirror of buildLines + computeTotals (roundOffEnabled false, no bill-level
+    // discount or charges) over the very numbers posted below — same operations, same accumulation
+    // order. A float running total can land a hair ABOVE the Decimal total createTxn recomputes,
+    // and then the cash payment trips "Paid amount exceeds total"; paying the exact total also
+    // keeps the exchange sale PAID instead of a paisa short.
+    let saleSubtotal = new Prisma.Decimal(0);
+    let saleTax = new Prisma.Decimal(0);
+    for (const l of lines) {
+      const taxable = new Prisma.Decimal(l.unitPrice).mul(new Prisma.Decimal(l.quantity)).sub(new Prisma.Decimal(l.discountAmount ?? 0));
+      saleSubtotal = saleSubtotal.add(taxable);
+      saleTax = saleTax.add(taxable.mul(new Prisma.Decimal(l.taxRate ?? 0)).div(100));
+    }
+    const saleTotal = saleSubtotal.add(saleTax);
+    // Decimal → number is exact at money scale; clamp anyway so `paid` can never exceed the total.
+    let paid = saleTotal.toNumber();
+    if (new Prisma.Decimal(paid).gt(saleTotal)) paid = Math.floor(paid * 100) / 100;
+
+    const sale = await this.core.createTxn(
+      businessId,
+      userId,
+      {
+        txnType: 'SALE_INVOICE',
+        branchId: txn.branchId ?? undefined,
+        partyId: txn.partyId ?? undefined,
+        partyName: txn.partyName ?? undefined,
+        lines,
+        roundOffEnabled: false,
+        payments: [{ paymentType: 'CASH', amount: paid }],
+        description: `Exchange for ${txn.txnNumber}`,
+      },
+      undefined,
+      { belowCostAllowed },
+    );
     return { creditNote, sale };
   }
 

@@ -25,6 +25,13 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 // dialog unusable: a ₹0.40 shortfall rendered as "Remaining ₹0" while Confirm stayed greyed out
 // with no explanation. Split amounts are always shown to the paisa.
 const money = (n: number) => `₹${round2(n).toFixed(2)}`;
+// Strip the binary-float tail before an amount is sent. (235.9882 − 200) evaluates to
+// 35.988200000000006 in JS; the API re-reads every amount as an exact decimal, so that tail would
+// make the payments add up to a hair MORE than the bill and the sale would be rejected outright
+// with "Paid amount exceeds total". 12 significant digits keeps every realistic bill to the paisa.
+const exact = (n: number) => Number(n.toPrecision(12));
+// A cashier can only tender whole paise. Anything inside half a paisa of the bill is "square".
+const PAISA = 0.005;
 
 export function SplitPaymentDialog({ total, initial, onConfirm, onClose }: SplitPaymentDialogProps) {
   const [payments, setPayments] = useState<SplitPayment[]>(() =>
@@ -36,8 +43,11 @@ export function SplitPaymentDialog({ total, initial, onConfirm, onClose }: Split
   const firstInputRef = useRef<HTMLInputElement>(null);
 
   const paid = round2(payments.reduce((s, p) => s + p.amount, 0));
-  const remaining = round2(total - paid);
-  const balanced = Math.abs(remaining) < 0.005 && paid > 0;
+  // Raw, NOT rounded to paise. With Round Off switched off the bill total keeps its sub-paisa tail
+  // (₹199.99 at 18% GST is ₹235.9882), so no set of typed amounts can ever land on it exactly and
+  // a strict comparison would leave Confirm greyed out forever. The residue is handled in confirm().
+  const remaining = total - paid;
+  const balanced = paid > 0 && Math.abs(remaining) < PAISA;
 
   useEffect(() => { firstInputRef.current?.focus(); }, []);
 
@@ -62,15 +72,18 @@ export function SplitPaymentDialog({ total, initial, onConfirm, onClose }: Split
   const confirm = () => {
     const rows = payments.filter((p) => p.amount > 0).map((p) => ({ ...p, amount: round2(p.amount) }));
     if (!rows.length) return;
-    // Absorb the last-paisa float drift into the largest tender so the payments sum EXACTLY to the
-    // bill total. The API rejects paidAmount > total outright, and books a short payment silently
-    // as a PARTIAL bill with a phantom receivable — neither is acceptable for a cash sale.
-    const drift = round2(total - rows.reduce((s, p) => s + p.amount, 0));
-    if (drift !== 0) {
-      let big = 0;
-      rows.forEach((p, i) => { if (p.amount > rows[big].amount) big = i; });
-      rows[big] = { ...rows[big], amount: round2(rows[big].amount + drift) };
-    }
+    // Square the split off against the bill total EXACTLY by giving the whole residue to the
+    // largest tender. The API rejects paidAmount > total outright, and books paidAmount < total
+    // silently as a PARTIAL bill with a phantom receivable — "close enough" is not an option.
+    //
+    // This must survive Round Off being OFF, which is where it used to break: the drift was itself
+    // rounded to paise first, so a sub-paisa residue rounded to 0, nothing was absorbed, and the
+    // typed ₹235.99 went to the server against a ₹235.9882 bill -> hard 400. Rebuild the largest
+    // tender from the total instead of nudging it by a rounded delta, so the sum is the total.
+    let big = 0;
+    rows.forEach((p, i) => { if (p.amount > rows[big].amount) big = i; });
+    const others = rows.reduce((s, p, i) => (i === big ? s : s + p.amount), 0);
+    rows[big] = { ...rows[big], amount: Math.max(0, exact(total - exact(others))) };
     onConfirm(rows);
   };
 
@@ -84,8 +97,8 @@ export function SplitPaymentDialog({ total, initial, onConfirm, onClose }: Split
           <div className="flex justify-between"><span className="text-muted-foreground">Bill total</span><span className="font-semibold">{money(total)}</span></div>
           <div className="flex justify-between"><span className="text-muted-foreground">Entered</span><span>{money(paid)}</span></div>
           <div className={`flex justify-between font-bold ${balanced ? 'text-emerald-700' : 'text-[hsl(348,85%,52%)]'}`}>
-            <span>{remaining < 0 ? 'Over by' : 'Remaining'}</span>
-            <span>{money(Math.abs(remaining))}</span>
+            <span>{!balanced && remaining < 0 ? 'Over by' : 'Remaining'}</span>
+            <span>{money(Math.abs(balanced ? 0 : remaining))}</span>
           </div>
         </div>
 
@@ -111,7 +124,7 @@ export function SplitPaymentDialog({ total, initial, onConfirm, onClose }: Split
                 variant="outline"
                 size="sm"
                 className="shrink-0 text-xs"
-                disabled={Math.abs(remaining) < 0.005}
+                disabled={balanced}
                 onClick={() => fillRest(i)}
               >
                 Rest

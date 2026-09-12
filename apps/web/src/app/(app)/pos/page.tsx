@@ -84,12 +84,14 @@ export default function PosPage() {
   const getSubtotal = usePosStore((s) => s.getSubtotal);
   const getTax = usePosStore((s) => s.getTax);
   const getTotal = usePosStore((s) => s.getTotal);
-  const discountAmount = usePosStore((s) => s.discountAmount);
-  const discountPercent = usePosStore((s) => s.discountPercent);
-  const secondaryDiscountAmount = usePosStore((s) => s.secondaryDiscountAmount);
+  // Derived, never cached: subscribing to the computed rupee figure means the discount is always
+  // read against the CURRENT subtotal, so adding, removing, repricing or re-quantifying a line can
+  // no longer leave the screen total and the server total disagreeing.
+  const billDiscount = usePosStore((s) => s.getBillDiscount());
   const removeTax = usePosStore((s) => s.removeTax);
   const roundOff = usePosStore((s) => s.roundOff);
   const additionalCharges = usePosStore((s) => s.additionalCharges);
+  const pointsRedeemed = usePosStore((s) => s.pointsRedeemed);
   const customerId = usePosStore((s) => s.customerId);
   const splitPayments = usePosStore((s) => s.splitPayments);
 
@@ -170,20 +172,31 @@ export default function PosPage() {
         throw new Error('Select a party for credit sale');
       }
 
+      // computeTotals() has no idea loyalty points exist — it never subtracts pointsRedeemed — so a
+      // bill the POS has knocked down by points would be tendered SHORT and booked PARTIAL, leaving
+      // a phantom receivable against the customer. Nothing can switch the redemption on today (the
+      // API returns no loyaltyPoints on a party), but refuse loudly the moment it can, rather than
+      // let it turn into silent bad debt.
+      if (status === 'COMPLETED' && pointsRedeemed > 0) {
+        throw new Error('Loyalty redemption is not supported on a bill yet — cancel it to continue');
+      }
+
       // Exactly ONE bill discount reaches the API. computeTotals() treats discountPercent as
       // authoritative whenever it is present, so the POS's old habit of always sending it (as 0)
       // alongside a ₹ amount made the server silently drop the ₹ discount and short-pay the bill.
-      // A flat ₹ discount is therefore sent as its equivalent percentage of the subtotal, which is
-      // precisely how the POS itself applies it — so the server's total matches the screen exactly.
+      // BOTH discount modes now funnel through the same derived rupee figure the screen is showing
+      // and are sent as its percentage of the CURRENT subtotal — which is exactly how the POS
+      // applies it, so the server's (subtotal + tax) x pct/100 reproduces the screen total. Reading
+      // it live (instead of a value cached when the cashier typed it) is what keeps the two in step
+      // after the cart moves underneath the discount.
       const subtotal = getSubtotal();
+      const billDiscountValue = usePosStore.getState().getBillDiscount();
       const billDiscountPercent =
-        discountPercent > 0
-          ? discountPercent
-          : secondaryDiscountAmount > 0 && subtotal > 0
-            // Capped at 100%: the POS floors its own taxable amount at zero, so a discount larger
-            // than the goods value must reach the API as "everything off", not a negative total.
-            ? Math.min(100, (secondaryDiscountAmount / subtotal) * 100)
-            : undefined;
+        billDiscountValue > 0 && subtotal > 0
+          // Capped at 100%: the POS floors its own taxable amount at zero, so a discount larger
+          // than the goods value must reach the API as "everything off", not a negative total.
+          ? Math.min(100, (billDiscountValue / subtotal) * 100)
+          : undefined;
 
       const payload = {
         branchId,
@@ -402,11 +415,12 @@ export default function PosPage() {
   return (
     <div className="h-full flex flex-col bg-[hsl(0,0%,96%)]">
       {/* Vyapar POS top bar */}
-      {/* The action cluster on the right must never be squeezed off the bar: the branding block on
-          the left is the only part allowed to shrink/truncate, every action is shrink-0 with an
+      {/* The action cluster on the right must never be squeezed off the bar: every action keeps an
           explicit background AND text colour (this bar sets text-white, so a button that only
-          paints a light background renders invisible), and the row wraps rather than pushing the
-          buttons past the right edge on a narrow screen. */}
+          paints a light background renders invisible), and BOTH the bar and the cluster itself are
+          allowed to wrap. The cluster used to be shrink-0 with shrink-0 children, so flex-wrap had
+          nothing it was permitted to break on inside it and Hold was clipped ~13-32px off the right
+          edge on a 360-390px phone. */}
       <div className="shrink-0 bg-[hsl(348,85%,52%)] text-white px-4 py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="flex items-center gap-3 min-w-0">
           <div className="h-9 w-9 shrink-0 rounded-lg bg-white text-[hsl(348,85%,52%)] font-extrabold flex items-center justify-center text-lg">M</div>
@@ -415,7 +429,7 @@ export default function PosPage() {
             <p className="text-[10px] text-white/80 truncate">{firm?.name ?? 'Billing'} · Tax Invoice</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0 ml-auto">
+        <div className="flex flex-wrap items-center justify-end gap-2 min-w-0 ml-auto">
           <div className="text-right hidden md:block mr-1 shrink-0">
             <p className="text-[10px] text-white/80 leading-none">Today&apos;s Sales</p>
             <p className="font-bold text-sm leading-tight">{formatCurrency(todaySales?.summary.totalAmount ?? 0)}</p>
@@ -468,8 +482,8 @@ export default function PosPage() {
           </div>
           <div className="space-y-0.5 text-sm border-t pt-2">
             <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatCurrency(getSubtotal())}</span></div>
-            {discountAmount > 0 && (
-              <div className="flex justify-between text-emerald-700"><span>Discount</span><span>&minus;{formatCurrency(discountAmount)}</span></div>
+            {billDiscount > 0 && (
+              <div className="flex justify-between text-emerald-700"><span>Discount</span><span>&minus;{formatCurrency(billDiscount)}</span></div>
             )}
             {!removeTax && getTax() > 0 && (
               <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span>{formatCurrency(getTax())}</span></div>
@@ -539,7 +553,7 @@ export default function PosPage() {
             </Button>
           </div>
 
-          <div className="flex gap-1.5 px-3 py-2 overflow-x-auto border-b bg-[hsl(348,30%,98%)] scrollbar-hide">
+          <div className="flex gap-1.5 px-3 py-2 overflow-x-auto border-b bg-[hsl(348,30%,98%)]">
             <button
               type="button"
               onClick={() => setCategoryFilter(null)}

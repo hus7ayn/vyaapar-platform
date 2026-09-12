@@ -54,7 +54,10 @@ export function PosBillFooter({
   const getTax = usePosStore((s) => s.getTax);
   const getRoundOffAmount = usePosStore((s) => s.getRoundOffAmount);
   const getTotal = usePosStore((s) => s.getTotal);
-  const discountAmount = usePosStore((s) => s.discountAmount);
+  // Derived on every read, never cached — see getBillDiscount(). Subscribing to the computed
+  // number (rather than a stored one) is what makes the discount re-read the CURRENT subtotal the
+  // moment a line is added, removed, repriced or re-quantified.
+  const billDiscount = usePosStore((s) => s.getBillDiscount());
   const discountPercent = usePosStore((s) => s.discountPercent);
   const secondaryDiscountAmount = usePosStore((s) => s.secondaryDiscountAmount);
   const setDiscountPercent = usePosStore((s) => s.setDiscountPercent);
@@ -73,7 +76,7 @@ export function PosBillFooter({
   // ONE bill discount at a time. The store still keeps the two values apart (percent vs flat ₹)
   // because that is what the API takes, but the UI only ever exposes a single field plus a unit
   // toggle, and switching the unit zeroes the other value — so a % and a ₹ discount can never
-  // both be folded into discountAmount (which is what used to double-discount a bill).
+  // both be folded into one bill discount (which is what used to double-discount a bill).
   // Whichever value actually carries a discount decides the unit shown (a resumed held bill, for
   // instance, always comes back as a flat ₹ amount); the local preference only matters at zero.
   const [preferredMode, setPreferredMode] = useState<'PERCENT' | 'AMOUNT'>('PERCENT');
@@ -161,8 +164,8 @@ export function PosBillFooter({
 
       <div className="px-3 py-2 space-y-0.5 text-xs border-t bg-[hsl(348,30%,98%)]">
         <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatCurrency(getSubtotal())}</span></div>
-        {discountAmount > 0 && (
-          <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{formatCurrency(discountAmount)}</span></div>
+        {billDiscount > 0 && (
+          <div className="flex justify-between text-emerald-700"><span>Discount</span><span>−{formatCurrency(billDiscount)}</span></div>
         )}
         <div className="flex justify-between"><span className="text-muted-foreground">Taxable</span><span>{formatCurrency(getTaxableAmount())}</span></div>
         {!removeTax && tax > 0 && (
