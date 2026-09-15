@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDownLeft, ArrowUpRight, Pencil, Plus, Search, Trash2, Users } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Pencil, Plus, Scale, Search, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { Permission } from '@nexus/shared';
 import { api } from '@/lib/api';
+import { usePermissions } from '@/hooks/use-permissions';
 import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -101,6 +103,12 @@ const PARTY_TYPE_LABELS: Record<PartyType, string> = {
   BOTH: 'Customer & Supplier',
 };
 
+// The ledger stores entryType as a raw code; show the owner words, not SCREAMING_SNAKE.
+const LEDGER_TYPE_LABELS: Record<string, string> = {
+  ADJUSTMENT: 'Adjustment',
+  OPENING: 'Opening Balance',
+};
+
 const GST_TYPES: { value: GstType; label: string }[] = [
   { value: 'UNREGISTERED', label: 'Unregistered' },
   { value: 'REGISTERED', label: 'Registered' },
@@ -130,6 +138,9 @@ function BalanceText({ balance, className }: { balance: string | number; classNa
 export default function PartiesPage() {
   const queryClient = useQueryClient();
   const token = useAuthStore((s) => s.accessToken) ?? undefined;
+  const { has } = usePermissions();
+  // Same line the API draws: a biller holds POS_SELL but must not be able to mint debt.
+  const canAdjust = has(Permission.EXPENSE_MANAGE);
   const searchParams = useSearchParams();
   const initialType = searchParams.get('type');
 
@@ -148,6 +159,11 @@ export default function PartiesPage() {
 
   const [payOpen, setPayOpen] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', mode: 'CASH', bankAccountId: '', note: '' });
+
+  const [adjOpen, setAdjOpen] = useState(false);
+  const [adjForm, setAdjForm] = useState<{ amount: string; direction: 'TO_PAY' | 'TO_RECEIVE'; note: string; date: string }>(
+    { amount: '', direction: 'TO_PAY', note: '', date: '' },
+  );
 
   const listQs = new URLSearchParams();
   if (search) listQs.set('search', search);
@@ -288,6 +304,51 @@ export default function PartiesPage() {
       toast.error(e instanceof Error ? e.message : 'Failed to record payment');
     }
   };
+
+  // Record extra debt / correct a balance WITHOUT a bill. Unlike Collect/Pay this can only ever
+  // be opened for an existing party, and it is the one action that can INCREASE what is owed.
+  const openAdjust = () => {
+    if (!selected) return;
+    setAdjForm({
+      amount: '',
+      // A supplier is almost always "I owe them more"; a customer, "they owe me more".
+      direction: selected.partyType === 'SUPPLIER' ? 'TO_PAY' : 'TO_RECEIVE',
+      note: '',
+      date: new Date().toISOString().slice(0, 10),
+    });
+    setAdjOpen(true);
+  };
+
+  const adjustMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected) throw new Error('No party selected');
+      const amount = Number(adjForm.amount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a valid amount');
+      return api<{ party: Party }>(`/parties/${selected.id}/adjustments`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          amount,
+          direction: adjForm.direction,
+          note: adjForm.note.trim() || undefined,
+          date: adjForm.date || undefined,
+        }),
+      });
+    },
+    onSuccess: (res) => {
+      const bal = Number(res.party.currentBalance);
+      toast.success(
+        `Balance updated — ${bal < 0 ? 'you owe' : bal > 0 ? 'they owe you' : 'settled:'} ${formatMoney(Math.abs(bal))}`,
+      );
+      setAdjOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['party'] });        // selected party header
+      queryClient.invalidateQueries({ queryKey: ['party-ledger'] }); // Ledger tab
+      queryClient.invalidateQueries({ queryKey: ['party-txns'] });   // Transactions tab
+      queryClient.invalidateQueries({ queryKey: ['parties'] });      // left-hand list
+      queryClient.invalidateQueries({ queryKey: ['parties-summary'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const openEdit = (p: Party) => {
     setEditingParty(p);
@@ -447,6 +508,13 @@ export default function PartiesPage() {
                         {Number(selected.currentBalance) > 0 ? 'Collect Payment' : 'Pay Now'}
                       </Button>
                     )}
+                    {/* Always available — recording the FIRST debt is the whole point, so this
+                        must not be hidden at a zero balance the way Collect/Pay is. */}
+                    {canAdjust && (
+                      <Button variant="outline" size="sm" onClick={openAdjust}>
+                        <Scale className="h-4 w-4 mr-1" /> Add Debt / Adjust
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={() => openEdit(selected)}>
                       <Pencil className="h-4 w-4 mr-1" /> Edit
                     </Button>
@@ -565,7 +633,7 @@ export default function PartiesPage() {
                           <tr key={e.id} className="border-b last:border-0 hover:bg-red-50/40">
                             <td className="px-3 py-2">{formatDate(e.entryDate)}</td>
                             <td className="px-3 py-2">{e.description ?? (e.txn ? `${TXN_META[e.txn.txnType]?.label ?? e.txn.txnType} ${e.txn.txnNumber}` : '—')}</td>
-                            <td className="px-3 py-2 text-muted-foreground text-xs">{e.entryType}</td>
+                            <td className="px-3 py-2 text-muted-foreground text-xs">{LEDGER_TYPE_LABELS[e.entryType] ?? e.entryType}</td>
                             <td className={cn('px-3 py-2 text-right font-medium', amt >= 0 ? 'text-green-700' : 'text-red-600')}>
                               {amt >= 0 ? '+' : '-'}{formatMoney(Math.abs(amt))}
                             </td>
@@ -746,6 +814,91 @@ export default function PartiesPage() {
               <div className="flex justify-end gap-2 pt-1">
                 <Button type="button" variant="outline" onClick={() => setPayOpen(false)}>Cancel</Button>
                 <Button type="submit">Save Payment</Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add debt / adjust balance — no bill, no stock, no GST. Ledger row only. */}
+      <Dialog open={adjOpen} onOpenChange={setAdjOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Debt / Adjust Balance{selected ? ` — ${selected.name}` : ''}</DialogTitle>
+          </DialogHeader>
+          {selected && (
+            <form
+              className="space-y-3"
+              onSubmit={(e) => { e.preventDefault(); adjustMutation.mutate(); }}
+            >
+              <p className="text-sm text-muted-foreground">
+                Current balance:{' '}
+                <span className="font-semibold text-foreground">
+                  {formatMoney(Math.abs(Number(selected.currentBalance)))}
+                </span>{' '}
+                {Number(selected.currentBalance) < 0 ? '(you owe them)' : Number(selected.currentBalance) > 0 ? '(they owe you)' : '(settled)'}
+              </p>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">This entry is *</label>
+                <div className="flex gap-2">
+                  {([
+                    { value: 'TO_PAY', label: 'I owe them more' },
+                    { value: 'TO_RECEIVE', label: 'They owe me more' },
+                  ] as const).map((d) => (
+                    <button
+                      key={d.value}
+                      type="button"
+                      onClick={() => setAdjForm({ ...adjForm, direction: d.value })}
+                      className={cn(
+                        'flex-1 h-10 rounded-lg border text-sm font-medium',
+                        adjForm.direction === d.value ? 'bg-primary text-white border-primary' : 'bg-background text-muted-foreground',
+                      )}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Amount *</label>
+                <Input
+                  type="number" min="0" step="0.01" autoFocus
+                  value={adjForm.amount}
+                  onChange={(e) => setAdjForm({ ...adjForm, amount: e.target.value })}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Date</label>
+                <Input type="date" value={adjForm.date} onChange={(e) => setAdjForm({ ...adjForm, date: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Note (optional)</label>
+                <Input
+                  value={adjForm.note}
+                  onChange={(e) => setAdjForm({ ...adjForm, note: e.target.value })}
+                  placeholder="e.g. Goods taken on 12 Mar, no bill"
+                />
+              </div>
+              {adjForm.amount && Number(adjForm.amount) > 0 && (
+                <p className="text-sm">
+                  New balance:{' '}
+                  <span className="font-semibold">
+                    <BalanceText
+                      balance={Number(selected.currentBalance) + (adjForm.direction === 'TO_PAY' ? -1 : 1) * Number(adjForm.amount)}
+                    />
+                  </span>
+                </p>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                Adds to the balance and shows in the Ledger Statement. This is not a bill, so it does not appear
+                under Transactions and never touches stock, GST or purchase reports — use a purchase bill for that.
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button type="button" variant="outline" onClick={() => setAdjOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={adjustMutation.isPending}>
+                  {adjustMutation.isPending ? 'Saving…' : 'Save Entry'}
+                </Button>
               </div>
             </form>
           )}

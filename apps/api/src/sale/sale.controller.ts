@@ -79,10 +79,14 @@ export class SaleController {
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('sub') userId: string,
     @Param('id') id: string,
+    // NOTE: an interface-typed @Body() is skipped by the global ValidationPipe, so every field
+    // here is validated by hand in SaleService.exchangeInvoice before anything is written.
+    // `discountAmount` is a per-replacement cashier discount in RUPEES, applied BEFORE TAX to the
+    // catalogue-priced remainder only (never a percentage — see exchangeInvoice).
     @Body() body: {
       lineIds?: string[];
       returns?: { lineId: string; quantity: number }[];
-      replacements: { itemId: string; quantity: number }[];
+      replacements: { itemId: string; quantity: number; discountAmount?: number }[];
     },
   ) {
     return this.sale.exchangeInvoice(businessId, userId, id, body);

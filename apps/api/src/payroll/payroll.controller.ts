@@ -46,10 +46,12 @@ export class PayrollController {
   @RequirePermissions(Permission.PAYROLL_MANAGE)
   recordAdvance(
     @CurrentUser('businessId') businessId: string,
+    @CurrentUser('sub') userId: string,
     @Param('id') id: string,
-    @Body() body: { amount: number },
+    @Body() body: { amount: number; paymentType?: string; bankAccountId?: string; date?: string },
   ) {
-    return this.payroll.recordAdvance(businessId, id, body.amount);
+    // An advance is real money leaving cash/bank, so it posts an expense txn like any other payout.
+    return this.payroll.recordAdvance(businessId, userId, id, body);
   }
 
   @Get('summary')
@@ -76,10 +78,11 @@ export class PayrollController {
   @RequirePermissions(Permission.PAYROLL_MANAGE)
   generate(
     @CurrentUser('businessId') businessId: string,
-    @Body() body: { startDate: string; endDate: string; branchId?: string },
+    @Body() body: { startDate: string; endDate: string; branchId?: string; employeeIds?: string[] },
   ) {
     // Scoped to the selected shop when branchId is given; else business-wide.
-    return this.payroll.generatePayroll(businessId, body.startDate, body.endDate, body.branchId);
+    // employeeIds narrows the run to the staff the owner picked (all active staff when omitted).
+    return this.payroll.generatePayroll(businessId, body.startDate, body.endDate, body.branchId, body.employeeIds);
   }
 
   @Patch(':payrollId/lines/:lineId')

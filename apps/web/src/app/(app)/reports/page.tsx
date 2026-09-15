@@ -70,6 +70,123 @@ function renderValue(v: unknown): string {
   return String(v);
 }
 
+/** The Profit & Loss payload, on both bases. See apps/api/src/reports/realisation.util.ts. */
+type Pnl = {
+  grossSales: number; saleReturns: number; netSales: number;
+  purchase: number; purchaseReturns: number;
+  cogs: number; grossProfit: number; expenses: number; netProfit: number;
+  outputTax: number; inputTax: number; outputTaxOnReturns: number; netOutputTax: number;
+  realisedRevenue: number; realisedCogs: number; realisedGrossProfit: number; realisedNetProfit: number;
+  creditSalesOutstanding: number; unrealisedProfitOnCredit: number; realisedOnPeriodSales: number;
+  settlementDiscounts: number; realisedCashCollected: number; realisedOnCheques: number;
+  unallocatedReceipts: number; unallocatedReceiptsMatched: number; unallocatedReceiptsUnmatched: number;
+};
+
+function isPnl(v: unknown): v is Pnl {
+  return !!v && typeof v === 'object' && !Array.isArray(v) && 'realisedGrossProfit' in (v as object);
+}
+
+function Line({ label, value, hint, strong, negative }: {
+  label: string; value: number; hint?: string; strong?: boolean; negative?: boolean;
+}) {
+  return (
+    <div className={cn('flex items-baseline justify-between gap-4 py-1.5', strong && 'border-t mt-1 pt-2')}>
+      <div className="min-w-0">
+        <p className={cn('text-sm', strong ? 'font-semibold' : 'text-muted-foreground')}>{label}</p>
+        {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+      </div>
+      <p className={cn('shrink-0 tabular-nums', strong ? 'text-base font-bold' : 'text-sm font-medium', negative && 'text-red-600')}>
+        {negative && value > 0 ? '−' : ''}{formatMoney(value)}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Profit & Loss on BOTH bases, with the payment-based ("realised") figure as the headline: a
+ * product sold on credit is a receivable, not earnings, until the customer actually pays.
+ */
+function ProfitAndLossView({ d }: { d: Pnl }) {
+  return (
+    <div className="p-4 space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-green-200 bg-green-50/70 p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-green-800">Profit &mdash; money actually received</p>
+          <p className="mt-1 text-3xl font-bold text-green-800 tabular-nums">{formatMoney(d.realisedNetProfit)}</p>
+          <p className="mt-1 text-xs text-green-900/70">
+            Gross {formatMoney(d.realisedGrossProfit)} less expenses {formatMoney(d.expenses)}. A credit sale
+            counts only once the customer pays, in the period the money arrives.
+          </p>
+        </div>
+        <div className="rounded-xl border bg-card p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">On paper &mdash; includes unpaid bills</p>
+          <p className="mt-1 text-3xl font-bold tabular-nums">{formatMoney(d.netProfit)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Books every invoice the day it is raised, paid or not. This is the accounting basis your
+            GST returns use; it is not the cash in your till.
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 grid gap-3 sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Profit not yet received</p>
+          <p className="mt-1 text-2xl font-bold text-amber-800 tabular-nums">{formatMoney(d.unrealisedProfitOnCredit)}</p>
+          <p className="text-[11px] text-amber-900/70">Riding on this period&apos;s credit sales that are still unpaid.</p>
+        </div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Credit sales outstanding</p>
+          <p className="mt-1 text-2xl font-bold text-amber-800 tabular-nums">{formatMoney(d.creditSalesOutstanding)}</p>
+          <p className="text-[11px] text-amber-900/70">Of this period&apos;s bills, still to be collected.</p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border bg-card p-4">
+          <p className="font-semibold mb-2">Realised (payment basis)</p>
+          <Line label="Revenue received" value={d.realisedRevenue} hint="Net of tax, pro rata to each bill paid" />
+          <Line label="Cost of goods received for" value={d.realisedCogs} negative />
+          {d.settlementDiscounts !== 0 && (
+            <Line label="Settlement discounts written off" value={d.settlementDiscounts} hint="Closed the bill without any money arriving" negative />
+          )}
+          <Line label="Realised gross profit" value={d.realisedGrossProfit} strong />
+          <Line label="Expenses" value={d.expenses} negative />
+          <Line label="Realised net profit" value={d.realisedNetProfit} strong />
+          <div className="mt-3 border-t pt-2 space-y-1 text-[11px] text-muted-foreground">
+            <p>Cash collected in this period: <span className="font-semibold text-foreground">{formatMoney(d.realisedCashCollected)}</span>
+              {d.realisedOnCheques !== 0 && <> &middot; of which cheques (counted as received, not yet banked): <span className="font-semibold text-foreground">{formatMoney(d.realisedOnCheques)}</span></>}
+            </p>
+            <p>Of this period&apos;s own sales, profit collected so far: <span className="font-semibold text-foreground">{formatMoney(d.realisedOnPeriodSales)}</span> &mdash; this is what the bill-wise, item-wise and party-wise profit reports total.</p>
+            {d.unallocatedReceipts > 0 && (
+              <p>
+                Receipts that named no bill: <span className="font-semibold text-foreground">{formatMoney(d.unallocatedReceipts)}</span>
+                {' '}(matched to open bills {formatMoney(d.unallocatedReceiptsMatched)}
+                {d.unallocatedReceiptsUnmatched > 0 && <>, unmatched {formatMoney(d.unallocatedReceiptsUnmatched)}</>})
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-card p-4">
+          <p className="font-semibold mb-2">On paper (accrual basis)</p>
+          <Line label="Gross sales" value={d.grossSales} />
+          <Line label="Sale returns" value={d.saleReturns} negative />
+          <Line label="Net sales" value={d.netSales} strong />
+          <Line label="Output tax (net of returns)" value={d.netOutputTax} hint={`Charged ${formatMoney(d.outputTax)}, returned ${formatMoney(d.outputTaxOnReturns)}`} negative />
+          <Line label="Cost of goods sold" value={d.cogs} negative />
+          <Line label="Gross profit" value={d.grossProfit} strong />
+          <Line label="Expenses" value={d.expenses} negative />
+          <Line label="Net profit" value={d.netProfit} strong />
+          <div className="mt-3 border-t pt-2 space-y-1 text-[11px] text-muted-foreground">
+            <p>Purchases {formatMoney(d.purchase)} &middot; purchase returns {formatMoney(d.purchaseReturns)} &middot; input tax {formatMoney(d.inputTax)}</p>
+            <p>Purchases are a balance-sheet movement into stock, not a cost here &mdash; the cost of goods sold line is.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportsPage() {
   const token = useAuthStore((s) => s.accessToken)!;
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -120,6 +237,9 @@ export default function ReportsPage() {
 
   const display = useMemo(() => {
     if (!data) return null;
+    // Profit & Loss gets a purpose-built view: realised (money actually received) is the headline,
+    // with the accrual figure beside it and the profit still out on credit called out plainly.
+    if (selectedId === 'pnl' && isPnl(data)) return <ProfitAndLossView d={data} />;
     if (Array.isArray(data)) {
       if (!data.length) return <p className="text-muted-foreground p-4">No data for selected period</p>;
       const sample = data[0] as Record<string, unknown>;
@@ -182,7 +302,7 @@ export default function ReportsPage() {
         ))}
       </div>
     );
-  }, [data]);
+  }, [data, selectedId]);
 
   return (
     // Height is only pinned from lg up, where the two panes scroll independently. On phones a

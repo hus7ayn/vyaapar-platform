@@ -28,6 +28,10 @@ interface DashboardData {
   monthReturns?: number;
   monthSalary?: number;
   netRevenue?: number;
+  realisedProfit?: number;
+  realisedGrossProfit?: number;
+  unrealisedProfitOnCredit?: number;
+  creditSalesOutstanding?: number;
   totalReceivable: number;
   totalPayable: number;
   cashInHand: number;
@@ -175,8 +179,28 @@ export default function DashboardPage() {
             {(data?.monthSalary ?? 0) > 0 && (
               <div className="flex justify-between pl-3 text-xs"><span className="text-muted-foreground">↳ incl. Staff Salary</span><span className="text-muted-foreground">{formatMoney(data!.monthSalary!)}</span></div>
             )}
-            <div className="flex justify-between border-t pt-2"><span className="text-muted-foreground font-medium">Net (Sales &minus; Costs)</span><span className="font-bold text-green-700">{formatMoney(data?.netRevenue ?? 0)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Open Orders</span><span className="font-semibold">{data?.openOrders ?? 0}</span></div>
+            {/* Honest label: this line subtracts returns and expenses only — it carries NO cost
+                of goods, so it is NOT profit. The profit figures are the realised ones below. */}
+            <div className="flex justify-between border-t pt-2"><span className="text-muted-foreground font-medium">Sales &minus; Returns &minus; Expenses</span><span className="font-bold">{formatMoney(data?.netRevenue ?? 0)}</span></div>
+            <p className="text-[10px] text-muted-foreground -mt-1">Before cost of goods &mdash; not profit.</p>
+            <div className="flex justify-between border-t pt-2">
+              <span className="text-muted-foreground font-medium">Profit (money received)</span>
+              <span className="font-bold text-green-700">{formatMoney(data?.realisedProfit ?? 0)}</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground -mt-1">Credit sales count only once the customer pays.</p>
+            {(data?.unrealisedProfitOnCredit ?? 0) !== 0 && (
+              <div className="flex justify-between pl-3 text-xs">
+                <span className="text-muted-foreground">&#8627; Profit not yet received</span>
+                <span className="font-semibold text-amber-600">{formatMoney(data!.unrealisedProfitOnCredit!)}</span>
+              </div>
+            )}
+            {(data?.creditSalesOutstanding ?? 0) > 0 && (
+              <div className="flex justify-between pl-3 text-xs">
+                <span className="text-muted-foreground">&#8627; Credit sales unpaid</span>
+                <span className="text-muted-foreground">{formatMoney(data!.creditSalesOutstanding!)}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t pt-2"><span className="text-muted-foreground">Open Orders</span><span className="font-semibold">{data?.openOrders ?? 0}</span></div>
           </div>
         </div>
       </div>

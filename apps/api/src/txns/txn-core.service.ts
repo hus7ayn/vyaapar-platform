@@ -410,13 +410,11 @@ export class TxnCoreService {
             },
           });
         } else {
-          const account = await this.resolveMoneyAccount(tx, businessId, branchId, p);
-          if (account) {
-            await tx.bankAccount.update({
-              where: { id: account.id },
-              data: { balance: { increment: inbound ? amount : amount.neg() } },
-            });
-          }
+          const account = await this.requireMoneyAccount(tx, businessId, branchId, p);
+          await tx.bankAccount.update({
+            where: { id: account.id },
+            data: { balance: { increment: inbound ? amount : amount.neg() } },
+          });
         }
         continue;
       }
@@ -442,24 +440,41 @@ export class TxnCoreService {
         // Statement shows this payment (previously bankAccountId was left null for POS payments,
         // so statements were empty while balances moved) and delete/restore reverses the exact
         // same account.
-        const account = await this.resolveMoneyAccount(tx, businessId, branchId, p);
+        const account = await this.requireMoneyAccount(tx, businessId, branchId, p);
         await tx.txnPayment.create({
           data: {
             txnId,
             paymentType: p.paymentType,
-            bankAccountId: account?.id ?? p.bankAccountId ?? null,
+            bankAccountId: account.id,
             amount,
             referenceNo: p.referenceNo,
           },
         });
-        if (account) {
-          await tx.bankAccount.update({
-            where: { id: account.id },
-            data: { balance: { increment: inbound ? amount : amount.neg() } },
-          });
-        }
+        await tx.bankAccount.update({
+          where: { id: account.id },
+          data: { balance: { increment: inbound ? amount : amount.neg() } },
+        });
       }
     }
+  }
+
+  /**
+   * The same resolution, but total: a payment that is supposed to MOVE money must name an account
+   * to move it out of. It used to be legal for this to come back empty — the TxnPayment row was
+   * still written and the bill still marked paid, so the books said "paid" while no balance
+   * anywhere changed. That is the supplier-payment bug: the money simply evaporated, quietly.
+   * Now it is a refusal the cashier can act on. (CHEQUE never reaches here — an uncleared cheque
+   * deliberately touches no account until it is deposited — and DEBT/credit is filtered out by
+   * the caller, since it moves no cash by definition.)
+   */
+  private async requireMoneyAccount(tx: Tx, businessId: string, branchId: string | null | undefined, p: TxnPaymentInput) {
+    const account = await this.resolveMoneyAccount(tx, businessId, branchId, p);
+    if (account) return account;
+    throw new BadRequestException(
+      p.bankAccountId
+        ? 'The selected Cash/Bank account no longer exists. Pick an account under Cash & Bank and save again.'
+        : `No ${this.methodToAccountType(p.paymentType)} account could be found or created for this shop. Add one under Cash & Bank and save again.`,
+    );
   }
 
   // Each tender lands in its OWN money account so Cash & Bank can show separate Cash/Bank/UPI/Card
@@ -477,21 +492,56 @@ export class TxnCoreService {
     CASH: 'Cash In Hand', BANK: 'Bank', UPI: 'UPI', CARD: 'Card',
   };
 
+  /**
+   * The shop the business calls home — its default branch, else its oldest surviving one. Used
+   * only as a LAST resort, to give a self-healed money account a branch when the request didn't
+   * carry one: a branch-less bank_accounts row is invisible to every screen (they all filter by
+   * branch) while `resolveMoneyAccount` happily debits it, which is exactly how real payments
+   * ended up in an account nobody could see.
+   */
+  private async defaultBranchId(tx: Tx, businessId: string): Promise<string | undefined> {
+    const home = await tx.branch.findFirst({
+      where: { businessId, isDefault: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (home) return home.id;
+    const oldest = await tx.branch.findFirst({
+      where: { businessId, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    return oldest?.id;
+  }
+
   private async resolveMoneyAccount(tx: Tx, businessId: string, branchId: string | null | undefined, p: TxnPaymentInput, allowCreate = true) {
     const branchFilter = branchId ? { branchId } : {};
-    // An explicitly chosen account (back-office picker) always wins.
+    // An explicitly chosen account (back-office picker) always wins — and the branch is only a
+    // PREFERENCE here, never a veto. If the id names an account of this business the user was
+    // able to pick it, so it must be debited: the old branch-filtered lookup returned null on any
+    // mismatch (a dropdown still holding the previous shop's ids after a switch, an account seeded
+    // without a branch) and the payment was then written with no debit at all, silently.
     if (p.bankAccountId) {
-      return tx.bankAccount.findFirst({ where: { id: p.bankAccountId, businessId, ...branchFilter } });
+      const inBranch = await tx.bankAccount.findFirst({ where: { id: p.bankAccountId, businessId, ...branchFilter } });
+      if (inBranch) return inBranch;
+      // Same id, any branch. Returns null only when the id belongs to no account of this business,
+      // which applyPayments turns into a loud error rather than a half-posted payment.
+      return tx.bankAccount.findFirst({ where: { id: p.bankAccountId, businessId } });
     }
     const accountType = this.methodToAccountType(p.paymentType);
     // Per-method account for this branch, else business-wide, else auto-create it so a payment is
     // NEVER silently dropped (previously only CASH self-healed, so UPI/Card vanished from Cash & Bank).
     let account = await tx.bankAccount.findFirst({ where: { businessId, accountType, ...branchFilter }, orderBy: { createdAt: 'asc' } });
     if (!account) account = await tx.bankAccount.findFirst({ where: { businessId, accountType }, orderBy: { createdAt: 'asc' } });
-    if (!account && allowCreate && branchId) {
-      account = await tx.bankAccount.create({
-        data: { businessId, branchId, name: TxnCoreService.ACCOUNT_TYPE_NAME[accountType], accountType },
-      });
+    if (!account && allowCreate) {
+      // A request without a branch used to bail out here and create nothing, so the payment moved
+      // no money. Fall back to the business's home shop instead — the account has to live
+      // somewhere a screen can show it.
+      const homeBranchId = branchId ?? (await this.defaultBranchId(tx, businessId));
+      if (homeBranchId) {
+        account = await tx.bankAccount.create({
+          data: { businessId, branchId: homeBranchId, name: TxnCoreService.ACCOUNT_TYPE_NAME[accountType], accountType },
+        });
+      }
     }
     return account;
   }

@@ -280,11 +280,22 @@ export function TxnForm({ txnType, sourceTxn }: { txnType: TxnType; sourceTxn?: 
     enabled: !!token && meta.hasLines,
   });
 
+  // Keyed by shop, like every other branch-scoped query here. Without branchId in the key the
+  // cache served the PREVIOUS shop's accounts after a shop switch, so the dropdown offered ids
+  // that don't belong to the shop being saved — and the server then posted the payment against
+  // no account at all.
   const { data: accounts } = useQuery({
-    queryKey: ['bank-accounts'],
-    queryFn: () => api<BankAccount[]>('/cash-bank/accounts', { token }),
+    queryKey: ['bank-accounts', branchId],
+    queryFn: () => api<BankAccount[]>('/cash-bank/accounts', { token, branchId }),
     enabled: !!token,
   });
+
+  // A stale selection can outlive the list it came from (shop switch, account deactivated).
+  // Drop it rather than send an id this shop's dropdown no longer offers.
+  useEffect(() => {
+    if (!accounts) return;
+    if (bankAccountId && !accounts.some((a) => a.id === bankAccountId)) setBankAccountId('');
+  }, [accounts, bankAccountId]);
 
   const { data: expenseCategories } = useQuery({
     queryKey: ['expense-categories'],

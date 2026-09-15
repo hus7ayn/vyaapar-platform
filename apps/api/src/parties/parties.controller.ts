@@ -4,7 +4,7 @@ import { Permission } from '@nexus/shared';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
-import { PartiesService, PartyInput } from './parties.service';
+import { PartiesService, PartyAdjustmentInput, PartyInput } from './parties.service';
 
 @ApiTags('parties')
 @ApiBearerAuth()
@@ -86,6 +86,26 @@ export class PartiesController {
     @Query('to') to?: string,
   ) {
     return this.parties.ledger(businessId, id, from, to, branchId);
+  }
+
+  /**
+   * Record extra debt / correct a balance for an existing party.
+   *
+   * NOT behind POS_SELL like the rest of this controller: every biller holds POS_SELL, and a
+   * cashier must not be able to mint debt on a supplier or wipe out what a customer owes.
+   * EXPENSE_MANAGE is held by ADMIN, BRANCH_MANAGER and ACCOUNTANT but NOT by BILLER — the same
+   * "may move money that isn't a sale" line the expense module draws.
+   */
+  @Post(':id/adjustments')
+  @RequirePermissions(Permission.EXPENSE_MANAGE)
+  addAdjustment(
+    @CurrentUser('businessId') businessId: string,
+    @Param('id') id: string,
+    @Body() body: PartyAdjustmentInput,
+  ) {
+    // `body` is an interface, so the global ValidationPipe has no metadata and lets anything
+    // through — the service hand-validates amount/direction/date before it writes.
+    return this.parties.addAdjustment(businessId, id, body);
   }
 
   @Post()

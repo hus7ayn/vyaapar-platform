@@ -12,6 +12,9 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  *  dividing by them, so a float tail can't slip past a cap and a sub-milli "quantity" can't
  *  divide by a stored zero. */
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
+/** Round DOWN to the paisa. Used only to cap a cashier's discount at the line's gross, so the
+ *  cap can never exceed what is actually being charged (which would drive the line negative). */
+const floor2 = (n: number) => Math.floor(n * 100) / 100;
 const D = (v: number | string | Prisma.Decimal | null | undefined) => new Prisma.Decimal(v ?? 0);
 
 @Injectable()
@@ -451,6 +454,14 @@ export class SaleService {
    * ordinary new sale at today's catalogue price. `unitPrice` stays the rate printed on the
    * original bill and the difference rides as a line discount, so the replacement bill reads
    * like the original one.
+   *
+   * A cashier may also knock money off the replacement: `replacements[].discountAmount`, in
+   * RUPEES and BEFORE TAX (that is exactly what buildLines subtracts from the gross before it
+   * charges tax). It is carried per replacement entry so an itemId can never be paired with
+   * someone else's discount, and it applies ONLY to the catalogue-priced remainder — an
+   * allowance sub-line re-issues a price the shop has already charged, so discounting it would
+   * break the rule that a like-for-like swap nets exactly zero. It never touches the refund
+   * either: `k`/`value` below are fixed by the RETURN leg before any replacement is read.
    */
   async exchangeInvoice(
     businessId: string,
@@ -459,7 +470,7 @@ export class SaleService {
     body: {
       lineIds?: string[];
       returns?: { lineId: string; quantity: number }[];
-      replacements: { itemId: string; quantity: number }[];
+      replacements: { itemId: string; quantity: number; discountAmount?: number }[];
       clientId?: string;
     },
   ) {
@@ -471,7 +482,15 @@ export class SaleService {
       if (!r?.itemId || typeof r.itemId !== 'string') throw new BadRequestException('Replacement item is required');
       const qty = round3(Number(r.quantity));
       if (!Number.isFinite(qty) || qty <= 0) throw new BadRequestException('Replacement quantity must be a positive number');
-      return { itemId: r.itemId, quantity: qty };
+      // Optional cashier discount on the replacement. Rupees only, never a percentage:
+      // buildLines treats discountPercent as authoritative whenever it is present and the column
+      // is Decimal(5,2), so a percentage computed from an amount would silently truncate and
+      // charge a different figure from the one quoted. Absent/null = no discount; anything that
+      // isn't a finite, non-negative number is a mistake, not a zero.
+      const asked = r.discountAmount == null ? 0 : Number(r.discountAmount);
+      if (!Number.isFinite(asked) || asked < 0)
+        throw new BadRequestException('Replacement discount must be zero or a positive amount');
+      return { itemId: r.itemId, quantity: qty, discountAmount: round2(asked) };
     });
 
     return this.core.prisma.$transaction(
@@ -568,15 +587,24 @@ export class SaleService {
             belowCostAllowed.add(line);
           }
           if (left > 0) {
+            // The catalogue-priced remainder — an ordinary new sale, and the ONLY sub-line the
+            // cashier's discount touches. Capped at the line's own gross with the identical
+            // expression return-dialog.tsx uses, so the popup's "Customer pays" is the figure
+            // booked here to the paisa, and the line's taxable value can never go below zero
+            // (which would drive the sale total negative and roll BOTH legs back).
+            const unitPrice = Number(item.salePrice);
+            const discountAmount = Math.min(round2(r.discountAmount), floor2(unitPrice * left));
             lines.push({
               itemId: item.id,
               name: item.name,
               quantity: left,
               unit: item.baseUnit,
-              unitPrice: Number(item.salePrice),
-              discountAmount: 0,
+              unitPrice,
+              discountAmount,
               taxRate: Number(item.taxRate),
             });
+            // Deliberately NOT added to belowCostAllowed: that exemption exists for re-issued
+            // prices only, and this line is sold at today's rate.
           }
         }
         if (!lines.length) throw new BadRequestException('Select at least one replacement item');

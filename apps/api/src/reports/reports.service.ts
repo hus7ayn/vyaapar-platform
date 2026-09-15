@@ -2,8 +2,38 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { branchWhere } from '../common/branch.util';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  RealisationDoc,
+  SettlementEvent,
+  UnallocatedReceipt,
+  realise,
+  round2,
+} from './realisation.util';
 
 const num = (v: Prisma.Decimal | number | null | undefined) => Number(v ?? 0);
+
+/**
+ * A payment is treated as cheque-backed when every tender on it is a cheque. Cheques ARE counted
+ * as realised (see realisation.util) — this flag only lets the P&L show how much realised profit
+ * is still paper in the drawer rather than money in the bank.
+ */
+const allCheque = (ps: { paymentType: string }[]) => ps.length > 0 && ps.every((p) => p.paymentType === 'CHEQUE');
+
+/** Posted money only — never a parked (HELD) or cancelled bill. */
+const POSTED: Prisma.TxnWhereInput = { deletedAt: null, status: { notIn: ['HELD', 'CANCELLED'] } };
+
+/**
+ * Everything one realisation document needs: its money, its goods, and — for a return — the
+ * ORIGINAL sale line, so a return is costed at what the goods cost when they were sold.
+ */
+const DOC_ARGS = Prisma.validator<Prisma.TxnDefaultArgs>()({
+  select: {
+    id: true, txnType: true, date: true, total: true, taxAmount: true, partyId: true,
+    lines: { select: { costPrice: true, quantity: true, sourceLine: { select: { costPrice: true } } } },
+    payments: { select: { paymentType: true, amount: true } },
+  },
+});
+type RealisationRow = Prisma.TxnGetPayload<typeof DOC_ARGS>;
 
 function range(from?: string, to?: string) {
   const r: { gte?: Date; lte?: Date } = {};
@@ -27,16 +57,153 @@ export class ReportsService {
     };
   }
 
+  // ─── Realised (payment-based) profit ───────────────────────────────────────
+
+  /**
+   * Gather everything the realisation engine needs for one period and run it.
+   *
+   * Profit is recognised when the money arrives, pro rata to the bill it settles — see
+   * realisation.util for the formula and the reasoning. This method does the I/O only; all of the
+   * arithmetic lives in that pure module so every profit surface can share it.
+   *
+   * NOTE: party opening balances are PartyLedgerEntry rows with no txn and no goods behind them.
+   * Nothing here ever reads them, so settling an opening balance can never invent profit.
+   */
+  private async saleRealisation(businessId: string, from?: string, to?: string, branchId?: string) {
+    const r = range(from, to);
+    const toDate = r?.lte;
+    const branch: Prisma.TxnWhereInput = branchId ? { branchId } : {};
+
+    // 1. Every sale-side document raised in the period. Its counter tenders have no date column
+    //    of their own, so they are dated by the parent txn — which is this period.
+    const periodDocs = await this.prisma.txn.findMany({
+      where: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId),
+      ...DOC_ARGS,
+    });
+
+    // 2. Money that landed in the period against a bill raised earlier — dated by its payment.
+    const periodAllocs = await this.prisma.billWiseAllocation.findMany({
+      where: {
+        businessId,
+        againstTxn: { txnType: 'SALE_INVOICE', ...POSTED, ...branch },
+        paymentTxn: { ...POSTED, ...(r && { date: r }) },
+      },
+      select: { againstTxnId: true },
+    });
+
+    // 3. Receipts that moved a party balance but named no bill (createPaymentIn with
+    //    autoAllocate:false and no allocations writes NO BillWiseAllocation row). Real money —
+    //    an allocation-only engine would silently under-recognise it.
+    const paymentsIn = await this.prisma.txn.findMany({
+      where: this.txnWhere(businessId, 'PAYMENT_IN', from, to, branchId),
+      select: {
+        id: true, date: true, total: true, partyId: true,
+        payments: { select: { paymentType: true } },
+        allocationsAsPayment: { select: { amount: true, discountAmount: true } },
+      },
+    });
+    const unallocatedReceipts: UnallocatedReceipt[] = [];
+    for (const p of paymentsIn) {
+      if (!p.partyId) continue;
+      const named = p.allocationsAsPayment.reduce((s, a) => s + num(a.amount) + num(a.discountAmount), 0);
+      const left = round2(num(p.total) - named);
+      if (left > 0.004) {
+        unallocatedReceipts.push({ partyKey: p.partyId, amount: left, date: p.date, cheque: allCheque(p.payments) });
+      }
+    }
+
+    // 4. The bills those loose receipts are matched against, oldest first. An unallocated payment
+    //    never touched any bill's paidAmount, so a bill still carrying a balance is exactly the
+    //    right candidate and this can never double-count a real allocation.
+    const fifoParties = [...new Set(unallocatedReceipts.map((u) => u.partyKey))];
+    const fifoBills = fifoParties.length
+      ? await this.prisma.txn.findMany({
+          where: {
+            businessId, txnType: 'SALE_INVOICE', ...POSTED, ...branch,
+            partyId: { in: fifoParties }, balance: { gt: 0 },
+            ...(toDate && { date: { lte: toDate } }),
+          },
+          orderBy: { date: 'asc' }, take: 500, ...DOC_ARGS,
+        })
+      : [];
+
+    // 5. The older bills named by (2) that are not loaded yet.
+    const periodIds = new Set(periodDocs.map((d) => d.id));
+    const loaded = new Map<string, RealisationRow>();
+    for (const d of periodDocs) loaded.set(d.id, d);
+    for (const d of fifoBills) loaded.set(d.id, d);
+    const missing = [...new Set(periodAllocs.map((a) => a.againstTxnId))].filter((id) => !loaded.has(id));
+    if (missing.length) {
+      const extra = await this.prisma.txn.findMany({ where: { id: { in: missing }, businessId }, ...DOC_ARGS });
+      for (const d of extra) loaded.set(d.id, d);
+    }
+
+    // 6. EVERY allocation against those documents up to the end of the period — not just the ones
+    //    inside it — so each bill's collected fraction is complete and the split telescopes.
+    const outsideIds = [...loaded.keys()].filter((id) => !periodIds.has(id));
+    const allocs = await this.prisma.billWiseAllocation.findMany({
+      where: {
+        businessId,
+        paymentTxn: { ...POSTED, ...(toDate && { date: { lte: toDate } }) },
+        OR: [
+          { againstTxn: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId) },
+          ...(outsideIds.length ? [{ againstTxnId: { in: outsideIds } }] : []),
+        ],
+      },
+      select: {
+        againstTxnId: true, amount: true, discountAmount: true,
+        paymentTxn: { select: { date: true, payments: { select: { paymentType: true } } } },
+      },
+    });
+    const allocEvents = new Map<string, SettlementEvent[]>();
+    for (const a of allocs) {
+      const list = allocEvents.get(a.againstTxnId) ?? [];
+      // applyAllocations folds discountAmount into paidAmount, but a settlement discount is a
+      // WRITE-OFF, not cash: it closes the bill without any money arriving, so only `amount`
+      // recognises margin and the discount is charged against realised profit instead.
+      list.push({
+        amount: num(a.amount),
+        writeOff: num(a.discountAmount),
+        date: a.paymentTxn.date,
+        source: 'ALLOCATION',
+        cheque: allCheque(a.paymentTxn.payments),
+      });
+      allocEvents.set(a.againstTxnId, list);
+    }
+
+    const docs: RealisationDoc[] = [...loaded.values()].map((t) => ({
+      id: t.id,
+      txnType: t.txnType === 'CREDIT_NOTE' ? 'CREDIT_NOTE' : 'SALE_INVOICE',
+      date: t.date,
+      total: num(t.total),
+      taxAmount: num(t.taxAmount),
+      partyKey: t.partyId,
+      lines: t.lines.map((l) => ({ costPrice: num(l.sourceLine?.costPrice ?? l.costPrice), quantity: num(l.quantity) })),
+      events: [
+        ...t.payments
+          .filter((p) => p.paymentType !== 'DEBT' && num(p.amount) > 0)
+          .map((p) => ({ amount: num(p.amount), date: t.date, source: 'TENDER' as const, cheque: p.paymentType === 'CHEQUE' })),
+        ...(allocEvents.get(t.id) ?? []),
+      ],
+    }));
+
+    return realise({ docs, unallocatedReceipts, from: r?.gte, to: toDate });
+  }
+
   // ─── Dashboard (Home) ──────────────────────────────────────────────────────
 
   async dashboard(businessId: string, branchId?: string) {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+    // UTC day/month boundaries, so the dashboard covers exactly the same window as a report run
+    // for the same month (range() is UTC) and matches the UTC keys of the 7-day graph below.
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+    const monthFrom = monthStart.toISOString().slice(0, 10);
+    const monthTo = monthEnd.toISOString().slice(0, 10);
 
     const branchFilter = branchId ? { branchId } : {};
-    const [todaySales, monthSales, monthReturns, parties, accounts, items, openOrders, monthExpenses, monthPayroll, recentTxns] = await Promise.all([
+    const [todaySales, monthSales, monthReturns, parties, accounts, items, openOrders, monthExpenses, monthPayroll, recentTxns, realised] = await Promise.all([
       this.prisma.txn.aggregate({ where: { ...this.txnWhere(businessId, 'SALE_INVOICE', undefined, undefined, branchId), date: { gte: today } }, _sum: { total: true }, _count: true }),
       this.prisma.txn.aggregate({ where: { ...this.txnWhere(businessId, 'SALE_INVOICE', undefined, undefined, branchId), date: { gte: monthStart } }, _sum: { total: true }, _count: true }),
       this.prisma.txn.aggregate({ where: { ...this.txnWhere(businessId, 'CREDIT_NOTE', undefined, undefined, branchId), date: { gte: monthStart } }, _sum: { total: true } }),
@@ -60,6 +227,7 @@ export class ReportsService {
         take: 10,
         include: { party: { select: { name: true } } },
       }),
+      this.saleRealisation(businessId, monthFrom, monthTo, branchId),
     ]);
 
     let totalReceivable = 0, totalPayable = 0;
@@ -89,14 +257,14 @@ export class ReportsService {
     }
 
     // last 7 days sale graph
-    const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
+    const weekAgo = new Date(today); weekAgo.setUTCDate(weekAgo.getUTCDate() - 6);
     const weekTxns = await this.prisma.txn.findMany({
       where: { ...this.txnWhere(businessId, 'SALE_INVOICE', undefined, undefined, branchId), date: { gte: weekAgo } },
       select: { date: true, total: true },
     });
     const salesByDay: Record<string, number> = {};
     for (let i = 0; i < 7; i++) {
-      const d = new Date(weekAgo); d.setDate(d.getDate() + i);
+      const d = new Date(weekAgo); d.setUTCDate(d.getUTCDate() + i);
       salesByDay[d.toISOString().slice(0, 10)] = 0;
     }
     for (const t of weekTxns) {
@@ -117,8 +285,15 @@ export class ReportsService {
       monthSalary: monthSalaryAmt,
       // Net of sale-returns and expenses. NOTE: paying payroll already creates an EXPENSE txn, so
       // monthExpense ALREADY includes staff salary — we must NOT subtract monthSalary again here or
-      // it double-counts. The figure is always <= Sale, so it never contradicts it. (COGS is in P&L.)
+      // it double-counts. The figure is always <= Sale, so it never contradicts it.
+      // This carries NO cost of goods at all, so it is NOT profit — the web card is labelled
+      // "Sales − Returns − Expenses" accordingly. The profit figures are the realised ones below.
       netRevenue: monthSaleAmt - monthReturnsAmt - monthExpenseAmt,
+      // Payment-based profit for the month: only bills the customer has actually paid for count.
+      realisedGrossProfit: realised.realisedGrossProfit,
+      realisedProfit: round2(realised.realisedGrossProfit - monthExpenseAmt),
+      unrealisedProfitOnCredit: realised.unrealisedProfitOnCredit,
+      creditSalesOutstanding: realised.creditSalesOutstanding,
       totalReceivable, totalPayable,
       cashInHand, bankBalance,
       stockValue, lowStockCount, openOrders,
@@ -190,7 +365,10 @@ export class ReportsService {
 
   async allTransactions(businessId: string, from?: string, to?: string, branchId?: string) {
     return this.prisma.txn.findMany({
-      where: { businessId, deletedAt: null, status: { not: 'HELD' }, ...(branchId && { branchId }), ...(range(from, to) && { date: range(from, to) }) },
+      // ...POSTED, not `status != HELD`: a CANCELLED bill is not a transaction that happened, and
+      // every other report already excludes it (txnWhere). Leaving it in made this list and the
+      // cash-flow report disagree with the sale report on the same period.
+      where: { businessId, ...POSTED, ...(branchId && { branchId }), ...(range(from, to) && { date: range(from, to) }) },
       include: { party: { select: { name: true } } },
       orderBy: { date: 'desc' },
       take: 500,
@@ -201,7 +379,7 @@ export class ReportsService {
     const payments = await this.prisma.txnPayment.findMany({
       where: {
         paymentType: { not: 'CHEQUE' },
-        txn: { businessId, deletedAt: null, status: { not: 'HELD' }, ...(branchId && { branchId }), ...(range(from, to) && { date: range(from, to) }) },
+        txn: { businessId, ...POSTED, ...(branchId && { branchId }), ...(range(from, to) && { date: range(from, to) }) },
       },
       include: { txn: { select: { txnType: true, txnNumber: true, partyName: true, date: true } } },
     });
@@ -222,24 +400,41 @@ export class ReportsService {
     };
   }
 
-  /** Bill-wise profit: per sale invoice, revenue minus cost of items sold. */
+  /**
+   * Bill-wise profit: per sale invoice, revenue minus cost of items sold.
+   * `profit` is the accrual figure (booked the moment the bill was raised); `realisedProfit` is
+   * the share the customer has actually paid for, and `percentCollected` says how much that is.
+   */
   async billWiseProfit(businessId: string, from?: string, to?: string, branchId?: string) {
-    const invoices = await this.prisma.txn.findMany({
-      where: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId),
-      include: { lines: true, party: { select: { name: true } } },
-      orderBy: { date: 'desc' },
-    });
+    const [invoices, realised] = await Promise.all([
+      this.prisma.txn.findMany({
+        where: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId),
+        include: { lines: true, party: { select: { name: true } } },
+        orderBy: { date: 'desc' },
+      }),
+      this.saleRealisation(businessId, from, to, branchId),
+    ]);
+    const byDoc = new Map(realised.docs.map((d) => [d.id, d]));
     const rows = invoices.map((inv) => {
       const sign = inv.txnType === 'CREDIT_NOTE' ? -1 : 1;
       const cost = sign * inv.lines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0);
       const revenue = sign * (num(inv.total) - num(inv.taxAmount));
+      const r = byDoc.get(inv.id);
       return {
         id: inv.id, txnNumber: inv.txnNumber, date: inv.date,
         party: inv.partyName ?? inv.party?.name ?? 'Cash Sale',
         total: sign * num(inv.total), revenue, cost, profit: revenue - cost,
+        percentCollected: round2((r?.collectedFraction ?? 0) * 100),
+        realisedProfit: r?.collectedMargin ?? 0,
+        stillOwed: r?.outstanding ?? 0,
       };
     });
-    return { rows, totalProfit: rows.reduce((s, r) => s + r.profit, 0) };
+    return {
+      rows,
+      totalProfit: rows.reduce((s, r) => s + r.profit, 0),
+      totalRealisedProfit: round2(rows.reduce((s, r) => s + r.realisedProfit, 0)),
+      totalStillOwed: round2(rows.reduce((s, r) => s + r.stillOwed, 0)),
+    };
   }
 
   // ─── Party reports ─────────────────────────────────────────────────────────
@@ -253,21 +448,41 @@ export class ReportsService {
     }));
   }
 
+  /**
+   * Party-wise profit. `realisedProfit` weights each bill by the share of it the party has
+   * actually paid, on the same basis as bill-wise profit, so the two agree row for row.
+   * (Settlement write-offs are a bill-level cost and are reported on the P&L, not split here.)
+   */
   async partyWiseProfit(businessId: string, from?: string, to?: string, branchId?: string) {
-    const invoices = await this.prisma.txn.findMany({
-      where: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId),
-      include: { lines: true },
-    });
-    const byParty: Record<string, { party: string; sales: number; profit: number; count: number }> = {};
+    const [invoices, realised] = await Promise.all([
+      this.prisma.txn.findMany({
+        where: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId),
+        include: { lines: true },
+      }),
+      this.saleRealisation(businessId, from, to, branchId),
+    ]);
+    const byDoc = new Map(realised.docs.map((d) => [d.id, d]));
+    const byParty: Record<string, { party: string; sales: number; profit: number; realisedSales: number; realisedProfit: number; stillOwed: number; count: number }> = {};
     for (const inv of invoices) {
       const key = inv.partyId ?? inv.partyName ?? 'Cash Sale';
       const name = inv.partyName ?? 'Cash Sale';
-      if (!byParty[key]) byParty[key] = { party: name, sales: 0, profit: 0, count: 0 };
+      if (!byParty[key]) byParty[key] = { party: name, sales: 0, profit: 0, realisedSales: 0, realisedProfit: 0, stillOwed: 0, count: 0 };
       const sign = inv.txnType === 'CREDIT_NOTE' ? -1 : 1;
       const cost = sign * inv.lines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0);
-      byParty[key].sales += sign * num(inv.total);
-      byParty[key].profit += sign * (num(inv.total) - num(inv.taxAmount)) - cost;
+      const sales = sign * num(inv.total);
+      const profit = sign * (num(inv.total) - num(inv.taxAmount)) - cost;
+      const collected = byDoc.get(inv.id)?.collectedFraction ?? 0;
+      byParty[key].sales += sales;
+      byParty[key].profit += profit;
+      byParty[key].realisedSales += round2(sales * collected);
+      byParty[key].realisedProfit += round2(profit * collected);
+      byParty[key].stillOwed += byDoc.get(inv.id)?.outstanding ?? 0;
       byParty[key].count++;
+    }
+    for (const row of Object.values(byParty)) {
+      row.realisedSales = round2(row.realisedSales);
+      row.realisedProfit = round2(row.realisedProfit);
+      row.stillOwed = round2(row.stillOwed);
     }
     return Object.values(byParty).sort((a, b) => b.sales - a.sales);
   }
@@ -317,23 +532,45 @@ export class ReportsService {
     return { rows, totalValue: rows.reduce((s, r) => s + r.stockValue, 0), totalQty: rows.reduce((s, r) => s + r.stockQty, 0) };
   }
 
+  /**
+   * Item-wise profit. `realisedProfit` weights every line by the share of its bill the customer
+   * has actually paid — the same weight bill-wise and party-wise profit use, so all three agree.
+   * The realised cost of a returned line is the ORIGINAL sale's cost (sourceLine), not the item's
+   * cost today, so a price change between sale and return leaves no residual.
+   */
   async itemWiseProfit(businessId: string, from?: string, to?: string, branchId?: string) {
-    const lines = await this.prisma.txnLine.findMany({
-      where: { txn: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId) },
-      include: { item: { select: { name: true, sku: true } }, txn: { select: { txnType: true } } },
-    });
-    const byItem: Record<string, { item: string; qty: number; revenue: number; cost: number; profit: number }> = {};
+    const [lines, realised] = await Promise.all([
+      this.prisma.txnLine.findMany({
+        where: { txn: this.txnWhere(businessId, ['SALE_INVOICE', 'CREDIT_NOTE'], from, to, branchId) },
+        include: {
+          item: { select: { name: true, sku: true } },
+          txn: { select: { id: true, txnType: true } },
+          sourceLine: { select: { costPrice: true } },
+        },
+      }),
+      this.saleRealisation(businessId, from, to, branchId),
+    ]);
+    const byDoc = new Map(realised.docs.map((d) => [d.id, d]));
+    const byItem: Record<string, { item: string; qty: number; revenue: number; cost: number; profit: number; realisedRevenue: number; realisedProfit: number }> = {};
     for (const l of lines) {
       const key = l.itemId ?? l.name;
       const name = l.item?.name ?? l.name;
-      if (!byItem[key]) byItem[key] = { item: name, qty: 0, revenue: 0, cost: 0, profit: 0 };
+      if (!byItem[key]) byItem[key] = { item: name, qty: 0, revenue: 0, cost: 0, profit: 0, realisedRevenue: 0, realisedProfit: 0 };
       const sign = l.txn.txnType === 'CREDIT_NOTE' ? -1 : 1;
       const revenue = sign * (num(l.total) - num(l.taxAmount));
       const cost = sign * num(l.costPrice) * num(l.quantity);
+      const collected = byDoc.get(l.txn.id)?.collectedFraction ?? 0;
+      const realisedCost = sign * num(l.sourceLine?.costPrice ?? l.costPrice) * num(l.quantity);
       byItem[key].qty += sign * num(l.quantity);
       byItem[key].revenue += revenue;
       byItem[key].cost += cost;
       byItem[key].profit += revenue - cost;
+      byItem[key].realisedRevenue += round2(revenue * collected);
+      byItem[key].realisedProfit += round2((revenue - realisedCost) * collected);
+    }
+    for (const row of Object.values(byItem)) {
+      row.realisedRevenue = round2(row.realisedRevenue);
+      row.realisedProfit = round2(row.realisedProfit);
     }
     return Object.values(byItem).sort((a, b) => b.profit - a.profit);
   }
@@ -412,21 +649,55 @@ export class ReportsService {
 
   // ─── Financial statements ──────────────────────────────────────────────────
 
-  async profitAndLoss(businessId: string, from?: string, to?: string, branchId?: string) {
+  /**
+   * Profit & Loss, on BOTH bases.
+   *
+   * The accrual figures (netSales, cogs, grossProfit, netProfit …) book a sale the moment the
+   * bill is raised, paid or not. The realised figures book profit only when the money actually
+   * arrives, pro rata to the bill it settles — that is the headline the owner asked for, because
+   * a credit sale is a receivable, not earnings. Both are returned so the two can be reconciled
+   * on screen: realisedGrossProfit + (profit still out on credit) is what accrual claimed.
+   *
+   * None of this reaches the GST reports: output tax is a liability the day the invoice is
+   * raised, by law, and gstr1/gstr2/gstr3b stay invoice-dated and untouched.
+   */
+  /** The accrual half of the P&L, on its own — the balance sheet needs only this. */
+  private async accrualPnl(businessId: string, from?: string, to?: string, branchId?: string) {
     const [sales, saleReturns, purchases, purchaseReturns, expenses, saleLines, saleReturnLines] = await Promise.all([
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId), _sum: { total: true, taxAmount: true } }),
-      this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'CREDIT_NOTE', from, to, branchId), _sum: { total: true } }),
+      this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'CREDIT_NOTE', from, to, branchId), _sum: { total: true, taxAmount: true } }),
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'PURCHASE_BILL', from, to, branchId), _sum: { total: true, taxAmount: true } }),
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'DEBIT_NOTE', from, to, branchId), _sum: { total: true } }),
       this.prisma.txn.aggregate({ where: this.txnWhere(businessId, 'EXPENSE', from, to, branchId), _sum: { total: true } }),
-      this.prisma.txnLine.findMany({ where: { txn: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId) } }),
-      this.prisma.txnLine.findMany({ where: { txn: this.txnWhere(businessId, 'CREDIT_NOTE', from, to, branchId) } }),
+      this.prisma.txnLine.findMany({
+        where: { txn: this.txnWhere(businessId, 'SALE_INVOICE', from, to, branchId) },
+        select: { costPrice: true, quantity: true },
+      }),
+      this.prisma.txnLine.findMany({
+        where: { txn: this.txnWhere(businessId, 'CREDIT_NOTE', from, to, branchId) },
+        select: { costPrice: true, quantity: true, sourceLine: { select: { costPrice: true } } },
+      }),
     ]);
 
     const grossSale = num(sales._sum.total) - num(saleReturns._sum.total);
+
+    // BUGFIX (changes historical figures): sale-return tax used to be deducted TWICE. The
+    // returned total already carries its own GST and is subtracted above, and then the gross
+    // output-tax figure — never netted of returns — was subtracted again. A full return of a
+    // 118 bill (100 + 18 GST, cost 60) reported a gross profit of -18 instead of 0. Bill-wise
+    // profit has always done this right with a signed per-txn (total - taxAmount); this is the
+    // same thing in aggregate.
+    const outputTax = num(sales._sum.taxAmount);
+    const saleReturnTax = num(saleReturns._sum.taxAmount);
+    const netOutputTax = outputTax - saleReturnTax;
+
+    // BUGFIX (changes historical figures): a return's COGS is what the goods cost WHEN THEY WERE
+    // SOLD. A credit-note line stamps the item's cost on the day of the return, so if the item's
+    // cost moved in between, reversing at the new cost left a residual in COGS that belonged to
+    // no sale. sourceLine is the exact original invoice line, so the reversal is exact.
     const cogs = saleLines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0)
-      - saleReturnLines.reduce((s, l) => s + num(l.costPrice) * num(l.quantity), 0);
-    const grossProfit = grossSale - num(sales._sum.taxAmount) - cogs;
+      - saleReturnLines.reduce((s, l) => s + num(l.sourceLine?.costPrice ?? l.costPrice) * num(l.quantity), 0);
+    const grossProfit = grossSale - netOutputTax - cogs;
     const totalExpenses = num(expenses._sum.total);
 
     // One clear vocabulary so no surface can show "Total Sale" exceeding "Total Revenue" on a
@@ -441,8 +712,45 @@ export class ReportsService {
       grossProfit,
       expenses: totalExpenses,
       netProfit: grossProfit - totalExpenses,
-      outputTax: num(sales._sum.taxAmount),
+      outputTax,
       inputTax: num(purchases._sum.taxAmount),
+      outputTaxOnReturns: saleReturnTax,
+      netOutputTax,
+    };
+  }
+
+  async profitAndLoss(businessId: string, from?: string, to?: string, branchId?: string) {
+    const [accrual, realised] = await Promise.all([
+      this.accrualPnl(businessId, from, to, branchId),
+      this.saleRealisation(businessId, from, to, branchId),
+    ]);
+
+    return {
+      ...accrual,
+
+      // ── Realised (payment-based) ─────────────────────────────────────────────
+      // Money in this period against any bill, old or new, pro rata to that bill's margin.
+      realisedRevenue: realised.realisedRevenue,
+      realisedCogs: realised.realisedCogs,
+      realisedGrossProfit: realised.realisedGrossProfit,
+      // Expenses are already cash-settled when they are booked, so the two bases share them.
+      realisedNetProfit: round2(realised.realisedGrossProfit - accrual.expenses),
+      // Of the sales raised IN this period: what is still owed, and the profit riding on it.
+      creditSalesOutstanding: realised.creditSalesOutstanding,
+      unrealisedProfitOnCredit: realised.unrealisedProfitOnCredit,
+      // Of the sales raised IN this period: profit collected so far. This is the figure the
+      // bill-wise / item-wise / party-wise reports total, so those surfaces reconcile with this.
+      realisedOnPeriodSales: realised.realisedOnPeriodSales,
+      // Settlement discounts written off to close a bill: they settle it without any cash, so
+      // they earn no margin and are charged against realised profit.
+      settlementDiscounts: realised.settlementDiscounts,
+      // Cash behind the realised figures, and the slice still sitting as an uncleared cheque.
+      realisedCashCollected: realised.realisedCash,
+      realisedOnCheques: realised.realisedOnCheques,
+      // Receipts that named no bill, and how much of them could be matched FIFO at report time.
+      unallocatedReceipts: realised.unallocatedReceipts,
+      unallocatedReceiptsMatched: realised.unallocatedReceiptsMatched,
+      unallocatedReceiptsUnmatched: realised.unallocatedReceiptsUnmatched,
     };
   }
 
@@ -500,7 +808,9 @@ export class ReportsService {
   async balanceSheet(businessId: string, branchId?: string) {
     const tb = await this.trialBalance(businessId, branchId);
     const get = (name: string) => tb.accounts.find((a) => a.name.startsWith(name)) ?? { debit: 0, credit: 0 };
-    const pnl = await this.profitAndLoss(businessId, undefined, undefined, branchId);
+    // Accrual only: retained earnings on the balance sheet are the booked figure, and running the
+    // realisation engine over all of history for a number this screen never shows would be waste.
+    const pnl = await this.accrualPnl(businessId, undefined, undefined, branchId);
 
     const cashBank = get('Cash & Bank').debit - get('Cash & Bank').credit;
     const receivable = get('Accounts Receivable').debit;

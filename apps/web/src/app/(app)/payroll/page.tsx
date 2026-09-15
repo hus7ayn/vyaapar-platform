@@ -87,6 +87,10 @@ export default function PayrollPage() {
   const [bankAccountId, setBankAccountId] = useState('');
   const [advanceFor, setAdvanceFor] = useState<Employee | null>(null);
   const [advanceAmount, setAdvanceAmount] = useState('');
+  const [advanceMode, setAdvanceMode] = useState<'CASH' | 'BANK'>('CASH');
+  const [advanceBankId, setAdvanceBankId] = useState('');
+  // '' = every active staff member; otherwise the single employee the owner picked.
+  const [generateEmpId, setGenerateEmpId] = useState('');
   const [historyFor, setHistoryFor] = useState<Employee | null>(null);
 
   // Scope payroll to ONE shop so their staff stay separate.
@@ -124,7 +128,7 @@ export default function PayrollPage() {
   const { data: accounts } = useQuery({
     queryKey: ['bank-accounts-payroll'],
     queryFn: () => api<BankAccount[]>('/cash-bank/accounts', { token }),
-    enabled: !!token && payOpen !== null,
+    enabled: !!token && (payOpen !== null || !!advanceFor),
   });
 
   const createEmp = useMutation({
@@ -148,10 +152,28 @@ export default function PayrollPage() {
   });
 
   const generate = useMutation({
-    mutationFn: () => api<{ created: number; skipped: number }>('/payroll/generate', { method: 'POST', token, body: JSON.stringify({ startDate, endDate, branchId: scope }) }),
+    mutationFn: () =>
+      api<{ created: number; updated: number; added: number; skipped: number }>('/payroll/generate', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          startDate,
+          endDate,
+          branchId: scope,
+          ...(generateEmpId ? { employeeIds: [generateEmpId] } : {}),
+        }),
+      }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['payrolls'] });
-      toast.success(`Payroll generated for ${res.created} shop(s) — all active staff`);
+      const who = generateEmpId
+        ? (employees ?? []).find((e) => e.id === generateEmpId)
+        : null;
+      const staff = who ? `${who.firstName} ${who.lastName}` : 'all active staff';
+      toast.success(
+        res.updated
+          ? `${res.added} added to the existing draft for this period — ${staff}`
+          : `Payroll generated for ${res.created} shop(s) — ${staff}`,
+      );
       setTab('runs');
     },
     onError: (e: Error) => toast.error(e.message),
@@ -191,12 +213,30 @@ export default function PayrollPage() {
 
   const recordAdvance = useMutation({
     mutationFn: ({ employeeId, amount }: { employeeId: string; amount: number }) =>
-      api(`/payroll/employees/${employeeId}/advance`, { method: 'POST', token, body: JSON.stringify({ amount }) }),
+      api(`/payroll/employees/${employeeId}/advance`, {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          amount,
+          paymentType: advanceMode,
+          bankAccountId: advanceMode === 'BANK' ? advanceBankId || undefined : undefined,
+        }),
+      }),
     onSuccess: () => {
-      toast.success('Advance recorded — auto-deducted from upcoming payroll');
+      toast.success(
+        advanceMode === 'BANK'
+          ? 'Advance paid — deducted from the bank account & booked as an expense'
+          : 'Advance paid — deducted from cash in hand & booked as an expense',
+      );
       setAdvanceFor(null);
       setAdvanceAmount('');
+      setAdvanceBankId('');
+      setAdvanceMode('CASH');
       qc.invalidateQueries({ queryKey: ['employees'] });
+      qc.invalidateQueries({ queryKey: ['cash-bank-summary'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['payrolls'] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -379,7 +419,7 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
                       {formatMoney(Number(e.advanceBalance ?? 0))}
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                      <Button size="sm" variant="outline" className="h-7 mr-1" onClick={() => { setAdvanceFor(e); setAdvanceAmount(''); }}>Advance</Button>
+                      <Button size="sm" variant="outline" className="h-7 mr-1" onClick={() => { setAdvanceFor(e); setAdvanceAmount(''); setAdvanceMode('CASH'); setAdvanceBankId(''); }}>Advance</Button>
                       <Button size="sm" variant="ghost" className="h-7" onClick={() => setHistoryFor(e)}>History</Button>
                     </td>
                   </tr>
@@ -398,6 +438,16 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
             <label className="text-sm text-muted-foreground">to</label>
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
+            <select
+              className="h-10 rounded-lg border px-3 text-sm bg-background w-full sm:w-56"
+              value={generateEmpId}
+              onChange={(e) => setGenerateEmpId(e.target.value)}
+            >
+              <option value="">All staff</option>
+              {(employees ?? []).map((e) => (
+                <option key={e.id} value={e.id}>{e.firstName} {e.lastName}{e.employeeId ? ` (${e.employeeId})` : ''}</option>
+              ))}
+            </select>
             <Button onClick={() => generate.mutate()} disabled={generate.isPending || !startDate || !endDate}>
               <Users className="h-4 w-4 mr-1" /> Generate payroll
             </Button>
@@ -569,13 +619,28 @@ ${row('Advance recovered', '-' + formatMoney(Number(line.advance)))}
               <label className="text-xs font-medium text-muted-foreground">Advance amount</label>
               <Input type="number" min="0" step="0.01" autoFocus value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} placeholder="0.00" />
             </div>
-            <p className="text-[11px] text-muted-foreground">This is automatically deducted from the employee&apos;s upcoming payroll run(s) until cleared.</p>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Paid from</label>
+              <select className={fieldCls} value={advanceMode} onChange={(e) => setAdvanceMode(e.target.value as 'CASH' | 'BANK')}>
+                <option value="CASH">Cash</option>
+                <option value="BANK">Bank</option>
+              </select>
+            </div>
+            {advanceMode === 'BANK' && (
+              <select className={fieldCls} value={advanceBankId} onChange={(e) => setAdvanceBankId(e.target.value)}>
+                <option value="">Select bank account</option>
+                {(accounts ?? []).filter((a) => a.accountType === 'BANK').map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            )}
+            <p className="text-[11px] text-muted-foreground">Pays the money out now — it leaves cash/bank as a Staff Advance expense — and is then deducted from the employee&apos;s upcoming payroll run(s) until cleared.</p>
             <Button
               className="w-full"
-              disabled={recordAdvance.isPending || !(Number(advanceAmount) > 0)}
+              disabled={recordAdvance.isPending || !(Number(advanceAmount) > 0) || (advanceMode === 'BANK' && !advanceBankId)}
               onClick={() => advanceFor && recordAdvance.mutate({ employeeId: advanceFor.id, amount: Number(advanceAmount) })}
             >
-              Record advance
+              Pay advance
             </Button>
           </div>
         </DialogContent>

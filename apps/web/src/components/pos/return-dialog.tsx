@@ -27,6 +27,9 @@ const num = (v: unknown) => {
 };
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
+/** Round DOWN to the paisa — the server's floor2. Caps a replacement discount at the line's own
+ *  gross so the exchange sale can never go negative ("Total cannot be negative" rolls BOTH legs). */
+const floor2 = (n: number) => Math.floor(n * 100) / 100;
 /** Money to the paisa. formatCurrency() renders whole rupees, and a refund is settled in coins. */
 const money = (n: number) => `₹${round2(n).toFixed(2)}`;
 
@@ -67,6 +70,10 @@ export function ReturnDialog({
   const [step, setStep] = useState<'items' | 'replace'>('items');
   const [search, setSearch] = useState('');
   const [replacements, setReplacements] = useState<Record<string, number>>({}); // itemId -> qty
+  // itemId -> the discount the cashier typed, in RUPEES and BEFORE TAX (the basis buildLines
+  // uses), on the catalogue-priced part of that replacement only. Held as the raw string so a
+  // half-typed "12." keeps its decimal point; read through typedDiscount() everywhere.
+  const [replDiscount, setReplDiscount] = useState<Record<string, string>>({});
   // One key per opened dialog. A retried POST (double tap, or the cashier resending after a
   // timeout) is recognised by the server and returns the credit note the first call committed
   // instead of taking the goods back a second time and paying out twice.
@@ -152,11 +159,18 @@ export function ReturnDialog({
 
   const catalogItems = catalog ?? [];
   const replacementRows = Object.entries(replacements).filter(([, q]) => q > 0);
+  /** What the cashier typed as this item's replacement discount, in rupees. Blank, nonsense or a
+   *  negative reads as 0 — the same value the server's hand-written validation accepts — so the
+   *  quote below and the request body are always fed the identical number. */
+  const typedDiscount = (itemId: string) => Math.max(0, num(replDiscount[itemId]));
 
   /** Exactly the lines exchangeInvoice will post, and therefore exactly what gets charged. */
   const quoteReplacements = () => {
     const pool = buildAllowances();
-    const priced: { itemId: string; name: string; quantity: number; rate: number; total: number; asSold: boolean }[] = [];
+    const priced: { itemId: string; name: string; quantity: number; rate: number; total: number; asSold: boolean; discount: number }[] = [];
+    // Per itemId, the catalogue-priced remainder the discount can bite into: how many units are
+    // sold at today's rate, and therefore the largest discount either side will honour.
+    const priceable: Record<string, { quantity: number; maxDiscount: number; discount: number }> = {};
     let subtotal = 0;
     let tax = 0;
     for (const [itemId, wanted] of replacementRows) {
@@ -168,22 +182,30 @@ export function ReturnDialog({
         if (take <= 0) continue;
         a.qty = round3(a.qty - take);
         left = round3(left - take);
+        // Allowance sub-lines re-issue a price already charged and are NEVER discounted here —
+        // that is what keeps a like-for-like swap netting exactly zero.
         const taxable = a.unitPrice * take - round2((a.unitPrice - a.netUnitPrice) * take);
         subtotal += taxable;
         tax += (taxable * a.taxRate) / 100;
-        priced.push({ itemId, name: it?.name ?? 'Item', quantity: take, rate: a.netUnitPrice, total: taxable * (1 + a.taxRate / 100), asSold: true });
+        priced.push({ itemId, name: it?.name ?? 'Item', quantity: take, rate: a.netUnitPrice, total: taxable * (1 + a.taxRate / 100), asSold: true, discount: 0 });
       }
       if (left > 0 && it) {
-        const rate = num(it.salePrice);
-        const taxable = rate * left;
+        const unitPrice = num(it.salePrice);
+        // Capped with the SAME expression the server uses (SaleService.exchangeInvoice), on the
+        // same numbers, so neither side can quote a figure the other refuses to book.
+        const discountAmount = Math.min(round2(typedDiscount(itemId)), floor2(unitPrice * left));
+        const taxable = unitPrice * left - discountAmount;
         subtotal += taxable;
         tax += (taxable * num(it.taxRate)) / 100;
-        priced.push({ itemId, name: it.name, quantity: left, rate, total: taxable * (1 + num(it.taxRate) / 100), asSold: false });
+        priced.push({ itemId, name: it.name, quantity: left, rate: unitPrice, total: taxable * (1 + num(it.taxRate) / 100), asSold: false, discount: discountAmount });
+        priceable[itemId] = { quantity: left, maxDiscount: floor2(unitPrice * left), discount: discountAmount };
       }
     }
-    return { priced, newTotal: round2(subtotal + tax) };
+    return { priced, priceable, newTotal: round2(subtotal + tax) };
   };
-  const { priced, newTotal } = quoteReplacements();
+  const { priced, priceable, newTotal } = quoteReplacements();
+  /** Discount actually honoured across the replacements — post-cap, so it is what the bill shows. */
+  const replDiscountTotal = round2(priced.reduce((s, p) => s + p.discount, 0));
   const diff = round2(newTotal - refundValue);
 
   const setQty = (l: ReturnLine, value: number) => {
@@ -210,7 +232,14 @@ export function ReturnDialog({
         token,
         body: JSON.stringify({
           returns: rows,
-          replacements: replacementRows.map(([itemId, quantity]) => ({ itemId, quantity })),
+          // Send the TYPED discount in rupees, not the capped one: the server re-applies the
+          // identical cap on the identical numbers, so both sides agree by construction rather
+          // than by one trusting the other's arithmetic. Never a percentage.
+          replacements: replacementRows.map(([itemId, quantity]) => ({
+            itemId,
+            quantity,
+            discountAmount: round2(typedDiscount(itemId)),
+          })),
           clientId,
         }),
       }),
@@ -325,23 +354,54 @@ export function ReturnDialog({
                         {p.name}
                         <span className="block text-[10px] text-muted-foreground">
                           {p.quantity} × {money(p.rate)} {p.asSold ? '(credited at the rate you paid)' : '(current price)'}
+                          {p.discount > 0 ? ` · less ${money(p.discount)} discount (before tax)` : ''}
                         </span>
                       </span>
                       <span className="w-24 text-right tabular-nums">{money(p.total)}</span>
                     </div>
                   ))}
-                  {replacementRows.map(([itemId, qty]) => (
-                    <div key={`edit-${itemId}`} className="flex items-center gap-2 text-xs py-1">
-                      <span className="flex-1 truncate text-muted-foreground">
-                        {catalogItems.find((c) => c.id === itemId)?.name ?? 'Item'}
-                      </span>
-                      <input
-                        type="number" min={0} className="w-16 h-8 rounded border px-2 text-right text-sm"
-                        value={qty}
-                        onChange={(e) => setReplacements((r) => ({ ...r, [itemId]: Math.max(0, Math.floor(Number(e.target.value))) }))}
-                      />
-                    </div>
-                  ))}
+                  {replacementRows.map(([itemId, qty]) => {
+                    // The discount only has something to bite on when part of this replacement is
+                    // sold at today's catalogue price; units covered by the credit are re-issued
+                    // at the rate already charged and are never discounted.
+                    const cat = priceable[itemId];
+                    return (
+                      <div key={`edit-${itemId}`} className="flex items-end gap-2 text-xs py-1">
+                        <span className="flex-1 min-w-0">
+                          <span className="block truncate text-muted-foreground">
+                            {catalogItems.find((c) => c.id === itemId)?.name ?? 'Item'}
+                          </span>
+                          {/* Every other figure in this dialog is tax-inclusive; a line discount
+                              is NOT — it comes off before tax, which is exactly how the bill will
+                              compute it. Say so rather than quietly mix the two bases. */}
+                          <span className="block text-[10px] text-muted-foreground">
+                            {cat
+                              ? `discount is before tax · up to ${money(cat.maxDiscount)} on ${cat.quantity} at current price`
+                              : 'covered by your credit — nothing to discount'}
+                          </span>
+                        </span>
+                        <label className="flex flex-col gap-0.5">
+                          <span className="text-[10px] text-muted-foreground">Qty</span>
+                          <input
+                            type="number" min={0} className="w-14 h-8 rounded border px-2 text-right text-sm"
+                            value={qty}
+                            onChange={(e) => setReplacements((r) => ({ ...r, [itemId]: Math.max(0, Math.floor(Number(e.target.value))) }))}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-0.5">
+                          <span className="text-[10px] text-muted-foreground">Disc ₹</span>
+                          <input
+                            type="number" min={0} step="0.01" max={cat ? cat.maxDiscount : 0}
+                            className="w-20 h-8 rounded border px-2 text-right text-sm disabled:opacity-40"
+                            placeholder="0.00"
+                            disabled={!cat}
+                            value={replDiscount[itemId] ?? ''}
+                            onChange={(e) => setReplDiscount((d) => ({ ...d, [itemId]: e.target.value }))}
+                          />
+                        </label>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {!catalog && <p className="text-center text-muted-foreground">Loading catalog…</p>}
@@ -381,7 +441,10 @@ export function ReturnDialog({
             <div className="p-4 border-t space-y-2">
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Credit for returned items {money(refundValue)}</span>
-                <span>New items {money(newTotal)}</span>
+                <span>
+                  New items {money(newTotal)}
+                  {replDiscountTotal > 0 ? ` (after ${money(replDiscountTotal)} off, before tax)` : ''}
+                </span>
               </div>
               <p className="text-sm font-semibold">
                 {diff >= 0 ? `Customer pays ${money(diff)}` : `Refund customer ${money(-diff)}`}

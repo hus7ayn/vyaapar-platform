@@ -19,6 +19,22 @@ export interface PartyInput {
   openingDate?: string;
 }
 
+/**
+ * Ad-hoc debt/credit recorded against an EXISTING party.
+ * `direction` is written from the business's point of view:
+ *   TO_PAY     → we owe them more  → currentBalance goes DOWN (payable)
+ *   TO_RECEIVE → they owe us more  → currentBalance goes UP   (receivable)
+ */
+export interface PartyAdjustmentInput {
+  amount: number;
+  direction: 'TO_PAY' | 'TO_RECEIVE';
+  note?: string;
+  date?: string;
+}
+
+/** numeric(14,2) — anything at or above this cannot be stored. */
+const MAX_AMOUNT = 1_000_000_000_000;
+
 @Injectable()
 export class PartiesService {
   constructor(private prisma: PrismaService) {}
@@ -176,6 +192,82 @@ export class PartiesService {
         ...(body.groupId !== undefined && { groupId: body.groupId }),
         ...(body.creditLimit !== undefined && { creditLimit: body.creditLimit }),
       },
+    });
+  }
+
+  /**
+   * Hand-validate an adjustment body. The controller types it as an interface, so Nest's global
+   * ValidationPipe has nothing to validate against — every field is whatever the client sent.
+   */
+  normaliseAdjustment(body: PartyAdjustmentInput | undefined) {
+    const raw = body?.amount as unknown;
+    const n =
+      typeof raw === 'number' ? raw
+      : typeof raw === 'string' && raw.trim() !== '' ? Number(raw)
+      : NaN;
+    if (!Number.isFinite(n)) throw new BadRequestException('A valid amount is required');
+    const amount = Math.round(n * 100) / 100; // the column is numeric(14,2)
+    if (amount <= 0) throw new BadRequestException('Amount must be greater than zero');
+    if (amount >= MAX_AMOUNT) throw new BadRequestException('Amount is too large');
+
+    const direction = body?.direction;
+    if (direction !== 'TO_PAY' && direction !== 'TO_RECEIVE') {
+      throw new BadRequestException('Direction must be TO_PAY or TO_RECEIVE');
+    }
+
+    const note = typeof body?.note === 'string' ? body.note.trim().slice(0, 300) : '';
+    let entryDate = new Date();
+    if (body?.date !== undefined && body.date !== null && body.date !== '') {
+      if (typeof body.date !== 'string') throw new BadRequestException('Invalid date');
+      const parsed = new Date(body.date);
+      if (Number.isNaN(parsed.getTime())) throw new BadRequestException('Invalid date');
+      entryDate = parsed;
+    }
+
+    // TO_PAY increases what we owe → the signed balance moves negative.
+    const signed = new Prisma.Decimal(direction === 'TO_PAY' ? -amount : amount);
+    return { amount, direction, signed, description: note || 'Manual adjustment', entryDate };
+  }
+
+  /**
+   * Record extra debt (or credit) against an existing party without raising a Txn.
+   *
+   * Deliberately NOT a Txn: a bare "I owe this supplier another ₹8,000" has no items, no GST and
+   * no stock, and every report keys off txnType — inventing a PURCHASE_BILL here would pollute
+   * purchase totals, GST returns and COGS. The cost of that choice is that the adjustment shows in
+   * the LEDGER tab and in Payables, but not in the Transactions tab (which lists Txns only).
+   *
+   * currentBalance and the ledger row are written together, exactly once each, in ONE transaction:
+   * UtilitiesService.verifyData asserts currentBalance == Σ PartyLedgerEntry.amount and its "fix"
+   * overwrites currentBalance with the ledger sum, so a path that moved only one of the two would
+   * be silently undone by the owner's own Verify-my-data button.
+   */
+  async addAdjustment(businessId: string, id: string, body: PartyAdjustmentInput) {
+    const { signed, description, entryDate } = this.normaliseAdjustment(body);
+    const party = await this.get(businessId, id); // 404s + scopes to this business before we write
+
+    return this.prisma.$transaction(async (tx) => {
+      // Serialise per party (the same lock key sale.service.ts uses for its credit-limit check) so
+      // two concurrent adjustments can't both read a stale balance and stamp the same `balance`
+      // snapshot onto their ledger rows.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
+      const updated = await tx.party.update({
+        where: { id: party.id },
+        data: { currentBalance: { increment: signed } },
+      });
+      const entry = await tx.partyLedgerEntry.create({
+        data: {
+          businessId,
+          branchId: party.branchId,
+          partyId: party.id,
+          entryType: 'ADJUSTMENT',
+          amount: signed,
+          balance: updated.currentBalance,
+          description,
+          entryDate,
+        },
+      });
+      return { party: updated, entry };
     });
   }
 

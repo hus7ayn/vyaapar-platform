@@ -9,11 +9,27 @@ type PurchaseBody = Omit<CreateTxnInput, 'txnType'>;
 export class PurchaseService {
   constructor(private core: TxnCoreService, private sale: SaleService) {}
 
+  /**
+   * The shop a purchase document belongs to. The body wins when it names one (the back-office
+   * form sends the shop the user is looking at); otherwise the caller's own resolved branch.
+   *
+   * Leaving this undefined is not "no opinion" — it stores branch_id NULL, and every list and
+   * report filters by branch, so the document simply never appears again: 'unikid' had four
+   * PAYMENT_OUT rows worth 85,000 that no screen would show. Mirrors ExpensesService.create.
+   */
+  private branchOf(body: PurchaseBody, branchId?: string) {
+    return body.branchId ?? branchId;
+  }
+
   // ─── Purchase Bills ────────────────────────────────────────────────────────
 
-  async createBill(businessId: string, userId: string, body: PurchaseBody) {
+  async createBill(businessId: string, userId: string, body: PurchaseBody, branchId?: string) {
     if (!body.partyId) throw new BadRequestException('Supplier party is required');
-    const bill = await this.core.createTxn(businessId, userId, { ...body, txnType: 'PURCHASE_BILL' });
+    const bill = await this.core.createTxn(businessId, userId, {
+      ...body,
+      branchId: this.branchOf(body, branchId),
+      txnType: 'PURCHASE_BILL',
+    });
     await this.syncItemPurchasePrices(bill);
     return bill;
   }
@@ -36,8 +52,12 @@ export class PurchaseService {
 
   // ─── Debit Notes (Purchase Return) ─────────────────────────────────────────
 
-  createDebitNote(businessId: string, userId: string, body: PurchaseBody) {
-    return this.core.createTxn(businessId, userId, { ...body, txnType: 'DEBIT_NOTE' });
+  createDebitNote(businessId: string, userId: string, body: PurchaseBody, branchId?: string) {
+    return this.core.createTxn(businessId, userId, {
+      ...body,
+      branchId: this.branchOf(body, branchId),
+      txnType: 'DEBIT_NOTE',
+    });
   }
 
   listDebitNotes(businessId: string, q: Record<string, string>) {
@@ -46,8 +66,12 @@ export class PurchaseService {
 
   // ─── Purchase Orders ───────────────────────────────────────────────────────
 
-  createOrder(businessId: string, userId: string, body: PurchaseBody) {
-    return this.core.createTxn(businessId, userId, { ...body, txnType: 'PURCHASE_ORDER' });
+  createOrder(businessId: string, userId: string, body: PurchaseBody, branchId?: string) {
+    return this.core.createTxn(businessId, userId, {
+      ...body,
+      branchId: this.branchOf(body, branchId),
+      txnType: 'PURCHASE_ORDER',
+    });
   }
 
   listOrders(businessId: string, q: Record<string, string>) {
@@ -63,7 +87,12 @@ export class PurchaseService {
 
   // ─── Payment Out ───────────────────────────────────────────────────────────
 
-  async createPaymentOut(businessId: string, userId: string, body: PurchaseBody & { amount?: number; autoAllocate?: boolean }) {
+  async createPaymentOut(
+    businessId: string,
+    userId: string,
+    body: PurchaseBody & { amount?: number; autoAllocate?: boolean },
+    branchId?: string,
+  ) {
     if (!body.partyId) throw new BadRequestException('Party is required for payment-out');
     const amount = body.amount ?? body.total ?? 0;
     if (amount <= 0) throw new BadRequestException('Amount must be positive');
@@ -75,6 +104,7 @@ export class PurchaseService {
 
     return this.core.createTxn(businessId, userId, {
       ...body,
+      branchId: this.branchOf(body, branchId),
       txnType: 'PAYMENT_OUT',
       total: amount,
       allocations,

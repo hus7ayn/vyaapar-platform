@@ -9,6 +9,7 @@ import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes, randomInt } from 'crypto';
 import { ROLE_PERMISSIONS, SystemRole } from '@nexus/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { bootstrapShopDefaults } from '../branches/shop-setup.util';
 import { insensitiveEquals } from '../common/escape-like';
 import { MailService } from '../mail/mail.service';
 import { resetCodeEmail, verifyAddressEmail } from '../mail/templates';
@@ -302,14 +303,14 @@ export class AuthService {
       },
     });
 
-    await this.prisma.bankAccount.create({
-      data: {
-        businessId: business.id,
-        name: 'Cash in Hand',
-        accountType: 'CASH',
-        balance: 0,
-      },
-    });
+    // Seed the first shop EXACTLY the way POST /branches seeds every later one. The old code
+    // hand-rolled a single "Cash in Hand" account with no branchId, and a branch-less account is
+    // invisible: Cash & Bank, the Account dropdown, the dashboard's Cash in Hand and the trial
+    // balance all filter by branch, while payment posting happily fell back to it business-wide.
+    // Real money went in and no screen ever showed it — 'unikid' sat at minus 52,000 in an account
+    // nobody could open. It also gets the signup shop the expense/item categories and numbering
+    // sequences that only later shops used to receive.
+    await bootstrapShopDefaults(this.prisma, business.id, branch.id, branch.name);
 
     await this.prisma.user.update({
       where: { id: user.id },

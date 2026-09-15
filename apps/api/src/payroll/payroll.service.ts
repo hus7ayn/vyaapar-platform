@@ -15,10 +15,36 @@ export interface EmployeeInput {
   joinDate?: string;
 }
 
-function calcNet(base: number, overtime: number, bonus: number, deductions: number, advance: number) {
-  // Advance is salary already paid out earlier in the month, so it's netted off
-  // what's still owed at payday.
+/**
+ * Advance is salary already paid out, in cash or from the bank, earlier in the month, so it is
+ * netted off what's still owed at payday. The advance EXPENSE and the payroll EXPENSE therefore
+ * add up to exactly the salary earned — the money is booked once, never twice.
+ */
+export function calcNet(base: number, overtime: number, bonus: number, deductions: number, advance: number) {
   return Math.max(0, base + overtime + bonus - deductions - advance);
+}
+
+/**
+ * The draft payroll line for one employee: recover as much of their outstanding advance as this
+ * month's base pay can cover. Anything above base stays on the balance for the next run, so the
+ * net salary can never go negative and no advance is ever recovered twice.
+ */
+export function buildDraftLine(
+  employeeId: string,
+  baseSalary: number | string,
+  advanceBalance: number | string | null | undefined,
+) {
+  const base = Number(baseSalary);
+  const advance = Math.max(0, Math.min(Number(advanceBalance ?? 0), base));
+  return {
+    employeeId,
+    baseSalary: base,
+    overtime: 0,
+    bonus: 0,
+    deductions: 0,
+    advance,
+    netSalary: calcNet(base, 0, 0, 0, advance),
+  };
 }
 
 @Injectable()
@@ -130,7 +156,13 @@ export class PayrollService {
     });
   }
 
-  async generatePayroll(businessId: string, startDate: string, endDate: string, branchId?: string) {
+  async generatePayroll(
+    businessId: string,
+    startDate: string,
+    endDate: string,
+    branchId?: string,
+    employeeIds?: string[],
+  ) {
     const dateRe = /^\d{4}-\d{2}-\d{2}$/;
     if (!startDate?.match(dateRe) || !endDate?.match(dateRe)) {
       throw new BadRequestException('Start and end dates are required (YYYY-MM-DD)');
@@ -146,10 +178,21 @@ export class PayrollService {
     // (matches the per-branch Payroll model + per-shop salary expense at payout).
     // Scope to a single shop when a branch is given, so one shop's payroll
     // doesn't sweep in another shop's staff (and vice-versa).
+    // `employeeIds` narrows the run to the staff the owner actually picked.
+    const picked = (employeeIds ?? []).filter((id) => !!id);
     const employees = await this.prisma.employee.findMany({
-      where: { businessId, isActive: true, ...(branchId && { branchId }) },
+      where: {
+        businessId,
+        isActive: true,
+        ...(branchId && { branchId }),
+        ...(picked.length && { id: { in: picked } }),
+      },
     });
-    if (!employees.length) throw new BadRequestException('No active staff to pay for this entity');
+    if (!employees.length) {
+      throw new BadRequestException(
+        picked.length ? 'The selected staff are not active in this entity' : 'No active staff to pay for this entity',
+      );
+    }
 
     const byBranch = new Map<string | null, typeof employees>();
     for (const e of employees) {
@@ -159,23 +202,72 @@ export class PayrollService {
       byBranch.set(key, arr);
     }
 
-    const created: Prisma.PayrollGetPayload<{ include: { lines: { include: { employee: true } }; branch: true } }>[] = [];
-    let skipped = 0;
+    type Run = Prisma.PayrollGetPayload<{ include: { lines: { include: { employee: true } }; branch: true } }>;
+    const created: Run[] = [];
+    const updated: Run[] = [];
+    let addedLines = 0;
+    let paidSkips = 0;
+    let alreadyOnRun = 0;
+
     for (const [bId, emps] of byBranch) {
       const existing = await this.prisma.payroll.findFirst({ where: { businessId, period, branchId: bId } });
-      if (existing) { skipped++; continue; }
 
-      // Auto-recover any outstanding salary advance in this run (capped at base pay).
-      const lines = emps.map((e) => {
-        const base = Number(e.baseSalary);
-        const advance = Math.min(Number(e.advanceBalance ?? 0), base);
-        return { employeeId: e.id, baseSalary: base, overtime: 0, bonus: 0, deductions: 0, advance, netSalary: calcNet(base, 0, 0, 0, advance) };
-      });
-      const totalAmount = lines.reduce((s, l) => s + l.netSalary, 0);
+      // A paid run is closed — its expense is already booked, so never touch it.
+      if (existing?.status === 'PAID') { paidSkips++; continue; }
+
+      if (existing) {
+        // Top up the OPEN draft with the picked staff it doesn't cover yet. PayrollLine has no
+        // unique key, so de-dupe here: an employee already on the run is left completely alone,
+        // because their advance was drawn down when their line was first written.
+        const existingLines = await this.prisma.payrollLine.findMany({
+          where: { payrollId: existing.id },
+          select: { employeeId: true },
+        });
+        const have = new Set(existingLines.map((l) => l.employeeId));
+        const missing = emps.filter((e) => !have.has(e.id));
+        if (!missing.length) { alreadyOnRun++; continue; }
+
+        const payroll = await this.prisma.$transaction(async (tx) => {
+          // Re-read inside the transaction: an advance recorded a moment ago must be recovered.
+          const fresh = await tx.employee.findMany({
+            where: { id: { in: missing.map((e) => e.id) } },
+            select: { id: true, baseSalary: true, advanceBalance: true },
+          });
+          const lines = fresh.map((e) => buildDraftLine(e.id, Number(e.baseSalary), Number(e.advanceBalance ?? 0)));
+          await tx.payrollLine.createMany({ data: lines.map((l) => ({ ...l, payrollId: existing.id })) });
+          for (const l of lines) {
+            if (l.advance > 0) {
+              await tx.employee.update({ where: { id: l.employeeId }, data: { advanceBalance: { decrement: l.advance } } });
+            }
+          }
+          const allLines = await tx.payrollLine.findMany({ where: { payrollId: existing.id } });
+          return tx.payroll.update({
+            where: { id: existing.id },
+            data: { totalAmount: allLines.reduce((s, l) => s + Number(l.netSalary), 0) },
+            include: { lines: { include: { employee: true } }, branch: true },
+          });
+        });
+        addedLines += Math.max(0, payroll.lines.length - existingLines.length);
+        updated.push(payroll);
+        continue;
+      }
 
       const payroll = await this.prisma.$transaction(async (tx) => {
+        const fresh = await tx.employee.findMany({
+          where: { id: { in: emps.map((e) => e.id) } },
+          select: { id: true, baseSalary: true, advanceBalance: true },
+        });
+        // Auto-recover any outstanding salary advance in this run (capped at base pay).
+        const lines = fresh.map((e) => buildDraftLine(e.id, Number(e.baseSalary), Number(e.advanceBalance ?? 0)));
         const p = await tx.payroll.create({
-          data: { businessId, branchId: bId, period, status: 'DRAFT', totalAmount, lines: { create: lines } },
+          data: {
+            businessId,
+            branchId: bId,
+            period,
+            status: 'DRAFT',
+            totalAmount: lines.reduce((s, l) => s + l.netSalary, 0),
+            lines: { create: lines },
+          },
           include: { lines: { include: { employee: true } }, branch: true },
         });
         // Draw down each employee's advance balance by the amount recovered here.
@@ -186,22 +278,80 @@ export class PayrollService {
         }
         return p;
       });
+      addedLines += payroll.lines.length;
       created.push(payroll);
     }
 
-    if (!created.length) throw new BadRequestException(`Payroll for ${period} already exists for all shops`);
-    return { created: created.length, skipped, payrolls: created };
+    if (!created.length && !updated.length) {
+      throw new BadRequestException(
+        paidSkips
+          ? `Payroll for ${period} has already been paid`
+          : `The selected staff are already on the ${period} payroll run`,
+      );
+    }
+    return {
+      created: created.length,
+      updated: updated.length,
+      added: addedLines,
+      skipped: paidSkips + alreadyOnRun,
+      payrolls: [...created, ...updated],
+    };
   }
 
-  /** Give an employee a salary advance — tracked as a balance auto-deducted from future payroll runs. */
-  async recordAdvance(businessId: string, employeeId: string, amount: number) {
-    if (!amount || amount <= 0) throw new BadRequestException('Advance amount must be positive');
+  /**
+   * Give an employee a salary advance. This is REAL money leaving the till or the bank, so it is
+   * posted as an EXPENSE transaction exactly like a salary payout — visible in Cash & Bank, the
+   * account statement, the day book, cash flow, P&L and expenses-by-category — and the balance is
+   * recorded so the upcoming payroll run nets it off (advance expense + payroll expense = salary).
+   */
+  async recordAdvance(
+    businessId: string,
+    userId: string,
+    employeeId: string,
+    body: { amount: number; paymentType?: string; bankAccountId?: string; date?: string },
+  ) {
+    const amount = Math.round(Number(body?.amount) * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('Advance amount must be positive');
     const emp = await this.prisma.employee.findFirst({ where: { id: employeeId, businessId } });
     if (!emp) throw new NotFoundException('Employee not found');
-    return this.prisma.employee.update({
-      where: { id: employeeId },
-      data: { advanceBalance: { increment: amount } },
-    });
+
+    // Book the expense against the employee's own shop, falling back to the default shop so an
+    // unassigned employee's advance still lands in a real branch's books.
+    const branchId =
+      emp.branchId
+      ?? (await this.prisma.branch.findFirst({ where: { businessId, isDefault: true, deletedAt: null }, select: { id: true } }))?.id
+      ?? (await this.prisma.branch.findFirst({ where: { businessId, type: 'SHOP', deletedAt: null }, select: { id: true } }))?.id;
+
+    const paymentType = body.paymentType ?? 'CASH';
+    const categoryId = await this.expenseCategoryId(businessId, branchId, 'Staff Advance');
+    const name = `${emp.firstName} ${emp.lastName}`.trim();
+
+    // ONE transaction, ONE pooled connection: createTxn is handed this `tx` as its existingTx so
+    // it never opens a nested $transaction (which previously 500'd in production).
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.core.createTxn(
+          businessId,
+          userId,
+          {
+            txnType: 'EXPENSE',
+            branchId: branchId ?? undefined,
+            date: body.date ? new Date(body.date).toISOString() : new Date().toISOString(),
+            expenseCategoryId: categoryId,
+            partyName: name,
+            description: `Salary advance — ${name}${emp.employeeId ? ` (${emp.employeeId})` : ''}`,
+            total: amount,
+            payments: [{ paymentType, bankAccountId: body.bankAccountId, amount }],
+          },
+          tx,
+        );
+        return tx.employee.update({
+          where: { id: employeeId },
+          data: { advanceBalance: { increment: amount } },
+        });
+      },
+      { maxWait: 15000, timeout: 30000 },
+    );
   }
 
   async updateLine(
@@ -221,9 +371,26 @@ export class PayrollService {
     const bonus = body.bonus ?? Number(line.bonus);
     const deductions = body.deductions ?? Number(line.deductions);
     const advance = body.advance ?? Number(line.advance);
+    if (!Number.isFinite(advance) || advance < 0) throw new BadRequestException('Advance cannot be negative');
     const netSalary = calcNet(Number(line.baseSalary), overtime, bonus, deductions, advance);
 
+    // Editing the advance on a draft line MOVES money: the line's advance was already drawn down
+    // from Employee.advanceBalance when the draft was generated, so recovering more (or less) here
+    // has to move the balance by the same delta — otherwise the difference is either deducted from
+    // the employee twice or silently written off.
+    const delta = Math.round((advance - Number(line.advance)) * 100) / 100;
+
     return this.prisma.$transaction(async (tx) => {
+      if (delta !== 0) {
+        const emp = await tx.employee.findUnique({ where: { id: line.employeeId }, select: { advanceBalance: true } });
+        const outstanding = Number(emp?.advanceBalance ?? 0);
+        if (delta > outstanding + 0.005) {
+          throw new BadRequestException(
+            `Only ${outstanding.toFixed(2)} of advance is still outstanding for this employee (already recovered ${Number(line.advance).toFixed(2)} on this run)`,
+          );
+        }
+        await tx.employee.update({ where: { id: line.employeeId }, data: { advanceBalance: { decrement: delta } } });
+      }
       await tx.payrollLine.update({
         where: { id: lineId },
         data: { overtime, bonus, deductions, advance, netSalary },
@@ -238,17 +405,22 @@ export class PayrollService {
     });
   }
 
-  private async salaryCategoryId(businessId: string, branchId?: string | null) {
+  /** Resolve — creating on first use — the named expense category for a shop. */
+  private async expenseCategoryId(businessId: string, branchId: string | null | undefined, name: string) {
     let cat = await this.prisma.expenseCategory.findFirst({
-      where: { businessId, ...this.branchWhere(branchId ?? undefined), name: { equals: 'Salary', mode: 'insensitive' } },
+      where: { businessId, ...this.branchWhere(branchId ?? undefined), name: { equals: name, mode: 'insensitive' } },
     });
     if (!cat && branchId) {
       cat = await this.prisma.expenseCategory.create({
-        data: { businessId, branchId, name: 'Salary', isGst: false },
+        data: { businessId, branchId, name, isGst: false },
       });
     }
-    if (!cat) throw new BadRequestException('Salary expense category not found for this shop');
+    if (!cat) throw new BadRequestException(`${name} expense category not found for this shop`);
     return cat.id;
+  }
+
+  private salaryCategoryId(businessId: string, branchId?: string | null) {
+    return this.expenseCategoryId(businessId, branchId, 'Salary');
   }
 
   async payPayroll(

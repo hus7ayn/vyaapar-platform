@@ -31,9 +31,10 @@ export class PurchaseController {
   createBill(
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('sub') userId: string,
+    @CurrentUser('branchId') branchId: string | undefined,
     @Body() body: PurchaseBody,
   ) {
-    return this.purchase.createBill(businessId, userId, body);
+    return this.purchase.createBill(businessId, userId, body, branchId);
   }
 
   @Get('debit-notes')
@@ -51,9 +52,10 @@ export class PurchaseController {
   createDebitNote(
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('sub') userId: string,
+    @CurrentUser('branchId') branchId: string | undefined,
     @Body() body: PurchaseBody,
   ) {
-    return this.purchase.createDebitNote(businessId, userId, body);
+    return this.purchase.createDebitNote(businessId, userId, body, branchId);
   }
 
   @Get('orders')
@@ -71,9 +73,10 @@ export class PurchaseController {
   createOrder(
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('sub') userId: string,
+    @CurrentUser('branchId') branchId: string | undefined,
     @Body() body: PurchaseBody,
   ) {
-    return this.purchase.createOrder(businessId, userId, body);
+    return this.purchase.createOrder(businessId, userId, body, branchId);
   }
 
   @Post('orders/:id/receive')
@@ -102,8 +105,9 @@ export class PurchaseController {
   createPaymentOut(
     @CurrentUser('businessId') businessId: string,
     @CurrentUser('sub') userId: string,
+    @CurrentUser('branchId') branchId: string | undefined,
     @Body() body: PurchaseBody & { amount?: number; autoAllocate?: boolean },
   ) {
-    return this.purchase.createPaymentOut(businessId, userId, body);
+    return this.purchase.createPaymentOut(businessId, userId, body, branchId);
   }
 }
