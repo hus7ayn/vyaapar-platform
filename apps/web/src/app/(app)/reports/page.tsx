@@ -107,13 +107,16 @@ function Line({ label, value, hint, strong, negative }: {
  * product sold on credit is a receivable, not earnings, until the customer actually pays.
  */
 function ProfitAndLossView({ d }: { d: Pnl }) {
+  // Same box and same wording when the figure is negative — only the colour flips to red, so a
+  // loss reads as a loss at a glance instead of resting on a minus sign that is easy to miss.
+  const loss = (d.realisedNetProfit ?? 0) < 0;
   return (
     <div className="p-4 space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-green-200 bg-green-50/70 p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-green-800">Profit &mdash; money actually received</p>
-          <p className="mt-1 text-3xl font-bold text-green-800 tabular-nums">{formatMoney(d.realisedNetProfit)}</p>
-          <p className="mt-1 text-xs text-green-900/70">
+        <div className={`rounded-xl border p-4 ${loss ? 'border-red-200 bg-red-50/70' : 'border-green-200 bg-green-50/70'}`}>
+          <p className={`text-xs font-bold uppercase tracking-wide ${loss ? 'text-red-800' : 'text-green-800'}`}>Profit &mdash; money actually received</p>
+          <p className={`mt-1 text-3xl font-bold tabular-nums ${loss ? 'text-red-800' : 'text-green-800'}`}>{formatMoney(d.realisedNetProfit)}</p>
+          <p className={`mt-1 text-xs ${loss ? 'text-red-900/70' : 'text-green-900/70'}`}>
             Gross {formatMoney(d.realisedGrossProfit)} less expenses {formatMoney(d.expenses)}. A credit sale
             counts only once the customer pays, in the period the money arrives.
           </p>

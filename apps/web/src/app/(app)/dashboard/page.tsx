@@ -185,7 +185,7 @@ export default function DashboardPage() {
             <p className="text-[10px] text-muted-foreground -mt-1">Before cost of goods &mdash; not profit.</p>
             <div className="flex justify-between border-t pt-2">
               <span className="text-muted-foreground font-medium">Profit (money received)</span>
-              <span className="font-bold text-green-700">{formatMoney(data?.realisedProfit ?? 0)}</span>
+              <span className={`font-bold ${(data?.realisedProfit ?? 0) < 0 ? 'text-red-700' : 'text-green-700'}`}>{formatMoney(data?.realisedProfit ?? 0)}</span>
             </div>
             <p className="text-[10px] text-muted-foreground -mt-1">Credit sales count only once the customer pays.</p>
             {(data?.unrealisedProfitOnCredit ?? 0) !== 0 && (
