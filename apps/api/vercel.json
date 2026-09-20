@@ -1,14 +1,25 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["iad1"],
+  "regions": [
+    "iad1"
+  ],
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
   "buildCommand": "cd ../.. && pnpm --filter @nexus/shared build && pnpm --filter @nexus/api exec prisma generate && pnpm --filter @nexus/api exec prisma db push --skip-generate && pnpm --filter @nexus/api build",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api" }
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
   ],
   "functions": {
     "api/index.js": {
       "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/v1/health/ready",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }
